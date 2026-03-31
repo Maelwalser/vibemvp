@@ -32,127 +32,403 @@ var beArchOptions = []archOption{
 	{"modular-monolith", "Modular Monolith", "Clear domain boundaries, single deployment"},
 	{"microservices", "Microservices", "Independent services communicating over a network"},
 	{"event-driven", "Event-Driven", "Services communicate asynchronously via events"},
+	{"hybrid", "Hybrid", "Mix of patterns — each service unit tagged with its own pattern"},
 }
 
-// ── field helpers ─────────────────────────────────────────────────────────────
+// ── sub-tab IDs per arch ──────────────────────────────────────────────────────
 
-func defaultBeEnvFields() []Field {
+// backendSubTab enumerates the logical sub-tabs in the backend section.
+type backendSubTab int
+
+const (
+	beTabEnv backendSubTab = iota
+	beTabServices
+	beTabComm
+	beTabMessaging
+	beTabAPIGW
+	beTabAuth
+)
+
+// subTabsForArch returns the ordered list of sub-tabs for the given arch value.
+func subTabsForArch(arch string) []backendSubTab {
+	switch arch {
+	case "monolith":
+		return []backendSubTab{beTabEnv, beTabServices, beTabAuth}
+	case "modular-monolith":
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabAuth}
+	case "microservices":
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabAPIGW, beTabAuth}
+	case "event-driven":
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabAuth}
+	case "hybrid":
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabAPIGW, beTabAuth}
+	default:
+		return []backendSubTab{beTabEnv, beTabServices, beTabAuth}
+	}
+}
+
+func subTabLabel(t backendSubTab) string {
+	switch t {
+	case beTabEnv:
+		return "ENV"
+	case beTabServices:
+		return "SERVICES"
+	case beTabComm:
+		return "COMM"
+	case beTabMessaging:
+		return "MESSAGING"
+	case beTabAPIGW:
+		return "API GW"
+	case beTabAuth:
+		return "AUTH"
+	}
+	return "?"
+}
+
+// ── framework options per language ────────────────────────────────────────────
+
+var backendFrameworksByLang = map[string][]string{
+	"Go":              {"Fiber", "Gin", "Echo", "Chi", "net/http (stdlib)", "Connect"},
+	"TypeScript/Node": {"Express", "Fastify", "NestJS", "Hono", "tRPC", "Elysia (Bun)"},
+	"Python":          {"FastAPI", "Django", "Flask", "Litestar", "Starlette"},
+	"Java":            {"Spring Boot", "Quarkus", "Micronaut", "Jakarta EE"},
+	"Kotlin":          {"Ktor", "Spring Boot (Kotlin)", "http4k"},
+	"C#/.NET":         {"ASP.NET Core", "Minimal APIs", "Carter"},
+	"Rust":            {"Axum", "Actix-web", "Rocket", "Warp"},
+	"Ruby":            {"Rails", "Sinatra", "Hanami", "Roda"},
+	"PHP":             {"Laravel", "Symfony", "Slim", "Laminas"},
+	"Elixir":          {"Phoenix", "Plug", "Bandit"},
+	"Other":           {"Other"},
+}
+
+var backendLanguages = []string{
+	"Go", "TypeScript/Node", "Python", "Java", "Kotlin",
+	"C#/.NET", "Rust", "Ruby", "PHP", "Elixir", "Other",
+}
+
+// ── field definitions ─────────────────────────────────────────────────────────
+
+func defaultEnvFields() []Field {
 	return []Field{
 		{
 			Key: "compute_env", Label: "compute_env   ", Kind: KindSelect,
-			Options: []string{"serverless", "containerized", "bare-metal/VM"},
-			Value:   "containerized", SelIdx: 1,
+			Options: []string{
+				"Bare Metal", "VM", "Containers (Docker)", "Kubernetes",
+				"Serverless (FaaS)", "PaaS",
+			},
+			Value: "Containers (Docker)", SelIdx: 2,
 		},
 		{
 			Key: "cloud_provider", Label: "cloud_provider", Kind: KindSelect,
-			Options: []string{"N/A", "AWS", "GCP", "Azure"},
-			Value:   "N/A",
+			Options: []string{
+				"AWS", "GCP", "Azure", "Cloudflare", "Hetzner",
+				"Self-hosted", "Other (specify)",
+			},
+			Value: "AWS",
+		},
+		{
+			Key: "orchestrator", Label: "orchestrator  ", Kind: KindSelect,
+			Options: []string{
+				"Docker Compose", "K3s", "K8s (managed)", "Nomad",
+				"ECS", "Cloud Run", "None",
+			},
+			Value: "Docker Compose",
+		},
+		{Key: "regions", Label: "regions       ", Kind: KindText},
+		{
+			Key: "stages", Label: "stages        ", Kind: KindSelect,
+			Options: []string{
+				"Development", "Development + Staging", "Development + Staging + Production",
+				"Staging + Production", "Production only",
+			},
+			Value: "Development + Staging + Production", SelIdx: 2,
 		},
 	}
 }
 
-func defaultBeAppFields() []Field {
-	return []Field{
-		{Key: "language", Label: "language      ", Kind: KindText},
-		{Key: "framework", Label: "framework     ", Kind: KindText},
-	}
-}
-
-func defaultSvcFields() []Field {
+func defaultServiceFields() []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "responsibility", Label: "responsibility", Kind: KindText},
-		{Key: "language", Label: "language      ", Kind: KindText},
-		{Key: "framework", Label: "framework     ", Kind: KindText},
+		{
+			Key: "language", Label: "language      ", Kind: KindSelect,
+			Options: backendLanguages,
+			Value:   "Go",
+		},
+		{
+			Key: "framework", Label: "framework     ", Kind: KindSelect,
+			Options: backendFrameworksByLang["Go"],
+			Value:   "Fiber",
+		},
+		{
+			Key: "pattern_tag", Label: "pattern_tag   ", Kind: KindSelect,
+			Options: []string{
+				"Monolith part", "Modular module", "Microservice",
+				"Event processor", "Serverless function",
+			},
+			Value: "Microservice",
+		},
 	}
 }
 
-func svcFieldsFromDef(s manifest.ServiceDef) []Field {
-	f := defaultSvcFields()
-	vals := map[string]string{
-		"name": s.Name, "responsibility": s.Responsibility,
-		"language": s.Language, "framework": s.Framework,
+func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
+	f := defaultServiceFields()
+	f = setFieldValue(f, "name", s.Name)
+	f = setFieldValue(f, "responsibility", s.Responsibility)
+	if s.Language != "" {
+		f = setFieldValue(f, "language", s.Language)
+		// update framework options based on language
+		if opts, ok := backendFrameworksByLang[s.Language]; ok {
+			for i := range f {
+				if f[i].Key == "framework" {
+					f[i].Options = opts
+					f[i].SelIdx = 0
+					f[i].Value = opts[0]
+					if s.Framework != "" {
+						f = setFieldValue(f, "framework", s.Framework)
+					}
+					break
+				}
+			}
+		}
 	}
-	for i := range f {
-		f[i].Value = vals[f[i].Key]
+	if s.PatternTag != "" {
+		f = setFieldValue(f, "pattern_tag", s.PatternTag)
 	}
 	return f
 }
 
+func serviceDefFromFields(fields []Field) manifest.ServiceDef {
+	return manifest.ServiceDef{
+		Name:           fieldGet(fields, "name"),
+		Responsibility: fieldGet(fields, "responsibility"),
+		Language:       fieldGet(fields, "language"),
+		Framework:      fieldGet(fields, "framework"),
+		PatternTag:     fieldGet(fields, "pattern_tag"),
+	}
+}
+
+func defaultCommFields() []Field {
+	return []Field{
+		{Key: "from", Label: "from          ", Kind: KindText},
+		{Key: "to", Label: "to            ", Kind: KindText},
+		{
+			Key: "direction", Label: "direction     ", Kind: KindSelect,
+			Options: []string{
+				"Unidirectional (→)", "Bidirectional (↔)", "Pub/Sub (fan-out)",
+			},
+			Value: "Unidirectional (→)",
+		},
+		{
+			Key: "protocol", Label: "protocol      ", Kind: KindSelect,
+			Options: []string{
+				"REST (HTTP)", "gRPC", "GraphQL", "WebSocket",
+				"Message Queue", "Event Bus", "Internal (in-process)",
+			},
+			Value: "REST (HTTP)",
+		},
+		{Key: "trigger", Label: "trigger       ", Kind: KindText},
+		{
+			Key: "sync_async", Label: "sync_async    ", Kind: KindSelect,
+			Options: []string{"Synchronous", "Asynchronous", "Fire-and-forget"},
+			Value:   "Synchronous",
+		},
+	}
+}
+
+func commLinkFromFields(fields []Field) manifest.CommLink {
+	return manifest.CommLink{
+		From:      fieldGet(fields, "from"),
+		To:        fieldGet(fields, "to"),
+		Direction: fieldGet(fields, "direction"),
+		Protocol:  fieldGet(fields, "protocol"),
+		Trigger:   fieldGet(fields, "trigger"),
+		SyncAsync: fieldGet(fields, "sync_async"),
+	}
+}
+
+func commFieldsFromLink(l manifest.CommLink) []Field {
+	f := defaultCommFields()
+	f = setFieldValue(f, "from", l.From)
+	f = setFieldValue(f, "to", l.To)
+	if l.Direction != "" {
+		f = setFieldValue(f, "direction", l.Direction)
+	}
+	if l.Protocol != "" {
+		f = setFieldValue(f, "protocol", l.Protocol)
+	}
+	f = setFieldValue(f, "trigger", l.Trigger)
+	if l.SyncAsync != "" {
+		f = setFieldValue(f, "sync_async", l.SyncAsync)
+	}
+	return f
+}
+
+func defaultMessagingFields() []Field {
+	return []Field{
+		{
+			Key: "broker_tech", Label: "broker_tech   ", Kind: KindSelect,
+			Options: []string{
+				"Kafka", "NATS", "RabbitMQ", "Redis Streams",
+				"AWS SQS/SNS", "Google Pub/Sub", "Azure Service Bus", "Pulsar",
+			},
+			Value: "Kafka",
+		},
+		{
+			Key: "deployment", Label: "deployment    ", Kind: KindSelect,
+			Options: []string{"Managed (cloud)", "Self-hosted", "Embedded"},
+			Value:   "Managed (cloud)",
+		},
+		{
+			Key: "serialization", Label: "serialization ", Kind: KindSelect,
+			Options: []string{"JSON", "Protobuf", "Avro", "MessagePack", "CloudEvents"},
+			Value:   "JSON",
+		},
+		{
+			Key: "delivery", Label: "delivery      ", Kind: KindSelect,
+			Options: []string{"At-most-once", "At-least-once", "Exactly-once"},
+			Value:   "At-least-once",
+		},
+	}
+}
+
+func defaultEventFields() []Field {
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{Key: "domain", Label: "domain        ", Kind: KindText},
+		{Key: "description", Label: "description   ", Kind: KindText},
+	}
+}
+
+func defaultAPIGWFields() []Field {
+	return []Field{
+		{
+			Key: "technology", Label: "technology    ", Kind: KindSelect,
+			Options: []string{
+				"Kong", "Traefik", "NGINX", "Envoy",
+				"AWS API Gateway", "Cloudflare Workers", "Custom (specify)", "None",
+			},
+			Value: "Kong",
+		},
+		{
+			Key: "routing", Label: "routing       ", Kind: KindSelect,
+			Options: []string{"Path-based", "Header-based", "Domain-based"},
+			Value:   "Path-based",
+		},
+		{Key: "features", Label: "features      ", Kind: KindText},
+	}
+}
+
+func defaultAuthFields() []Field {
+	return []Field{
+		{
+			Key: "strategy", Label: "strategy      ", Kind: KindSelect,
+			Options: []string{
+				"JWT (stateless)", "Session-based", "OAuth 2.0 / OIDC",
+				"API Keys", "mTLS", "None",
+			},
+			Value: "JWT (stateless)",
+		},
+		{
+			Key: "provider", Label: "provider      ", Kind: KindSelect,
+			Options: []string{
+				"Self-managed", "Auth0", "Clerk", "Supabase Auth",
+				"Firebase Auth", "Keycloak", "AWS Cognito", "Other",
+			},
+			Value: "Self-managed",
+		},
+		{
+			Key: "authz_model", Label: "authz_model   ", Kind: KindSelect,
+			Options: []string{"RBAC", "ABAC", "ACL", "ReBAC", "Policy-based (OPA/Cedar)", "Custom"},
+			Value:   "RBAC",
+		},
+		{
+			Key: "token_storage", Label: "token_storage ", Kind: KindSelect,
+			Options: []string{
+				"HttpOnly cookie", "Authorization header (Bearer)",
+				"WebSocket protocol header", "Other",
+			},
+			Value: "HttpOnly cookie",
+		},
+		{
+			Key: "mfa", Label: "mfa           ", Kind: KindSelect,
+			Options: []string{"None", "TOTP", "SMS", "Email", "Passkeys/WebAuthn"},
+			Value:   "None",
+		},
+	}
+}
+
+// ── list + form sub-editor for services and comm links ───────────────────────
+
+type beListView int
+
+const (
+	beListViewList beListView = iota
+	beListViewForm
+)
+
+type beListEditor struct {
+	items    [][]Field        // each item is a slice of fields
+	itemView beListView
+	itemIdx  int
+	formIdx  int
+	form     []Field
+}
+
+func newBeListEditor() beListEditor {
+	return beListEditor{itemView: beListViewList}
+}
+
 // ── BackendEditor ─────────────────────────────────────────────────────────────
 
-// BackendEditor manages the BACK section.
-//
-// Phase 1 — arch selection: a collapsed dropdown row shows the current choice;
-// pressing Enter/Space opens the dropdown list; j/k navigates; Enter confirms.
-//
-// Phase 2 — sub-tabs: ENV (always) + APP (monolith) or per-service tabs
-// (microservices / modular-monolith). Press b to return to Phase 1.
+// BackendEditor manages the BACKEND section.
 type BackendEditor struct {
-	// Persisted data
+	// Arch selection
 	ArchIdx       int
 	ArchConfirmed bool
-	EnvFields     []Field
-	AppFields     []Field
-	Services      []manifest.ServiceDef
+	dropdownOpen  bool
+	dropdownIdx   int
 
-	// Phase-1 dropdown state
-	dropdownOpen bool // true while the arch dropdown list is visible
-	dropdownIdx  int  // cursor position inside the open dropdown
-
-	// Phase-2 UI state
-	activeSubTab int
+	// Sub-tab state
+	activeTabIdx int // index into subTabsForArch(arch)
 	activeField  int
 
+	// Field stores
+	EnvFields      []Field
+	MessagingFields []Field
+	APIGWFields    []Field
+	AuthFields     []Field
+
+	// List editors
+	serviceEditor beListEditor
+	commEditor    beListEditor
+	eventEditor   beListEditor // event catalog within messaging
+
+	// Internal mode
 	internalMode beMode
 	formInput    textinput.Model
 	width        int
+
+	// Services and comm links for manifest export
+	Services  []manifest.ServiceDef
+	CommLinks []manifest.CommLink
+	Events    []manifest.EventDef
 }
 
 func newBackendEditor() BackendEditor {
-	fi := textinput.New()
-	fi.Prompt = ""
-	fi.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
-	fi.CursorStyle = StyleCursor
-	fi.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
-
 	return BackendEditor{
-		EnvFields: defaultBeEnvFields(),
-		AppFields: defaultBeAppFields(),
-		Services:  []manifest.ServiceDef{},
-		formInput: fi,
+		EnvFields:       defaultEnvFields(),
+		MessagingFields: defaultMessagingFields(),
+		APIGWFields:     defaultAPIGWFields(),
+		AuthFields:      defaultAuthFields(),
+		serviceEditor:   newBeListEditor(),
+		commEditor:      newBeListEditor(),
+		eventEditor:     newBeListEditor(),
+		formInput:       newFormInput(),
 	}
 }
 
-// ToManifest converts the editor state to a BackendPillar.
-func (be BackendEditor) ToManifest() manifest.BackendPillar {
-	envGet := func(key string) string {
-		for _, f := range be.EnvFields {
-			if f.Key == key {
-				return f.DisplayValue()
-			}
-		}
-		return ""
-	}
-	appGet := func(key string) string {
-		for _, f := range be.AppFields {
-			if f.Key == key {
-				return f.Value
-			}
-		}
-		return ""
-	}
-	return manifest.BackendPillar{
-		ArchPattern:   manifest.ArchPattern(be.currentArch()),
-		ComputeEnv:    manifest.ComputeEnv(envGet("compute_env")),
-		CloudProvider: envGet("cloud_provider"),
-		Language:      appGet("language"),
-		Framework:     appGet("framework"),
-		Services:      be.Services,
-	}
-}
-
-// ── arch helpers ──────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func (be BackendEditor) currentArch() string {
 	if be.ArchIdx >= 0 && be.ArchIdx < len(beArchOptions) {
@@ -161,51 +437,85 @@ func (be BackendEditor) currentArch() string {
 	return beArchOptions[0].value
 }
 
-func (be BackendEditor) isServiceArch() bool {
-	a := be.currentArch()
-	return a == "microservices" || a == "modular-monolith"
+func (be BackendEditor) activeTabs() []backendSubTab {
+	return subTabsForArch(be.currentArch())
 }
 
-// ── sub-tab helpers ───────────────────────────────────────────────────────────
-
-func (be BackendEditor) subTabCount() int {
-	switch be.currentArch() {
-	case "monolith":
-		return 2 // ENV + APP
-	case "event-driven":
-		return 1 // ENV only
-	default:
-		return 1 + len(be.Services) + 1 // ENV + services + [+]
+func (be BackendEditor) activeTab() backendSubTab {
+	tabs := be.activeTabs()
+	if be.activeTabIdx >= 0 && be.activeTabIdx < len(tabs) {
+		return tabs[be.activeTabIdx]
 	}
+	return beTabEnv
 }
 
-func (be BackendEditor) subTabLabel(i int) string {
-	switch be.currentArch() {
-	case "monolith":
-		if i == 0 {
-			return "ENV"
-		}
-		return "APP"
-	case "event-driven":
-		return "ENV"
-	default:
-		if i == 0 {
-			return "ENV"
-		}
-		svcIdx := i - 1
-		if svcIdx < len(be.Services) {
-			name := be.Services[svcIdx].Name
-			if name == "" {
-				name = fmt.Sprintf("#%d", svcIdx+1)
+func (be BackendEditor) tabLabels() []string {
+	tabs := be.activeTabs()
+	labels := make([]string, len(tabs))
+	for i, t := range tabs {
+		labels[i] = subTabLabel(t)
+	}
+	return labels
+}
+
+// ── ToManifest ────────────────────────────────────────────────────────────────
+
+func (be BackendEditor) ToManifest() manifest.BackendPillar {
+	arch := be.currentArch()
+
+	env := manifest.EnvConfig{
+		ComputeEnv:    fieldGet(be.EnvFields, "compute_env"),
+		CloudProvider: fieldGet(be.EnvFields, "cloud_provider"),
+		Orchestrator:  fieldGet(be.EnvFields, "orchestrator"),
+		Regions:       fieldGet(be.EnvFields, "regions"),
+		Stages:        fieldGet(be.EnvFields, "stages"),
+	}
+
+	auth := manifest.AuthConfig{
+		Strategy:     fieldGet(be.AuthFields, "strategy"),
+		Provider:     fieldGet(be.AuthFields, "provider"),
+		AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
+		TokenStorage: fieldGet(be.AuthFields, "token_storage"),
+		MFA:          fieldGet(be.AuthFields, "mfa"),
+	}
+
+	bp := manifest.BackendPillar{
+		ArchPattern: manifest.ArchPattern(arch),
+		Env:         env,
+		Services:    be.Services,
+		CommLinks:   be.CommLinks,
+		Auth:        auth,
+	}
+
+	tabs := subTabsForArch(arch)
+	for _, t := range tabs {
+		if t == beTabMessaging {
+			mc := manifest.MessagingConfig{
+				BrokerTech:    fieldGet(be.MessagingFields, "broker_tech"),
+				Deployment:    fieldGet(be.MessagingFields, "deployment"),
+				Serialization: fieldGet(be.MessagingFields, "serialization"),
+				Delivery:      fieldGet(be.MessagingFields, "delivery"),
 			}
-			return name
+			bp.Messaging = &mc
 		}
-		return "[+]"
+		if t == beTabAPIGW {
+			gw := manifest.APIGatewayConfig{
+				Technology: fieldGet(be.APIGWFields, "technology"),
+				Routing:    fieldGet(be.APIGWFields, "routing"),
+				Features:   fieldGet(be.APIGWFields, "features"),
+			}
+			bp.APIGateway = &gw
+		}
 	}
-}
 
-func (be BackendEditor) isAddTab() bool {
-	return be.isServiceArch() && be.activeSubTab == len(be.Services)+1
+	// Legacy compat fields
+	bp.ComputeEnv = manifest.ComputeEnv(env.ComputeEnv)
+	bp.CloudProvider = env.CloudProvider
+	if len(be.Services) > 0 {
+		bp.Language = be.Services[0].Language
+		bp.Framework = be.Services[0].Framework
+	}
+	return bp
 }
 
 // ── Mode / HintLine ───────────────────────────────────────────────────────────
@@ -220,36 +530,37 @@ func (be BackendEditor) Mode() Mode {
 func (be BackendEditor) HintLine() string {
 	if !be.ArchConfirmed {
 		if be.dropdownOpen {
-			hints := []string{
-				StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
-				StyleHelpKey.Render("Enter") + StyleHelpDesc.Render(" confirm"),
-				StyleHelpKey.Render("Esc") + StyleHelpDesc.Render(" close"),
-			}
-			return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
+			return hintBar("j/k", "navigate", "Enter", "confirm", "Esc", "close")
 		}
-		hints := []string{
-			StyleHelpKey.Render("Enter") + StyleHelpDesc.Render(" open"),
-		}
-		return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
+		return hintBar("Enter", "open arch selector")
 	}
 	if be.internalMode == beInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
-	hints := []string{
-		StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
-		StyleHelpKey.Render("h/l") + StyleHelpDesc.Render(" sub-tab"),
-		StyleHelpKey.Render("b") + StyleHelpDesc.Render(" change arch"),
-		StyleHelpKey.Render("i/Enter") + StyleHelpDesc.Render(" edit"),
-		StyleHelpKey.Render("Space") + StyleHelpDesc.Render(" cycle"),
-	}
-	if be.isServiceArch() {
-		hints = append(hints, StyleHelpKey.Render("a")+StyleHelpDesc.Render(" add"))
-		if len(be.Services) > 0 && be.activeSubTab > 0 && !be.isAddTab() {
-			hints = append(hints, StyleHelpKey.Render("d")+StyleHelpDesc.Render(" delete"))
+
+	tab := be.activeTab()
+	switch tab {
+	case beTabServices:
+		ed := be.serviceEditor
+		if ed.itemView == beListViewList {
+			return hintBar("j/k", "navigate", "a", "add service", "d", "delete", "Enter", "edit", "h/l", "sub-tab", "b", "change arch")
 		}
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back", "Tab", "next field")
+	case beTabComm:
+		ed := be.commEditor
+		if ed.itemView == beListViewList {
+			return hintBar("j/k", "navigate", "a", "add link", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		}
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+	case beTabMessaging:
+		if be.eventEditor.itemView == beListViewForm {
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
+		return hintBar("j/k", "navigate", "Space", "cycle", "a", "add event", "d", "del event", "h/l", "sub-tab")
+	default:
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab", "b", "change arch")
 	}
-	return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -264,13 +575,11 @@ func (be BackendEditor) Update(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	return be.updateNormal(msg)
 }
 
-// updateArchSelect handles Phase-1 input (dropdown closed or open).
 func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return be, nil
 	}
-
 	if be.dropdownOpen {
 		switch key.String() {
 		case "j", "down":
@@ -289,19 +598,17 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			be.ArchIdx = be.dropdownIdx
 			be.dropdownOpen = false
 			be.ArchConfirmed = true
-			be.activeSubTab = 0
+			be.activeTabIdx = 0
 			be.activeField = 0
 		case "esc":
 			be.dropdownOpen = false
 		}
 		return be, nil
 	}
-
-	// Dropdown is closed.
 	switch key.String() {
 	case "enter", " ":
 		be.dropdownOpen = true
-		be.dropdownIdx = be.ArchIdx // pre-select the current choice
+		be.dropdownIdx = be.ArchIdx
 	}
 	return be, nil
 }
@@ -311,21 +618,25 @@ func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	if ok {
 		switch key.String() {
 		case "esc":
-			be.saveTextInput()
+			be.saveInput()
 			be.internalMode = beNormal
 			be.formInput.Blur()
 			return be, nil
 		case "tab":
-			be.saveTextInput()
-			fields := be.currentFields()
-			be.activeField = (be.activeField + 1) % len(fields)
-			return be.tryEnterInsert()
+			be.saveInput()
+			fields := be.currentEditableFields()
+			if fields != nil {
+				be.activeField = (be.activeField + 1) % len(*fields)
+				return be.tryEnterInsert()
+			}
 		case "shift+tab":
-			be.saveTextInput()
-			fields := be.currentFields()
-			n := len(fields)
-			be.activeField = (be.activeField - 1 + n) % n
-			return be.tryEnterInsert()
+			be.saveInput()
+			fields := be.currentEditableFields()
+			if fields != nil {
+				n := len(*fields)
+				be.activeField = (be.activeField - 1 + n) % n
+				return be.tryEnterInsert()
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -339,30 +650,47 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		return be, nil
 	}
 
+	tab := be.activeTab()
+
+	// Delegate list editors
+	switch tab {
+	case beTabServices:
+		if be.serviceEditor.itemView == beListViewList {
+			return be.updateServiceList(key)
+		}
+		return be.updateServiceForm(key)
+	case beTabComm:
+		if be.commEditor.itemView == beListViewList {
+			return be.updateCommList(key)
+		}
+		return be.updateCommForm(key)
+	case beTabMessaging:
+		if be.eventEditor.itemView == beListViewForm {
+			return be.updateEventForm(key)
+		}
+		return be.updateMessaging(key)
+	}
+
+	// Generic field navigation for ENV, API GW, AUTH
 	switch key.String() {
-	// ── Back to arch selection ────────────────────────────────────────────
 	case "b":
 		be.ArchConfirmed = false
 		be.dropdownOpen = false
 		be.dropdownIdx = be.ArchIdx
-		be.activeSubTab = 0
+		be.activeTabIdx = 0
 		be.activeField = 0
-
-	// ── Sub-tab navigation ────────────────────────────────────────────────
 	case "h", "left":
-		if be.activeSubTab > 0 {
-			be.activeSubTab--
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
 			be.activeField = 0
 		}
 	case "l", "right":
-		if be.activeSubTab < be.subTabCount()-1 {
-			be.activeSubTab++
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
 			be.activeField = 0
 		}
-
-	// ── Field navigation ──────────────────────────────────────────────────
 	case "j", "down":
-		if fields := be.currentFields(); fields != nil && be.activeField < len(fields)-1 {
+		if fields := be.currentEditableFields(); fields != nil && be.activeField < len(*fields)-1 {
 			be.activeField++
 		}
 	case "k", "up":
@@ -372,65 +700,133 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	case "g":
 		be.activeField = 0
 	case "G":
-		if fields := be.currentFields(); fields != nil {
-			be.activeField = len(fields) - 1
+		if fields := be.currentEditableFields(); fields != nil {
+			be.activeField = len(*fields) - 1
 		}
-
-	// ── Select cycling / text edit ────────────────────────────────────────
 	case "enter", " ":
-		if be.isAddTab() {
-			be.addService()
-			return be, nil
-		}
-		if f := be.mutableField(); f != nil && f.Kind == KindSelect {
+		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CycleNext()
 		} else {
 			return be.tryEnterInsert()
 		}
-
 	case "H", "shift+left":
-		if f := be.mutableField(); f != nil && f.Kind == KindSelect {
+		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
 		}
-
-	// ── Insert mode ───────────────────────────────────────────────────────
 	case "i":
-		if !be.isAddTab() {
-			return be.tryEnterInsert()
-		}
-
-	// ── Service add / delete ──────────────────────────────────────────────
-	case "a":
-		if be.isServiceArch() {
-			be.addService()
-			return be, nil
-		}
-	case "d":
-		if be.isServiceArch() && be.activeSubTab > 0 && !be.isAddTab() {
-			svcIdx := be.activeSubTab - 1
-			be.Services = append(be.Services[:svcIdx], be.Services[svcIdx+1:]...)
-			if be.activeSubTab >= be.subTabCount() {
-				be.activeSubTab = be.subTabCount() - 1
-			}
-			be.activeField = 0
-		}
+		return be.tryEnterInsert()
 	}
-
 	return be, nil
 }
 
-func (be *BackendEditor) addService() {
-	be.Services = append(be.Services, manifest.ServiceDef{})
-	be.activeSubTab = len(be.Services)
-	be.activeField = 0
+func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.serviceEditor
+	n := len(ed.items)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && ed.itemIdx < n-1 {
+			ed.itemIdx++
+		}
+	case "k", "up":
+		if ed.itemIdx > 0 {
+			ed.itemIdx--
+		}
+	case "a":
+		svc := manifest.ServiceDef{}
+		be.Services = append(be.Services, svc)
+		ed.items = append(ed.items, defaultServiceFields())
+		ed.itemIdx = len(ed.items) - 1
+		ed.form = copyFields(ed.items[ed.itemIdx])
+		ed.formIdx = 0
+		ed.itemView = beListViewForm
+		be.activeField = 0
+	case "d":
+		if n > 0 {
+			be.Services = append(be.Services[:ed.itemIdx], be.Services[ed.itemIdx+1:]...)
+			ed.items = append(ed.items[:ed.itemIdx], ed.items[ed.itemIdx+1:]...)
+			if ed.itemIdx > 0 && ed.itemIdx >= len(ed.items) {
+				ed.itemIdx = len(ed.items) - 1
+			}
+		}
+	case "enter", "l", "right":
+		if n > 0 {
+			ed.form = copyFields(ed.items[ed.itemIdx])
+			ed.formIdx = 0
+			ed.itemView = beListViewForm
+			be.activeField = 0
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+			be.activeField = 0
+		}
+	case "b":
+		be.ArchConfirmed = false
+		be.dropdownOpen = false
+		be.dropdownIdx = be.ArchIdx
+		be.activeTabIdx = 0
+		be.activeField = 0
+	}
+	return be, nil
 }
 
-func (be BackendEditor) tryEnterInsert() (BackendEditor, tea.Cmd) {
-	fields := be.currentFields()
-	if fields == nil || be.activeField >= len(fields) {
-		return be, nil
+func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.serviceEditor
+	switch key.String() {
+	case "j", "down":
+		ed.formIdx = (ed.formIdx + 1) % len(ed.form)
+	case "k", "up":
+		n := len(ed.form)
+		ed.formIdx = (ed.formIdx - 1 + n) % n
+	case "enter", " ":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CycleNext()
+			// If language changed, update framework options
+			if f.Key == "language" {
+				be.updateServiceFrameworkOptions(ed)
+			}
+		} else {
+			return be.enterServiceFormInsert()
+		}
+	case "H", "shift+left":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+			if f.Key == "language" {
+				be.updateServiceFrameworkOptions(ed)
+			}
+		}
+	case "i", "a":
+		if ed.form[ed.formIdx].Kind == KindText {
+			return be.enterServiceFormInsert()
+		}
+	case "b", "esc":
+		be.saveServiceForm()
+		ed.itemView = beListViewList
 	}
-	f := fields[be.activeField]
+	return be, nil
+}
+
+func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
+	lang := fieldGet(ed.form, "language")
+	opts, ok := backendFrameworksByLang[lang]
+	if !ok {
+		opts = []string{"Other"}
+	}
+	for i := range ed.form {
+		if ed.form[i].Key == "framework" {
+			ed.form[i].Options = opts
+			ed.form[i].SelIdx = 0
+			ed.form[i].Value = opts[0]
+			break
+		}
+	}
+}
+
+func (be BackendEditor) enterServiceFormInsert() (BackendEditor, tea.Cmd) {
+	ed := &be.serviceEditor
+	f := ed.form[ed.formIdx]
 	if f.Kind != KindText {
 		return be, nil
 	}
@@ -441,80 +837,335 @@ func (be BackendEditor) tryEnterInsert() (BackendEditor, tea.Cmd) {
 	return be, be.formInput.Focus()
 }
 
-// currentFields returns the display fields for the active sub-tab (read-only copy).
-func (be BackendEditor) currentFields() []Field {
-	if be.isAddTab() {
-		return nil
+func (be *BackendEditor) saveServiceForm() {
+	ed := &be.serviceEditor
+	if ed.itemIdx >= len(ed.items) {
+		return
 	}
-	arch := be.currentArch()
-	switch {
-	case arch == "event-driven" || be.activeSubTab == 0:
-		return be.EnvFields
-	case arch == "monolith":
-		return be.AppFields
-	default:
-		svcIdx := be.activeSubTab - 1
-		if svcIdx >= 0 && svcIdx < len(be.Services) {
-			return svcFieldsFromDef(be.Services[svcIdx])
-		}
-		return nil
+	ed.items[ed.itemIdx] = copyFields(ed.form)
+	svc := serviceDefFromFields(ed.form)
+	if ed.itemIdx < len(be.Services) {
+		be.Services[ed.itemIdx] = svc
 	}
 }
 
-// mutableField returns a pointer to the active field for select cycling.
-// Returns nil for service tabs (they only have text fields).
-func (be *BackendEditor) mutableField() *Field {
-	if be.isAddTab() {
-		return nil
+func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.commEditor
+	n := len(ed.items)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && ed.itemIdx < n-1 {
+			ed.itemIdx++
+		}
+	case "k", "up":
+		if ed.itemIdx > 0 {
+			ed.itemIdx--
+		}
+	case "a":
+		be.CommLinks = append(be.CommLinks, manifest.CommLink{})
+		ed.items = append(ed.items, defaultCommFields())
+		ed.itemIdx = len(ed.items) - 1
+		ed.form = copyFields(ed.items[ed.itemIdx])
+		ed.formIdx = 0
+		ed.itemView = beListViewForm
+		be.activeField = 0
+	case "d":
+		if n > 0 {
+			be.CommLinks = append(be.CommLinks[:ed.itemIdx], be.CommLinks[ed.itemIdx+1:]...)
+			ed.items = append(ed.items[:ed.itemIdx], ed.items[ed.itemIdx+1:]...)
+			if ed.itemIdx > 0 && ed.itemIdx >= len(ed.items) {
+				ed.itemIdx = len(ed.items) - 1
+			}
+		}
+	case "enter", "l", "right":
+		if n > 0 {
+			ed.form = copyFields(ed.items[ed.itemIdx])
+			ed.formIdx = 0
+			ed.itemView = beListViewForm
+			be.activeField = 0
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+			be.activeField = 0
+		}
+	case "b":
+		be.ArchConfirmed = false
 	}
-	arch := be.currentArch()
-	switch {
-	case arch == "event-driven" || be.activeSubTab == 0:
-		if be.activeField < len(be.EnvFields) {
-			return &be.EnvFields[be.activeField]
+	return be, nil
+}
+
+func (be BackendEditor) updateCommForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.commEditor
+	switch key.String() {
+	case "j", "down":
+		ed.formIdx = (ed.formIdx + 1) % len(ed.form)
+	case "k", "up":
+		n := len(ed.form)
+		ed.formIdx = (ed.formIdx - 1 + n) % n
+	case "enter", " ":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CycleNext()
+		} else {
+			return be.enterCommFormInsert()
 		}
-	case arch == "monolith":
-		if be.activeField < len(be.AppFields) {
-			return &be.AppFields[be.activeField]
+	case "H", "shift+left":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
 		}
+	case "i", "a":
+		if ed.form[ed.formIdx].Kind == KindText {
+			return be.enterCommFormInsert()
+		}
+	case "b", "esc":
+		be.saveCommForm()
+		ed.itemView = beListViewList
+	}
+	return be, nil
+}
+
+func (be BackendEditor) enterCommFormInsert() (BackendEditor, tea.Cmd) {
+	ed := &be.commEditor
+	f := ed.form[ed.formIdx]
+	if f.Kind != KindText {
+		return be, nil
+	}
+	be.internalMode = beInsert
+	be.formInput.SetValue(f.Value)
+	be.formInput.Width = be.width - 22
+	be.formInput.CursorEnd()
+	return be, be.formInput.Focus()
+}
+
+func (be *BackendEditor) saveCommForm() {
+	ed := &be.commEditor
+	if ed.itemIdx >= len(ed.items) {
+		return
+	}
+	ed.items[ed.itemIdx] = copyFields(ed.form)
+	link := commLinkFromFields(ed.form)
+	if ed.itemIdx < len(be.CommLinks) {
+		be.CommLinks[ed.itemIdx] = link
+	}
+}
+
+func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.eventEditor
+	// Upper section: messaging broker config fields
+	// Lower section: event catalog list
+	// We use a split: first len(MessagingFields) positions are broker fields,
+	// then event list items below.
+	brokerCount := len(be.MessagingFields)
+	eventCount := len(ed.items)
+	total := brokerCount + eventCount
+
+	switch key.String() {
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+			be.activeField = 0
+		}
+	case "l", "right":
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
+			be.activeField = 0
+		}
+	case "b":
+		be.ArchConfirmed = false
+	case "j", "down":
+		if be.activeField < total-1 {
+			be.activeField++
+		}
+	case "k", "up":
+		if be.activeField > 0 {
+			be.activeField--
+		}
+	case "enter", " ":
+		if be.activeField < brokerCount {
+			f := &be.MessagingFields[be.activeField]
+			if f.Kind == KindSelect {
+				f.CycleNext()
+			}
+		} else {
+			eventIdx := be.activeField - brokerCount
+			if eventIdx < eventCount {
+				ed.form = copyFields(ed.items[eventIdx])
+				ed.formIdx = 0
+				ed.itemIdx = eventIdx
+				ed.itemView = beListViewForm
+			}
+		}
+	case "H", "shift+left":
+		if be.activeField < brokerCount {
+			f := &be.MessagingFields[be.activeField]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+			}
+		}
+	case "a":
+		be.Events = append(be.Events, manifest.EventDef{})
+		ed.items = append(ed.items, defaultEventFields())
+		ed.itemIdx = len(ed.items) - 1
+		ed.form = copyFields(ed.items[ed.itemIdx])
+		ed.formIdx = 0
+		ed.itemView = beListViewForm
+		be.activeField = brokerCount + ed.itemIdx
+	case "d":
+		eventIdx := be.activeField - brokerCount
+		if eventIdx >= 0 && eventIdx < eventCount {
+			be.Events = append(be.Events[:eventIdx], be.Events[eventIdx+1:]...)
+			ed.items = append(ed.items[:eventIdx], ed.items[eventIdx+1:]...)
+			if be.activeField > brokerCount && be.activeField >= brokerCount+len(ed.items) {
+				be.activeField = brokerCount + len(ed.items) - 1
+			}
+		}
+	case "i":
+		if be.activeField < brokerCount {
+			return be.tryEnterInsert()
+		}
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateEventForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	ed := &be.eventEditor
+	switch key.String() {
+	case "j", "down":
+		ed.formIdx = (ed.formIdx + 1) % len(ed.form)
+	case "k", "up":
+		n := len(ed.form)
+		ed.formIdx = (ed.formIdx - 1 + n) % n
+	case "enter", " ":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CycleNext()
+		} else {
+			return be.enterEventFormInsert()
+		}
+	case "H", "shift+left":
+		f := &ed.form[ed.formIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i", "a":
+		if ed.form[ed.formIdx].Kind == KindText {
+			return be.enterEventFormInsert()
+		}
+	case "b", "esc":
+		be.saveEventForm()
+		ed.itemView = beListViewList
+	}
+	return be, nil
+}
+
+func (be BackendEditor) enterEventFormInsert() (BackendEditor, tea.Cmd) {
+	ed := &be.eventEditor
+	f := ed.form[ed.formIdx]
+	if f.Kind != KindText {
+		return be, nil
+	}
+	be.internalMode = beInsert
+	be.formInput.SetValue(f.Value)
+	be.formInput.Width = be.width - 22
+	be.formInput.CursorEnd()
+	return be, be.formInput.Focus()
+}
+
+func (be *BackendEditor) saveEventForm() {
+	ed := &be.eventEditor
+	if ed.itemIdx >= len(ed.items) {
+		return
+	}
+	ed.items[ed.itemIdx] = copyFields(ed.form)
+	evt := manifest.EventDef{
+		Name:        fieldGet(ed.form, "name"),
+		Domain:      fieldGet(ed.form, "domain"),
+		Description: fieldGet(ed.form, "description"),
+	}
+	if ed.itemIdx < len(be.Events) {
+		be.Events[ed.itemIdx] = evt
+	}
+}
+
+// currentEditableFields returns a pointer to the current tab's field slice.
+func (be *BackendEditor) currentEditableFields() *[]Field {
+	switch be.activeTab() {
+	case beTabEnv:
+		return &be.EnvFields
+	case beTabMessaging:
+		return &be.MessagingFields
+	case beTabAPIGW:
+		return &be.APIGWFields
+	case beTabAuth:
+		return &be.AuthFields
 	}
 	return nil
 }
 
-// saveTextInput writes the current formInput value back to the right store.
-func (be *BackendEditor) saveTextInput() {
-	val := be.formInput.Value()
-	arch := be.currentArch()
+// mutableFieldPtr returns a pointer to the active field for the current tab.
+func (be *BackendEditor) mutableFieldPtr() *Field {
+	fields := be.currentEditableFields()
+	if fields == nil {
+		return nil
+	}
+	if be.activeField >= 0 && be.activeField < len(*fields) {
+		return &(*fields)[be.activeField]
+	}
+	return nil
+}
 
-	if arch == "event-driven" || be.activeSubTab == 0 {
-		if be.activeField < len(be.EnvFields) && be.EnvFields[be.activeField].Kind == KindText {
-			be.EnvFields[be.activeField].Value = val
+func (be BackendEditor) tryEnterInsert() (BackendEditor, tea.Cmd) {
+	fields := be.currentEditableFields()
+	if fields == nil || be.activeField >= len(*fields) {
+		return be, nil
+	}
+	f := (*fields)[be.activeField]
+	if f.Kind != KindText {
+		return be, nil
+	}
+	be.internalMode = beInsert
+	be.formInput.SetValue(f.Value)
+	be.formInput.Width = be.width - 22
+	be.formInput.CursorEnd()
+	return be, be.formInput.Focus()
+}
+
+func (be *BackendEditor) saveInput() {
+	val := be.formInput.Value()
+
+	// Check if we're in a service form
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindText {
+			ed.form[ed.formIdx].Value = val
 		}
 		return
 	}
-	if arch == "monolith" {
-		if be.activeField < len(be.AppFields) {
-			be.AppFields[be.activeField].Value = val
+	// Check if we're in a comm form
+	if be.commEditor.itemView == beListViewForm {
+		ed := &be.commEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindText {
+			ed.form[ed.formIdx].Value = val
 		}
 		return
 	}
-	svcIdx := be.activeSubTab - 1
-	if svcIdx < 0 || svcIdx >= len(be.Services) {
+	// Check if we're in an event form
+	if be.eventEditor.itemView == beListViewForm {
+		ed := &be.eventEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindText {
+			ed.form[ed.formIdx].Value = val
+		}
 		return
 	}
-	keys := []string{"name", "responsibility", "language", "framework"}
-	if be.activeField >= len(keys) {
+	// Generic field stores
+	fields := be.currentEditableFields()
+	if fields == nil {
 		return
 	}
-	switch keys[be.activeField] {
-	case "name":
-		be.Services[svcIdx].Name = val
-	case "responsibility":
-		be.Services[svcIdx].Responsibility = val
-	case "language":
-		be.Services[svcIdx].Language = val
-	case "framework":
-		be.Services[svcIdx].Framework = val
+	if be.activeField < len(*fields) && (*fields)[be.activeField].Kind == KindText {
+		(*fields)[be.activeField].Value = val
 	}
 }
 
@@ -528,16 +1179,13 @@ func (be BackendEditor) View(w, h int) string {
 	return be.viewSubTabs(w, h)
 }
 
-// viewArchSelect renders Phase 1: a collapsed select row + optional dropdown.
 func (be BackendEditor) viewArchSelect(w, h int) string {
 	var lines []string
-
 	lines = append(lines,
-		StyleSectionDesc.Render("  # Phase 2 · Backend — Choose an architecture"),
+		StyleSectionDesc.Render("  # Backend — Choose an architecture pattern"),
 		"",
 	)
 
-	// ── Select row ────────────────────────────────────────────────────────
 	current := beArchOptions[be.ArchIdx]
 	label := StyleFieldKey.Render("arch_pattern  ")
 	val := StyleFieldValActive.Render(current.label) + StyleSelectArrow.Render(" ▾")
@@ -548,28 +1196,25 @@ func (be BackendEditor) viewArchSelect(w, h int) string {
 	}
 	lines = append(lines, StyleCurLine.Render(row))
 
-	// ── Dropdown list (when open) ─────────────────────────────────────────
 	if be.dropdownOpen {
 		lines = append(lines, "")
 		for i, opt := range beArchOptions {
 			isCur := i == be.dropdownIdx
-
 			var cursor string
 			if isCur {
 				cursor = StyleCurLineNum.Render("  ▶ ")
 			} else {
 				cursor = "      "
 			}
-
+			labelPart := fmt.Sprintf("%-20s", opt.label)
 			var optRow string
-			labelPart := fmt.Sprintf("%-18s", opt.label)
 			if isCur {
 				optRow = cursor +
 					StyleFieldValActive.Render(labelPart) +
 					StyleSectionDesc.Render(opt.desc)
-				raw := lipgloss.Width(optRow)
-				if raw < w {
-					optRow += strings.Repeat(" ", w-raw)
+				rw := lipgloss.Width(optRow)
+				if rw < w {
+					optRow += strings.Repeat(" ", w-rw)
 				}
 				optRow = StyleCurLine.Render(optRow)
 			} else {
@@ -581,127 +1226,210 @@ func (be BackendEditor) viewArchSelect(w, h int) string {
 		}
 	}
 
-	for len(lines) < h {
-		lines = append(lines, StyleTilde.Render("~"))
-	}
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	return strings.Join(lines, "\n") + "\n"
+	return fillTildes(lines, h)
 }
 
-// viewSubTabs renders Phase 2: confirmed arch header + sub-tab content.
 func (be BackendEditor) viewSubTabs(w, h int) string {
 	var lines []string
 
-	// ── Confirmed arch breadcrumb ─────────────────────────────────────────
 	opt := beArchOptions[be.ArchIdx]
 	archStr := StyleFieldValActive.Render(opt.label)
-	hint := StyleSectionDesc.Render("  (b: change)")
+	hint := StyleSectionDesc.Render("  (b: change arch)")
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Backend · ")+archStr+hint,
 		"",
+		renderSubTabBar(be.tabLabels(), be.activeTabIdx),
+		"",
 	)
 
-	// ── Sub-tab bar ───────────────────────────────────────────────────────
-	var tabParts []string
-	for i := 0; i < be.subTabCount(); i++ {
-		lbl := be.subTabLabel(i)
-		if i == be.activeSubTab {
-			tabParts = append(tabParts, StyleTabActive.Render(" "+lbl+" "))
-		} else {
-			tabParts = append(tabParts, StyleTabInactive.Render(" "+lbl+" "))
-		}
-	}
-	lines = append(lines, "  "+strings.Join(tabParts, ""), "")
-
-	// ── Sub-tab content ───────────────────────────────────────────────────
-	if be.isAddTab() {
-		unitLabel := "service"
-		if be.currentArch() == "modular-monolith" {
-			unitLabel = "module"
-		}
-		lines = append(lines,
-			StyleSectionDesc.Render(fmt.Sprintf(
-				"  Press Enter or 'a' to add a new %s", unitLabel)),
-		)
-	} else {
-		lines = append(lines, be.renderFields(w, be.currentFields())...)
+	tab := be.activeTab()
+	switch tab {
+	case beTabEnv:
+		lines = append(lines, renderFormFields(w, be.EnvFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
+	case beTabServices:
+		lines = append(lines, be.viewServiceEditor(w)...)
+	case beTabComm:
+		lines = append(lines, be.viewCommEditor(w)...)
+	case beTabMessaging:
+		lines = append(lines, be.viewMessaging(w)...)
+	case beTabAPIGW:
+		lines = append(lines, renderFormFields(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
+	case beTabAuth:
+		lines = append(lines, renderFormFields(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
 	}
 
-	for len(lines) < h {
-		lines = append(lines, StyleTilde.Render("~"))
-	}
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	return strings.Join(lines, "\n") + "\n"
+	return fillTildes(lines, h)
 }
 
-func (be BackendEditor) renderFields(w int, fields []Field) []string {
-	if fields == nil {
-		return nil
+func (be BackendEditor) viewServiceEditor(w int) []string {
+	ed := be.serviceEditor
+	if ed.itemView == beListViewList {
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Service Units — a: add  d: delete  Enter: edit"), "")
+		if len(ed.items) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no services yet — press 'a' to add)"))
+		} else {
+			for i, item := range ed.items {
+				name := fieldGet(item, "name")
+				if name == "" {
+					name = fmt.Sprintf("(service #%d)", i+1)
+				}
+				lang := fieldGet(item, "language")
+				fw := fieldGet(item, "framework")
+				extra := lang
+				if fw != "" {
+					extra += " / " + fw
+				}
+				lines = append(lines, renderListItem(w, i == ed.itemIdx, "  ▶ ", name, extra))
+			}
+		}
+		return lines
 	}
-	const labelW = 14
-	const eqW = 3
-	valW := w - 4 - labelW - eqW - 1
-	if valW < 10 {
-		valW = 10
+	// Form view
+	idx := ed.itemIdx
+	name := "(new service)"
+	if idx < len(ed.items) {
+		n := fieldGet(ed.form, "name")
+		if n != "" {
+			name = n
+		}
+	}
+
+	arch := be.currentArch()
+	var fields []Field
+	if arch != "hybrid" {
+		// Hide pattern_tag for non-hybrid arches
+		for _, f := range ed.form {
+			if f.Key == "pattern_tag" {
+				continue
+			}
+			fields = append(fields, f)
+		}
+	} else {
+		fields = ed.form
 	}
 
 	var lines []string
-	for i, f := range fields {
-		isCur := i == be.activeField
+	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+	lines = append(lines, renderFormFields(w, fields, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+	return lines
+}
 
+func (be BackendEditor) viewCommEditor(w int) []string {
+	ed := be.commEditor
+	if ed.itemView == beListViewList {
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Communication Links — a: add  d: delete  Enter: edit"), "")
+		if len(ed.items) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no links yet — press 'a' to add)"))
+		} else {
+			for i, item := range ed.items {
+				from := fieldGet(item, "from")
+				to := fieldGet(item, "to")
+				if from == "" {
+					from = "?"
+				}
+				if to == "" {
+					to = "?"
+				}
+				proto := fieldGet(item, "protocol")
+				name := from + " → " + to
+				lines = append(lines, renderListItem(w, i == ed.itemIdx, "  ▶ ", name, proto))
+			}
+		}
+		return lines
+	}
+	from := fieldGet(be.commEditor.form, "from")
+	to := fieldGet(be.commEditor.form, "to")
+	title := from + " → " + to
+	if from == "" && to == "" {
+		title = "(new link)"
+	}
+	var lines []string
+	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
+	lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+	return lines
+}
+
+func (be BackendEditor) viewMessaging(w int) []string {
+	ed := be.eventEditor
+	if ed.itemView == beListViewForm {
+		name := fieldGet(ed.form, "name")
+		if name == "" {
+			name = "(new event)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+		lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+		return lines
+	}
+
+	// Combined view: broker config fields + event catalog list
+	var lines []string
+	lines = append(lines, StyleSectionDesc.Render("  # Messaging Broker + Event Catalog"), "")
+
+	brokerCount := len(be.MessagingFields)
+	// Render broker fields in upper section
+	for i, f := range be.MessagingFields {
+		isCur := i == be.activeField
 		lineNo := StyleLineNum.Render(fmt.Sprintf("%3d ", i+1))
 		if isCur {
 			lineNo = StyleCurLineNum.Render(fmt.Sprintf("%3d ", i+1))
 		}
-
 		var keyStr string
 		if isCur {
 			keyStr = StyleFieldKeyActive.Render(f.Label)
 		} else {
 			keyStr = StyleFieldKey.Render(f.Label)
 		}
-
 		eq := StyleEquals.Render(" = ")
-
+		val := f.DisplayValue()
 		var valStr string
-		switch {
-		case be.internalMode == beInsert && isCur && f.Kind == KindText:
-			valStr = be.formInput.View()
-		case f.Kind == KindSelect:
-			val := f.DisplayValue()
-			if isCur {
-				val = StyleFieldValActive.Render(val)
-			} else {
-				val = StyleFieldVal.Render(val)
-			}
-			valStr = val + StyleSelectArrow.Render(" ▾")
-		default:
-			dv := f.Value
-			if len(dv) > valW {
-				dv = dv[:valW-1] + "…"
-			}
-			if dv == "" {
-				valStr = StyleSectionDesc.Render("_")
-			} else if isCur {
-				valStr = StyleFieldValActive.Render(dv)
-			} else {
-				valStr = StyleFieldVal.Render(dv)
-			}
+		if isCur {
+			valStr = StyleFieldValActive.Render(val) + StyleSelectArrow.Render(" ▾")
+		} else {
+			valStr = StyleFieldVal.Render(val) + StyleSelectArrow.Render(" ▾")
 		}
-
 		row := lineNo + keyStr + eq + valStr
 		if isCur {
-			raw := lipgloss.Width(row)
-			if raw < w {
-				row += strings.Repeat(" ", w-raw)
+			rw := lipgloss.Width(row)
+			if rw < w {
+				row += strings.Repeat(" ", w-rw)
 			}
 			row = StyleCurLine.Render(row)
 		}
 		lines = append(lines, row)
 	}
+
+	// Divider + event catalog
+	lines = append(lines, "", StyleSectionDesc.Render("  ── Event Catalog (a: add  d: delete  Enter: edit) ──"), "")
+
+	if len(ed.items) == 0 {
+		lines = append(lines, StyleSectionDesc.Render("  (no events yet — press 'a' to add)"))
+	} else {
+		for i, item := range ed.items {
+			globalIdx := brokerCount + i
+			isCur := globalIdx == be.activeField
+			name := fieldGet(item, "name")
+			if name == "" {
+				name = fmt.Sprintf("(event #%d)", i+1)
+			}
+			domain := fieldGet(item, "domain")
+			lines = append(lines, renderListItem(w, isCur, "  ▶ ", name, domain))
+		}
+	}
 	return lines
+}
+
+// copyFields makes a deep copy of a field slice.
+func copyFields(src []Field) []Field {
+	dst := make([]Field, len(src))
+	for i, f := range src {
+		dst[i] = f
+		if f.Options != nil {
+			dst[i].Options = make([]string, len(f.Options))
+			copy(dst[i].Options, f.Options)
+		}
+	}
+	return dst
 }

@@ -42,20 +42,21 @@ type Model struct {
 	activeField   int
 	mode          Mode
 
-	// Input widgets (reused for the active field)
+	// Input widgets (reused for generic sections, not used by delegated editors)
 	textInput textinput.Model
 	textArea  textarea.Model
 
-	// backendEditor manages the structured backend configuration for the BACK section.
-	backendEditor BackendEditor
-	// dataEditor manages the structured entity/column schema for the DATA section.
-	dataEditor DataEditor
-	// dbEditor manages the named database/cache sources for the DATABASES section.
-	dbEditor DBEditor
+	// ── Main tab editors (one per section) ───────────────────────────────────
+	backendEditor   BackendEditor
+	dataTabEditor   DataTabEditor
+	contractsEditor ContractsEditor
+	frontendEditor  FrontendEditor
+	infraEditor     InfraEditor
+	crossCutEditor  CrossCutEditor
 
-	cmdBuffer string // characters typed after ':'
-	statusMsg string // transient status line message
-	statusErr bool   // true = red, false = green
+	cmdBuffer string
+	statusMsg string
+	statusErr bool
 	modified  bool
 
 	width  int
@@ -85,13 +86,16 @@ func NewModel(onSave SaveFunc) Model {
 		Background(lipgloss.Color(clrBgHL))
 
 	return Model{
-		sections:      initSections(),
-		textInput:     ti,
-		textArea:      ta,
-		backendEditor: newBackendEditor(),
-		dataEditor:    newDataEditor(),
-		dbEditor:      newDBEditor(),
-		onSave:        onSave,
+		sections:        initSections(),
+		textInput:       ti,
+		textArea:        ta,
+		backendEditor:   newBackendEditor(),
+		dataTabEditor:   newDataTabEditor(),
+		contractsEditor: newContractsEditor(),
+		frontendEditor:  newFrontendEditor(),
+		infraEditor:     newInfraEditor(),
+		crossCutEditor:  newCrossCutEditor(),
+		onSave:          onSave,
 	}
 }
 
@@ -100,31 +104,34 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// isBackendSection returns true when the active section is the backend editor.
-func (m Model) isBackendSection() bool {
-	return m.sections[m.activeSection].ID == "backend"
+// ── Section routing helpers ───────────────────────────────────────────────────
+
+func (m Model) activeSectionID() string {
+	return m.sections[m.activeSection].ID
 }
 
-// isDataSection returns true when the active section is the entity/column editor.
-func (m Model) isDataSection() bool {
-	return m.sections[m.activeSection].ID == "entities"
-}
-
-// isDBSection returns true when the active section is the database sources editor.
-func (m Model) isDBSection() bool {
-	return m.sections[m.activeSection].ID == "databases"
-}
+func (m Model) isBackendSection() bool    { return m.activeSectionID() == "backend" }
+func (m Model) isDataSection() bool       { return m.activeSectionID() == "data" }
+func (m Model) isContractsSection() bool  { return m.activeSectionID() == "contracts" }
+func (m Model) isFrontendSection() bool   { return m.activeSectionID() == "frontend" }
+func (m Model) isInfraSection() bool      { return m.activeSectionID() == "infrastructure" }
+func (m Model) isCrossCutSection() bool   { return m.activeSectionID() == "crosscut" }
 
 // activeMode returns the effective mode, delegating to sub-editors when appropriate.
 func (m Model) activeMode() Mode {
-	if m.isBackendSection() {
+	switch {
+	case m.isBackendSection():
 		return m.backendEditor.Mode()
-	}
-	if m.isDataSection() {
-		return m.dataEditor.Mode()
-	}
-	if m.isDBSection() {
-		return m.dbEditor.Mode()
+	case m.isDataSection():
+		return m.dataTabEditor.Mode()
+	case m.isContractsSection():
+		return m.contractsEditor.Mode()
+	case m.isFrontendSection():
+		return m.frontendEditor.Mode()
+	case m.isInfraSection():
+		return m.infraEditor.Mode()
+	case m.isCrossCutSection():
+		return m.crossCutEditor.Mode()
 	}
 	return m.mode
 }
@@ -154,11 +161,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
-		return m, nil
+		// Pass non-key messages to active delegated editor.
+		return m.delegateUpdate(msg)
 	}
-	m.statusMsg = "" // clear on any keypress in normal mode
+	m.statusMsg = ""
 
-	// Always handle global keys regardless of section.
+	// Global keys always processed regardless of section.
 	switch key.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -171,7 +179,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		return m.execSave()
 
-	// ── Section (tab) navigation ─────────────────────────────────────────
+	// Section (tab) navigation with Tab/Shift+Tab only
 	case "tab":
 		m.activeSection = (m.activeSection + 1) % len(m.sections)
 		m.activeField = 0
@@ -183,126 +191,52 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Delegate all other input to BackendEditor when in the BACK section.
-	if m.isBackendSection() {
-		var cmd tea.Cmd
-		m.backendEditor, cmd = m.backendEditor.Update(msg)
-		m.modified = true
-		return m, cmd
-	}
-
-	// Delegate all other input to DataEditor when in the DATA section.
-	if m.isDataSection() {
-		var cmd tea.Cmd
-		m.dataEditor, cmd = m.dataEditor.Update(msg)
-		m.modified = true
-		return m, cmd
-	}
-
-	// Delegate all other input to DBEditor when in the DATABASES section.
-	if m.isDBSection() {
-		var cmd tea.Cmd
-		m.dbEditor, cmd = m.dbEditor.Update(msg)
-		// Sync available databases into DataEditor so entity settings shows live options.
-		m.dataEditor.availableDbs = m.dbEditor.Sources
-		m.modified = true
-		return m, cmd
-	}
-
-	// ── Standard field navigation ─────────────────────────────────────────
-	switch key.String() {
-	case "j", "down":
-		sec := m.sections[m.activeSection]
-		if m.activeField < len(sec.Fields)-1 {
-			m.activeField++
-		}
-
-	case "k", "up":
-		if m.activeField > 0 {
-			m.activeField--
-		}
-
-	case "l", "right":
-		m.activeSection = (m.activeSection + 1) % len(m.sections)
-		m.activeField = 0
-
-	case "h", "left":
-		m.activeSection = (m.activeSection - 1 + len(m.sections)) % len(m.sections)
-		m.activeField = 0
-
-	// ── Jump to first / last field ────────────────────────────────────────
-	case "g":
-		m.activeField = 0
-
-	case "G":
-		m.activeField = len(m.sections[m.activeSection].Fields) - 1
-
-	// ── Enter INSERT mode ─────────────────────────────────────────────────
-	case "i", "a":
-		return m.enterInsert()
-
-	// ── Select fields: cycle with Enter / Space ───────────────────────────
-	case "enter", " ":
-		sec := &m.sections[m.activeSection]
-		f := &sec.Fields[m.activeField]
-		if f.Kind == KindSelect {
-			f.CycleNext()
-			m.modified = true
-		} else {
-			return m.enterInsert()
-		}
-
-	case "shift+left", "H":
-		sec := &m.sections[m.activeSection]
-		f := &sec.Fields[m.activeField]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-			m.modified = true
-		}
-	}
-
-	return m, nil
+	// Delegate all remaining input to the active section editor.
+	return m.delegateUpdate(msg)
 }
 
-func (m Model) enterInsert() (Model, tea.Cmd) {
-	sec := m.sections[m.activeSection]
-	f := sec.Fields[m.activeField]
+func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 
-	if f.Kind == KindSelect {
-		return m, nil // select fields don't use insert mode
+	switch {
+	case m.isBackendSection():
+		m.backendEditor, cmd = m.backendEditor.Update(msg)
+		m.modified = true
+	case m.isDataSection():
+		m.dataTabEditor, cmd = m.dataTabEditor.Update(msg)
+		m.modified = true
+	case m.isContractsSection():
+		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
+		m.modified = true
+	case m.isFrontendSection():
+		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
+		m.modified = true
+	case m.isInfraSection():
+		m.infraEditor, cmd = m.infraEditor.Update(msg)
+		m.modified = true
+	case m.isCrossCutSection():
+		m.crossCutEditor, cmd = m.crossCutEditor.Update(msg)
+		m.modified = true
 	}
 
-	m.mode = ModeInsert
-
-	if f.Kind == KindTextArea {
-		m.textArea.SetValue(f.Value)
-		m.textArea.SetWidth(m.width - 4)
-		m.textArea.SetHeight(m.contentHeight() - 4)
-		return m, m.textArea.Focus()
-	}
-
-	m.textInput.SetValue(f.Value)
-	m.textInput.Width = m.width - 22 // label(14) + " = "(3) + padding
-	m.textInput.CursorEnd()
-	return m, m.textInput.Focus()
+	return m, cmd
 }
 
 func (m Model) updateInsert(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// All editors handle their own insert mode internally;
+	// the root model's insert mode is only used if no sub-editor is active.
 	key, ok := msg.(tea.KeyMsg)
 	if ok {
 		switch key.String() {
 		case "esc":
 			return m.exitInsert()
-
 		case "tab":
-			// Save current field and move to next, staying in INSERT mode.
 			m = m.saveActiveInput()
 			sec := m.sections[m.activeSection]
 			if m.activeField < len(sec.Fields)-1 {
 				m.activeField++
 			}
 			return m.enterInsert()
-
 		case "shift+tab":
 			m = m.saveActiveInput()
 			if m.activeField > 0 {
@@ -315,14 +249,31 @@ func (m Model) updateInsert(msg tea.Msg) (tea.Model, tea.Cmd) {
 	sec := m.sections[m.activeSection]
 	f := sec.Fields[m.activeField]
 	var cmd tea.Cmd
-
 	if f.Kind == KindTextArea {
 		m.textArea, cmd = m.textArea.Update(msg)
 	} else {
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
-
 	return m, cmd
+}
+
+func (m Model) enterInsert() (Model, tea.Cmd) {
+	sec := m.sections[m.activeSection]
+	f := sec.Fields[m.activeField]
+	if f.Kind == KindSelect {
+		return m, nil
+	}
+	m.mode = ModeInsert
+	if f.Kind == KindTextArea {
+		m.textArea.SetValue(f.Value)
+		m.textArea.SetWidth(m.width - 4)
+		m.textArea.SetHeight(m.contentHeight() - 4)
+		return m, m.textArea.Focus()
+	}
+	m.textInput.SetValue(f.Value)
+	m.textInput.Width = m.width - 22
+	m.textInput.CursorEnd()
+	return m, m.textInput.Focus()
 }
 
 func (m Model) exitInsert() (Model, tea.Cmd) {
@@ -336,13 +287,11 @@ func (m Model) exitInsert() (Model, tea.Cmd) {
 func (m Model) saveActiveInput() Model {
 	sec := m.sections[m.activeSection]
 	f := sec.Fields[m.activeField]
-
 	if f.Kind == KindTextArea {
 		sec.Fields[m.activeField].Value = m.textArea.Value()
 	} else {
 		sec.Fields[m.activeField].Value = m.textInput.Value()
 	}
-
 	m.sections[m.activeSection] = sec
 	m.modified = true
 	return m
@@ -353,28 +302,23 @@ func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-
 	switch key.String() {
 	case "esc":
 		m.mode = ModeNormal
 		m.cmdBuffer = ""
-
 	case "enter":
 		return m.execCommand(m.cmdBuffer)
-
 	case "backspace":
 		if len(m.cmdBuffer) > 0 {
 			m.cmdBuffer = m.cmdBuffer[:len(m.cmdBuffer)-1]
 		} else {
 			m.mode = ModeNormal
 		}
-
 	default:
 		if len(key.Runes) > 0 {
 			m.cmdBuffer += string(key.Runes)
 		}
 	}
-
 	return m, nil
 }
 
@@ -385,33 +329,24 @@ func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch strings.TrimSpace(cmd) {
 	case "q", "quit":
 		return m, tea.Quit
-
 	case "q!", "quit!":
 		return m, tea.Quit
-
 	case "w", "write":
 		return m.execSave()
-
 	case "wq", "x":
 		m2, saveCmd := m.execSave()
 		model := m2.(Model)
-		// chain quit after save
 		return model, tea.Sequence(saveCmd, tea.Quit)
-
 	case "tabn", "bn":
 		m.activeSection = (m.activeSection + 1) % len(m.sections)
 		m.activeField = 0
-
 	case "tabp", "bp":
 		m.activeSection = (m.activeSection - 1 + len(m.sections)) % len(m.sections)
 		m.activeField = 0
-
 	case "help", "h":
-		m.statusMsg = "j/k:nav  i:insert  Tab:section  Enter:cycle  :w save  :q quit  :wq save+quit"
+		m.statusMsg = "Tab:section  j/k:nav  i:insert  Space:cycle  :w save  :q quit"
 		m.statusErr = false
-
 	default:
-		// :1-9 to jump to section by number
 		if len(cmd) == 1 && cmd[0] >= '1' && cmd[0] <= '9' {
 			idx := int(cmd[0] - '1')
 			if idx < len(m.sections) {
@@ -423,7 +358,6 @@ func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("E492: Not an editor command: %s", cmd)
 		m.statusErr = true
 	}
-
 	return m, nil
 }
 
@@ -433,14 +367,12 @@ func (m Model) execSave() (tea.Model, tea.Cmd) {
 		m.statusErr = true
 		return m, nil
 	}
-
 	mf := m.BuildManifest()
 	if err := m.onSave(mf); err != nil {
 		m.statusMsg = fmt.Sprintf("Error: %v", err)
 		m.statusErr = true
 		return m, nil
 	}
-
 	m.modified = false
 	m.statusMsg = `"manifest.json" written`
 	m.statusErr = false
@@ -449,56 +381,18 @@ func (m Model) execSave() (tea.Model, tea.Cmd) {
 
 // BuildManifest converts the form state into a Manifest struct.
 func (m Model) BuildManifest() *manifest.Manifest {
-	get := func(secID, key string) string {
-		for _, s := range m.sections {
-			if s.ID != secID {
-				continue
-			}
-			for _, f := range s.Fields {
-				if f.Key == key {
-					return f.DisplayValue()
-				}
-			}
-		}
-		return ""
-	}
-
+	dataPillar := m.dataTabEditor.ToManifestDataPillar()
 	return &manifest.Manifest{
-		Databases: m.dbEditor.Sources,
-		Entities:  m.dataEditor.Entities,
+		Data:      dataPillar,
+		Backend:   m.backendEditor.ToManifest(),
+		Contracts: m.contractsEditor.ToManifestContractsPillar(),
+		Frontend:  m.frontendEditor.ToManifestFrontendPillar(),
+		Infra:     m.infraEditor.ToManifestInfraPillar(),
+		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
 
-		// Phase 2 – Domain-Specific Execution Paths
-		Backend: m.backendEditor.ToManifest(),
-		Frontend: manifest.FrontendPillar{
-			Rendering:     manifest.RenderingMode(get("frontend", "rendering")),
-			Framework:     get("frontend", "fe_framework"),
-			ServerState:   get("frontend", "server_state"),
-			ClientState:   get("frontend", "client_state"),
-			Styling:       get("frontend", "styling"),
-			BrowserMatrix: get("frontend", "browser_matrix"),
-		},
-
-		// Phase 3 – Lifecycle Operations & Tooling
-		Testing: manifest.TestingPillar{
-			UnitCoverage:    get("testing", "unit_coverage"),
-			IntegCoverage:   get("testing", "integ_coverage"),
-			E2EFramework:    manifest.E2EFramework(get("testing", "e2e_framework")),
-			E2ECoverage:     get("testing", "e2e_coverage"),
-			TestingStrategy: get("testing", "test_strategy"),
-		},
-		CICD: manifest.CICDPillar{
-			CIPlatform:    manifest.CIPlatform(get("cicd", "ci_platform")),
-			PipelineGates: get("cicd", "pipeline_gates"),
-			EnvStrategy:   get("cicd", "env_strategy"),
-			SecretsMgmt:   manifest.SecretsBackend(get("cicd", "secrets_mgmt")),
-		},
-		Telemetry: manifest.TelemetryPillar{
-			LogSolution: manifest.LogSolution(get("telemetry", "log_solution")),
-			LogFormat:   get("telemetry", "log_format"),
-			Metrics:     get("telemetry", "metrics"),
-			Tracing:     get("telemetry", "tracing"),
-			Alerting:    get("telemetry", "alerting"),
-		},
+		// Legacy flat fields for backward compatibility
+		Databases: dataPillar.Databases,
+		Entities:  dataPillar.Entities,
 	}
 }
 
@@ -533,7 +427,6 @@ func (m Model) View() string {
 	return b.String()
 }
 
-// renderHeader renders the top bar: filename + section counter.
 func (m Model) renderHeader(w int) string {
 	sec := m.sections[m.activeSection]
 	modMark := ""
@@ -550,71 +443,46 @@ func (m Model) renderHeader(w int) string {
 	return StyleHeaderBar.Width(w).Render(line)
 }
 
-// renderContent renders the main editing area.
 func (m Model) renderContent(w int) string {
-	sec := m.sections[m.activeSection]
 	ch := m.contentHeight()
 
-	// Delegate to BackendEditor for the backend section.
-	if m.isBackendSection() {
+	switch {
+	case m.isBackendSection():
 		return m.backendEditor.View(w, ch)
+	case m.isDataSection():
+		return m.dataTabEditor.View(w, ch)
+	case m.isContractsSection():
+		return m.contractsEditor.View(w, ch)
+	case m.isFrontendSection():
+		return m.frontendEditor.View(w, ch)
+	case m.isInfraSection():
+		return m.infraEditor.View(w, ch)
+	case m.isCrossCutSection():
+		return m.crossCutEditor.View(w, ch)
 	}
 
-	// Delegate to DataEditor for the entities section.
-	if m.isDataSection() {
-		return m.dataEditor.View(w, ch)
-	}
-
-	// Delegate to DBEditor for the databases section.
-	if m.isDBSection() {
-		return m.dbEditor.View(w, ch)
-	}
-
-	// When a textarea field is active in INSERT mode, give it the full area.
-	if m.mode == ModeInsert {
-		f := sec.Fields[m.activeField]
-		if f.Kind == KindTextArea {
-			return m.renderTextAreaFull(w, ch, f)
-		}
-	}
-
+	// Fallback: should not be reached for 6-section layout
+	sec := m.sections[m.activeSection]
 	return m.renderFieldList(w, ch, sec)
 }
 
-func (m Model) renderTextAreaFull(w, h int, f Field) string {
-	var b strings.Builder
-	label := StyleTextAreaLabel.Render(fmt.Sprintf("  ── %s ─── (Esc to exit INSERT) ", f.Key))
-	b.WriteString(label + "\n")
-	b.WriteString(StyleTextAreaBorder.
-		Width(w - 2).
-		Height(h - 2).
-		Render(m.textArea.View()))
-	b.WriteString("\n")
-	return b.String()
-}
-
 func (m Model) renderFieldList(w, h int, sec Section) string {
-	const lineNumW = 4 // e.g. " 1  "
-	const labelW = 14  // matches the padded Label strings
-	const eqW = 3      // " = "
-
+	const lineNumW = 4
+	const labelW = 14
+	const eqW = 3
 	valW := w - lineNumW - labelW - eqW - 1
 	if valW < 10 {
 		valW = 10
 	}
 
 	var lines []string
-
-	// Section description as a comment line
 	descLine := StyleSectionDesc.Render(fmt.Sprintf("  # %s", sec.Desc))
-	lines = append(lines, descLine)
-	lines = append(lines, "")
+	lines = append(lines, descLine, "")
 
 	for i, f := range sec.Fields {
 		lineNo := i + 1
 		isCur := i == m.activeField
 
-		// ── Line number ───────────────────────────────────────────────────
 		var numStr string
 		if isCur {
 			numStr = StyleCurLineNum.Render(fmt.Sprintf("%3d ", lineNo))
@@ -622,7 +490,6 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 			numStr = StyleLineNum.Render(fmt.Sprintf("%3d ", lineNo))
 		}
 
-		// ── Key label ─────────────────────────────────────────────────────
 		var keyStr string
 		if isCur {
 			keyStr = StyleFieldKeyActive.Render(f.Label)
@@ -630,13 +497,10 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 			keyStr = StyleFieldKey.Render(f.Label)
 		}
 
-		// ── Equals sign ───────────────────────────────────────────────────
 		eq := StyleEquals.Render(" = ")
 
-		// ── Value ─────────────────────────────────────────────────────────
 		var valStr string
 		if m.mode == ModeInsert && isCur && f.Kind == KindText {
-			// Show live textinput cursor
 			valStr = m.textInput.View()
 		} else if f.Kind == KindSelect {
 			arrow := StyleSelectArrow.Render(" ▾")
@@ -652,7 +516,6 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 			if len(dv) > valW {
 				dv = dv[:valW-1] + "…"
 			}
-			// Show cursor placeholder when empty
 			if dv == "" && !isCur {
 				dv = StyleFieldVal.Foreground(lipgloss.Color(clrFgDim)).Render("_")
 			} else if isCur {
@@ -666,33 +529,19 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 		}
 
 		row := numStr + keyStr + eq + valStr
-
 		if isCur {
-			// Pad and highlight the entire row
 			rawW := lipgloss.Width(row)
 			if rawW < w {
 				row += strings.Repeat(" ", w-rawW)
 			}
 			row = StyleCurLine.Render(row)
 		}
-
 		lines = append(lines, row)
 	}
 
-	// Fill with tilde lines
-	for len(lines) < h {
-		lines = append(lines, StyleTilde.Render("~"))
-	}
-
-	// Trim to content height
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-
-	return strings.Join(lines, "\n") + "\n"
+	return fillTildes(lines, h)
 }
 
-// renderTabBar renders the vim-style tab bar.
 func (m Model) renderTabBar(w int) string {
 	var parts []string
 	for i, s := range m.sections {
@@ -710,7 +559,6 @@ func (m Model) renderTabBar(w int) string {
 	return tabs
 }
 
-// renderStatusLine renders the bottom status bar.
 func (m Model) renderStatusLine(w int) string {
 	var modeLabel string
 	switch m.activeMode() {
@@ -723,7 +571,7 @@ func (m Model) renderStatusLine(w int) string {
 	}
 
 	sec := m.sections[m.activeSection]
-	pos := fmt.Sprintf("%d,%d", m.activeField+1, len(sec.Fields))
+	pos := fmt.Sprintf("%d/%d", m.activeSection+1, len(m.sections))
 	right := StyleStatusRight.Render(fmt.Sprintf(" %s.manifest  %s  All ", sec.ID, pos))
 
 	msg := ""
@@ -747,60 +595,46 @@ func (m Model) renderStatusLine(w int) string {
 	return line
 }
 
-// renderCmdLine renders the very bottom command / hint line.
 func (m Model) renderCmdLine(w int) string {
-	// Command mode is always global.
 	if m.mode == ModeCommand {
 		cursor := StyleCursor.Render(" ")
 		return StyleCmdLine.Render(":"+m.cmdBuffer) + cursor
 	}
 
-	// Delegate hint line to BackendEditor when in the backend section.
-	if m.isBackendSection() {
-		line := m.backendEditor.HintLine()
-		if lipgloss.Width(line) > w {
-			line = line[:w-1]
+	// Delegate hint line to the active sub-editor.
+	var line string
+	switch {
+	case m.isBackendSection():
+		line = m.backendEditor.HintLine()
+	case m.isDataSection():
+		line = m.dataTabEditor.HintLine()
+	case m.isContractsSection():
+		line = m.contractsEditor.HintLine()
+	case m.isFrontendSection():
+		line = m.frontendEditor.HintLine()
+	case m.isInfraSection():
+		line = m.infraEditor.HintLine()
+	case m.isCrossCutSection():
+		line = m.crossCutEditor.HintLine()
+	default:
+		switch m.mode {
+		case ModeNormal:
+			hints := []string{
+				StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
+				StyleHelpKey.Render("i") + StyleHelpDesc.Render(" insert"),
+				StyleHelpKey.Render("Tab") + StyleHelpDesc.Render(" section"),
+				StyleHelpKey.Render("Enter") + StyleHelpDesc.Render(" cycle"),
+				StyleHelpKey.Render(":w") + StyleHelpDesc.Render(" save"),
+				StyleHelpKey.Render(":q") + StyleHelpDesc.Render(" quit"),
+			}
+			line = "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
+		case ModeInsert:
+			line = StyleInsertMode.Render(" -- INSERT -- ") + StyleHelpDesc.Render("  Esc: normal mode  Tab: next field")
 		}
-		return line
 	}
 
-	// Delegate hint line to DataEditor when in the entities section.
-	if m.isDataSection() {
-		line := m.dataEditor.HintLine()
-		if lipgloss.Width(line) > w {
-			line = line[:w-1]
-		}
-		return line
+	if lipgloss.Width(line) > w {
+		line = line[:w-1]
 	}
-
-	// Delegate hint line to DBEditor when in the databases section.
-	if m.isDBSection() {
-		line := m.dbEditor.HintLine()
-		if lipgloss.Width(line) > w {
-			line = line[:w-1]
-		}
-		return line
-	}
-
-	switch m.mode {
-	case ModeNormal:
-		hints := []string{
-			StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
-			StyleHelpKey.Render("i") + StyleHelpDesc.Render(" insert"),
-			StyleHelpKey.Render("Tab") + StyleHelpDesc.Render(" section"),
-			StyleHelpKey.Render("Enter") + StyleHelpDesc.Render(" cycle"),
-			StyleHelpKey.Render(":w") + StyleHelpDesc.Render(" save"),
-			StyleHelpKey.Render(":q") + StyleHelpDesc.Render(" quit"),
-		}
-		line := "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
-		if lipgloss.Width(line) > w {
-			line = line[:w-1]
-		}
-		return line
-
-	case ModeInsert:
-		return StyleInsertMode.Render(" -- INSERT -- ") + StyleHelpDesc.Render("  Esc: normal mode  Tab: next field")
-	}
-
-	return ""
+	return line
 }

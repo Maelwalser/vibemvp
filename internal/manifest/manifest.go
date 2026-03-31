@@ -16,6 +16,7 @@ const (
 	ArchModularMonolith ArchPattern = "modular-monolith"
 	ArchMicroservices   ArchPattern = "microservices"
 	ArchEventDriven     ArchPattern = "event-driven"
+	ArchHybrid          ArchPattern = "hybrid"
 )
 
 type CommProtocol string
@@ -40,9 +41,9 @@ const (
 type ComputeEnv string
 
 const (
-	ComputeServerless     ComputeEnv = "serverless"
-	ComputeContainerized  ComputeEnv = "containerized"
-	ComputeBareMetalVM    ComputeEnv = "bare-metal/VM"
+	ComputeServerless    ComputeEnv = "serverless"
+	ComputeContainerized ComputeEnv = "containerized"
+	ComputeBareMetalVM   ComputeEnv = "bare-metal/VM"
 )
 
 type DatabaseType string
@@ -72,7 +73,6 @@ const (
 	RenderSSG RenderingMode = "SSG"
 	RenderISR RenderingMode = "ISR"
 )
-
 
 type E2EFramework string
 
@@ -116,17 +116,16 @@ const (
 
 // DBSourceDef describes a named database or cache source used in the project.
 type DBSourceDef struct {
-	Alias     string       `json:"alias"`              // e.g. "primary", "cache", "analytics"
+	Alias     string       `json:"alias"`
 	Type      DatabaseType `json:"type"`
 	Version   string       `json:"version,omitempty"`
-	Namespace string       `json:"namespace,omitempty"` // schema / keyspace / database name
+	Namespace string       `json:"namespace,omitempty"`
 	IsCache   bool         `json:"is_cache"`
 	Notes     string       `json:"notes,omitempty"`
 }
 
 // ── Column / Entity definitions ───────────────────────────────────────────────
 
-// ColumnType enumerates the SQL/schema data types for a column.
 type ColumnType string
 
 const (
@@ -155,7 +154,6 @@ const (
 	ColTypeOther       ColumnType = "other"
 )
 
-// CascadeAction defines the referential action on a foreign key.
 type CascadeAction string
 
 const (
@@ -166,7 +164,6 @@ const (
 	CascadeSetDefault CascadeAction = "SET DEFAULT"
 )
 
-// IndexType enumerates supported index algorithms.
 type IndexType string
 
 const (
@@ -177,7 +174,6 @@ const (
 	IndexBRIN  IndexType = "brin"
 )
 
-// ForeignKey describes a column-level foreign key reference and its referential actions.
 type ForeignKey struct {
 	RefEntity string        `json:"ref_entity"`
 	RefColumn string        `json:"ref_column"`
@@ -185,38 +181,34 @@ type ForeignKey struct {
 	OnUpdate  CascadeAction `json:"on_update"`
 }
 
-// ColumnDef fully specifies a single column within an entity.
 type ColumnDef struct {
 	Name       string      `json:"name"`
 	Type       ColumnType  `json:"type"`
-	Length     string      `json:"length,omitempty"`     // e.g. "255" for varchar(255)
+	Length     string      `json:"length,omitempty"`
 	Nullable   bool        `json:"nullable"`
 	PrimaryKey bool        `json:"primary_key"`
 	Unique     bool        `json:"unique"`
 	Default    string      `json:"default,omitempty"`
-	Check      string      `json:"check,omitempty"`      // SQL CHECK expression
+	Check      string      `json:"check,omitempty"`
 	ForeignKey *ForeignKey `json:"foreign_key,omitempty"`
 	Index      bool        `json:"index"`
 	IndexType  IndexType   `json:"index_type,omitempty"`
 	Notes      string      `json:"notes,omitempty"`
 }
 
-// UniqueConstraint represents a composite unique constraint across multiple columns.
 type UniqueConstraint struct {
 	Name    string   `json:"name,omitempty"`
 	Columns []string `json:"columns"`
 }
 
-// EntityDef defines a domain entity (table/collection) and all its columns.
 type EntityDef struct {
 	Name        string `json:"name"`
-	Database    string `json:"database,omitempty"`    // alias ref to DBSourceDef
+	Database    string `json:"database,omitempty"`
 	Description string `json:"description,omitempty"`
 
-	// Caching
 	Cached     bool   `json:"cached"`
-	CacheStore string `json:"cache_store,omitempty"` // alias of a cache DBSourceDef
-	CacheTTL   string `json:"cache_ttl,omitempty"`   // e.g. "5m", "1h", "24h"
+	CacheStore string `json:"cache_store,omitempty"`
+	CacheTTL   string `json:"cache_ttl,omitempty"`
 
 	Columns           []ColumnDef        `json:"columns"`
 	UniqueConstraints []UniqueConstraint `json:"unique_constraints,omitempty"`
@@ -225,109 +217,379 @@ type EntityDef struct {
 
 // ── Phase 1: Universal Global Constants ──────────────────────────────────────
 
-// DomainPillar captures entity schemas, RBAC, and compliance boundaries.
 type DomainPillar struct {
 	Entities   []EntityDef `json:"entities,omitempty"`
 	RBACMatrix string      `json:"rbac_matrix"`
-	Compliance string      `json:"compliance"` // GDPR, HIPAA, PCI-DSS, none
+	Compliance string      `json:"compliance"`
 }
 
-// TopologyPillar defines the structural model and inter-domain contracts.
 type TopologyPillar struct {
-	ArchPattern     ArchPattern      `json:"arch_pattern"`
-	CommProtocol    CommProtocol     `json:"comm_protocol"`
-	Serialization   SerializationFmt `json:"serialization"`
-	DomainNotes     string           `json:"domain_notes,omitempty"`
+	ArchPattern   ArchPattern      `json:"arch_pattern"`
+	CommProtocol  CommProtocol     `json:"comm_protocol"`
+	Serialization SerializationFmt `json:"serialization"`
+	DomainNotes   string           `json:"domain_notes,omitempty"`
 }
 
-// GlobalNFRPillar holds SLOs and disaster recovery parameters.
 type GlobalNFRPillar struct {
-	UptimeSLO      string `json:"uptime_slo"`       // e.g. "99.9%"
-	ConcurrentConn string `json:"concurrent_conn"`  // e.g. "5000"
-	RTO            string `json:"rto"`              // Recovery Time Objective
-	RPO            string `json:"rpo"`              // Recovery Point Objective
+	UptimeSLO      string `json:"uptime_slo"`
+	ConcurrentConn string `json:"concurrent_conn"`
+	RTO            string `json:"rto"`
+	RPO            string `json:"rpo"`
 	NFRNotes       string `json:"nfr_notes,omitempty"`
 }
 
-// ── Phase 2: Domain-Specific Execution Paths ─────────────────────────────────
+// ── Backend types ─────────────────────────────────────────────────────────────
 
 // ServiceDef represents one backend module or microservice.
 type ServiceDef struct {
-	Name           string `json:"name"`
-	Responsibility string `json:"responsibility"`
-	Language       string `json:"language"`
-	Framework      string `json:"framework"`
+	Name           string              `json:"name"`
+	Responsibility string              `json:"responsibility"`
+	Language       string              `json:"language"`
+	Framework      string              `json:"framework"`
+	PatternTag     string              `json:"pattern_tag,omitempty"` // hybrid only
+	Interfaces     []ExposedInterface  `json:"interfaces,omitempty"`
 }
 
-// BackendPillar covers compute environment, architecture pattern, and service definitions.
+// ExposedInterface describes one interface a service unit exposes.
+type ExposedInterface struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+}
+
+// CommLink describes a directed communication link between two service units.
+type CommLink struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Direction string `json:"direction"`
+	Protocol  string `json:"protocol"`
+	Trigger   string `json:"trigger,omitempty"`
+	SyncAsync string `json:"sync_async"`
+}
+
+// MessagingConfig describes the message broker configuration.
+type MessagingConfig struct {
+	BrokerTech    string `json:"broker_tech"`
+	Deployment    string `json:"deployment"`
+	Serialization string `json:"serialization"`
+	Delivery      string `json:"delivery"`
+}
+
+// EventDef describes a single entry in the event catalog.
+type EventDef struct {
+	Name        string `json:"name"`
+	Domain      string `json:"domain,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// APIGatewayConfig describes API gateway configuration.
+type APIGatewayConfig struct {
+	Technology string `json:"technology"`
+	Routing    string `json:"routing"`
+	Features   string `json:"features,omitempty"`
+}
+
+// AuthConfig describes authentication and identity settings.
+type AuthConfig struct {
+	Strategy     string `json:"strategy"`
+	Provider     string `json:"provider"`
+	AuthzModel   string `json:"authz_model"`
+	TokenStorage string `json:"token_storage"`
+	MFA          string `json:"mfa"`
+}
+
+// EnvConfig describes the deployment environment configuration.
+type EnvConfig struct {
+	ComputeEnv    string `json:"compute_env"`
+	CloudProvider string `json:"cloud_provider"`
+	Orchestrator  string `json:"orchestrator"`
+	Regions       string `json:"regions,omitempty"`
+	Stages        string `json:"stages,omitempty"`
+}
+
+// BackendPillar covers the full backend configuration.
 type BackendPillar struct {
-	ArchPattern   ArchPattern  `json:"arch_pattern"`
-	ComputeEnv    ComputeEnv   `json:"compute_env"`
-	CloudProvider string       `json:"cloud_provider,omitempty"`
-	// Monolith: single app language and framework.
-	Language  string `json:"language,omitempty"`
-	Framework string `json:"framework,omitempty"`
-	// Microservices / Modular-monolith: per-service definitions.
-	Services []ServiceDef `json:"services,omitempty"`
+	ArchPattern ArchPattern      `json:"arch_pattern"`
+	Env         EnvConfig        `json:"env"`
+	Services    []ServiceDef     `json:"services,omitempty"`
+	CommLinks   []CommLink       `json:"comm_links,omitempty"`
+	Messaging   *MessagingConfig `json:"messaging,omitempty"`
+	APIGateway  *APIGatewayConfig `json:"api_gateway,omitempty"`
+	Auth        AuthConfig       `json:"auth"`
+
+	// Legacy monolith fields kept for backward compatibility.
+	ComputeEnv    ComputeEnv `json:"compute_env,omitempty"`
+	CloudProvider string     `json:"cloud_provider,omitempty"`
+	Language      string     `json:"language,omitempty"`
+	Framework     string     `json:"framework,omitempty"`
 }
 
-// FrontendPillar covers web rendering, framework, state management, styling, and browser support.
+// ── Data tab types ────────────────────────────────────────────────────────────
+
+// DomainDef is the new concept of a bounded-context domain (not a DB entity/column).
+type DomainDef struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	Databases   string              `json:"databases,omitempty"`
+	Attributes  []DomainAttribute   `json:"attributes,omitempty"`
+	Relationships []DomainRelationship `json:"relationships,omitempty"`
+}
+
+type DomainAttribute struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Constraints string `json:"constraints,omitempty"`
+	Default     string `json:"default,omitempty"`
+	Sensitive   bool   `json:"sensitive"`
+	Validation  string `json:"validation,omitempty"`
+}
+
+type DomainRelationship struct {
+	RelatedDomain string `json:"related_domain"`
+	RelType       string `json:"rel_type"`
+	ForeignKey    string `json:"foreign_key,omitempty"`
+	Cascade       string `json:"cascade,omitempty"`
+}
+
+// CachingConfig describes the application-level caching strategy.
+type CachingConfig struct {
+	Layer        string `json:"layer"`
+	Strategy     string `json:"strategy"`
+	Invalidation string `json:"invalidation"`
+	Entities     string `json:"entities,omitempty"`
+}
+
+// FileStorageDef describes a file/object storage bucket.
+type FileStorageDef struct {
+	Technology string `json:"technology"`
+	Purpose    string `json:"purpose,omitempty"`
+	Access     string `json:"access"`
+	MaxSize    string `json:"max_size,omitempty"`
+}
+
+// DataPillar groups all data-related configuration.
+type DataPillar struct {
+	Databases    []DBSourceDef    `json:"databases,omitempty"`
+	Domains      []DomainDef      `json:"domains,omitempty"`
+	Entities     []EntityDef      `json:"entities,omitempty"` // legacy
+	Caching      CachingConfig    `json:"caching"`
+	FileStorages []FileStorageDef `json:"file_storages,omitempty"`
+}
+
+// ── Contracts tab types ───────────────────────────────────────────────────────
+
+// DTOField describes a single field within a DTO.
+type DTOField struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Required   bool   `json:"required"`
+	Nullable   bool   `json:"nullable"`
+	Validation string `json:"validation,omitempty"`
+	Notes      string `json:"notes,omitempty"`
+}
+
+// DTODef describes a Data Transfer Object.
+type DTODef struct {
+	Name          string     `json:"name"`
+	Category      string     `json:"category"`
+	SourceDomains string     `json:"source_domains,omitempty"`
+	Description   string     `json:"description,omitempty"`
+	Fields        []DTOField `json:"fields,omitempty"`
+}
+
+// EndpointDef describes an API endpoint or operation.
+type EndpointDef struct {
+	ServiceUnit string `json:"service_unit"`
+	NamePath    string `json:"name_path"`
+	Protocol    string `json:"protocol"`
+	AuthRequired string `json:"auth_required"`
+	RequestDTO  string `json:"request_dto,omitempty"`
+	ResponseDTO string `json:"response_dto,omitempty"`
+	HTTPMethod  string `json:"http_method,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// APIVersioning describes how the API handles versioning.
+type APIVersioning struct {
+	Strategy          string `json:"strategy"`
+	CurrentVersion    string `json:"current_version,omitempty"`
+	DeprecationPolicy string `json:"deprecation_policy,omitempty"`
+}
+
+// ContractsPillar groups all contract-related configuration.
+type ContractsPillar struct {
+	DTOs       []DTODef      `json:"dtos,omitempty"`
+	Endpoints  []EndpointDef `json:"endpoints,omitempty"`
+	Versioning APIVersioning `json:"versioning"`
+}
+
+// ── Frontend tab types ────────────────────────────────────────────────────────
+
+// FrontendTechConfig describes the technology stack choices for the frontend.
+type FrontendTechConfig struct {
+	Language        string `json:"language"`
+	Platform        string `json:"platform"`
+	Framework       string `json:"framework"`
+	MetaFramework   string `json:"meta_framework,omitempty"`
+	PackageManager  string `json:"package_manager"`
+	Styling         string `json:"styling"`
+	ComponentLib    string `json:"component_lib,omitempty"`
+	StateManagement string `json:"state_management,omitempty"`
+	DataFetching    string `json:"data_fetching,omitempty"`
+	FormHandling    string `json:"form_handling,omitempty"`
+	Validation      string `json:"validation,omitempty"`
+}
+
+// FrontendTheme describes the visual theme settings.
+type FrontendTheme struct {
+	DarkMode     string `json:"dark_mode"`
+	BorderRadius string `json:"border_radius"`
+	Spacing      string `json:"spacing"`
+	Elevation    string `json:"elevation"`
+	Motion       string `json:"motion"`
+}
+
+// PageDef describes a frontend page.
+type PageDef struct {
+	Name         string `json:"name"`
+	Route        string `json:"route"`
+	AuthRequired string `json:"auth_required"`
+	Layout       string `json:"layout"`
+	Description  string `json:"description,omitempty"`
+	CoreActions  string `json:"core_actions,omitempty"`
+	Loading      string `json:"loading"`
+	ErrorHandling string `json:"error_handling"`
+}
+
+// NavigationConfig describes frontend navigation settings.
+type NavigationConfig struct {
+	NavType     string `json:"nav_type"`
+	Breadcrumbs bool   `json:"breadcrumbs"`
+	AuthAware   bool   `json:"auth_aware"`
+}
+
+// FrontendPillar covers the full frontend configuration.
 type FrontendPillar struct {
-	Rendering     RenderingMode `json:"rendering"`
-	Framework     string        `json:"framework"`      // e.g. "React 18", "Next.js 14"
-	ServerState   string        `json:"server_state"`   // e.g. "React Query", "Apollo"
-	ClientState   string        `json:"client_state"`   // e.g. "Zustand", "Redux"
-	Styling       string        `json:"styling"`        // Tailwind, CSS-in-JS, SASS
-	BrowserMatrix string        `json:"browser_matrix"` // e.g. "Chromium>100, Safari>15"
+	Tech       FrontendTechConfig `json:"tech"`
+	Theme      FrontendTheme      `json:"theme"`
+	Pages      []PageDef          `json:"pages,omitempty"`
+	Navigation NavigationConfig   `json:"navigation"`
+
+	// Legacy fields preserved for backward compatibility.
+	Rendering     RenderingMode `json:"rendering,omitempty"`
+	Framework     string        `json:"framework,omitempty"`
+	ServerState   string        `json:"server_state,omitempty"`
+	ClientState   string        `json:"client_state,omitempty"`
+	Styling       string        `json:"styling,omitempty"`
+	BrowserMatrix string        `json:"browser_matrix,omitempty"`
 }
 
+// ── Infrastructure tab types ──────────────────────────────────────────────────
 
-// ── Phase 3: Lifecycle Operations & Tooling ───────────────────────────────────
+// NetworkingConfig describes networking and connectivity settings.
+type NetworkingConfig struct {
+	DNSProvider  string `json:"dns_provider"`
+	TLSSSL       string `json:"tls_ssl"`
+	ReverseProxy string `json:"reverse_proxy"`
+	CDN          string `json:"cdn"`
+}
 
-// TestingPillar defines coverage targets per test taxonomy.
+// CICDConfig describes CI/CD pipeline settings.
+type CICDConfig struct {
+	Platform          string `json:"platform"`
+	ContainerRegistry string `json:"container_registry"`
+	DeployStrategy    string `json:"deploy_strategy"`
+	IaCTool           string `json:"iac_tool"`
+	SecretsMgmt       string `json:"secrets_mgmt,omitempty"`
+}
+
+// ObservabilityConfig describes logging, metrics, tracing, and alerting settings.
+type ObservabilityConfig struct {
+	Logging       string `json:"logging"`
+	Metrics       string `json:"metrics"`
+	Tracing       string `json:"tracing"`
+	ErrorTracking string `json:"error_tracking"`
+	HealthChecks  bool   `json:"health_checks"`
+	Alerting      string `json:"alerting"`
+}
+
+// InfraPillar groups infrastructure configuration.
+type InfraPillar struct {
+	Networking    NetworkingConfig    `json:"networking"`
+	CICD          CICDConfig          `json:"cicd"`
+	Observability ObservabilityConfig `json:"observability"`
+}
+
+// ── Cross-cutting tab types ───────────────────────────────────────────────────
+
+// TestingConfig describes testing strategy and tool choices.
+type TestingConfig struct {
+	Unit        string `json:"unit"`
+	Integration string `json:"integration"`
+	E2E         string `json:"e2e"`
+	API         string `json:"api"`
+	Load        string `json:"load"`
+	Contract    string `json:"contract"`
+}
+
+// DocsConfig describes documentation tooling.
+type DocsConfig struct {
+	APIDocs      string `json:"api_docs"`
+	AutoGenerate bool   `json:"auto_generate"`
+	Changelog    string `json:"changelog"`
+}
+
+// CrossCutPillar groups cross-cutting concerns.
+type CrossCutPillar struct {
+	Testing TestingConfig `json:"testing"`
+	Docs    DocsConfig    `json:"docs"`
+}
+
+// ── Legacy pillars (preserved for existing code compatibility) ────────────────
+
 type TestingPillar struct {
-	UnitCoverage    string       `json:"unit_coverage"`    // e.g. "80%"
+	UnitCoverage    string       `json:"unit_coverage"`
 	IntegCoverage   string       `json:"integ_coverage"`
 	E2EFramework    E2EFramework `json:"e2e_framework"`
 	E2ECoverage     string       `json:"e2e_coverage"`
-	TestingStrategy string       `json:"testing_strategy,omitempty"` // additional notes
+	TestingStrategy string       `json:"testing_strategy,omitempty"`
 }
 
-// CICDPillar defines pipeline gates, environment strategy, and secrets management.
 type CICDPillar struct {
 	CIPlatform    CIPlatform     `json:"ci_platform"`
-	PipelineGates string         `json:"pipeline_gates"` // blocking checks: lint, tests, vuln scan
-	EnvStrategy   string         `json:"env_strategy"`   // dev/staging/prod definitions
+	PipelineGates string         `json:"pipeline_gates"`
+	EnvStrategy   string         `json:"env_strategy"`
 	SecretsMgmt   SecretsBackend `json:"secrets_mgmt"`
 }
 
-// TelemetryPillar defines logging, metrics, tracing, and alerting strategy.
 type TelemetryPillar struct {
 	LogSolution LogSolution `json:"log_solution"`
-	LogFormat   string      `json:"log_format"`  // JSON structured, plaintext
-	Metrics     string      `json:"metrics"`     // Prometheus, Datadog, CloudWatch, none
-	Tracing     string      `json:"tracing"`     // Jaeger, Zipkin, OpenTelemetry, none
+	LogFormat   string      `json:"log_format"`
+	Metrics     string      `json:"metrics"`
+	Tracing     string      `json:"tracing"`
 	Alerting    string      `json:"alerting,omitempty"`
 }
 
 // ── Root manifest ─────────────────────────────────────────────────────────────
 
-// Manifest is the root document holding all three phases.
+// Manifest is the root document holding all configuration.
 type Manifest struct {
 	CreatedAt time.Time `json:"created_at"`
 
-	// Named database / cache sources and entity definitions
+	// Structured pillars
+	Data      DataPillar      `json:"data"`
+	Backend   BackendPillar   `json:"backend"`
+	Contracts ContractsPillar `json:"contracts"`
+	Frontend  FrontendPillar  `json:"frontend"`
+	Infra     InfraPillar     `json:"infrastructure"`
+	CrossCut  CrossCutPillar  `json:"cross_cutting"`
+
+	// Legacy fields kept for backward compatibility during transition.
 	Databases []DBSourceDef `json:"databases,omitempty"`
 	Entities  []EntityDef   `json:"entities,omitempty"`
-
-	// Phase 2 – Domain-Specific Execution Paths
-	Backend  BackendPillar  `json:"backend"`
-	Frontend FrontendPillar `json:"frontend"`
-
-	// Phase 3 – Lifecycle Operations & Tooling
-	Testing   TestingPillar   `json:"testing"`
-	CICD      CICDPillar      `json:"cicd"`
-	Telemetry TelemetryPillar `json:"telemetry"`
+	Testing   TestingPillar   `json:"testing,omitempty"`
+	CICD      CICDPillar      `json:"cicd,omitempty"`
+	Telemetry TelemetryPillar `json:"telemetry,omitempty"`
 }
 
 // Save writes the manifest to path as indented JSON.
