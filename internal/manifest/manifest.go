@@ -361,10 +361,13 @@ type CachingConfig struct {
 
 // FileStorageDef describes a file/object storage bucket.
 type FileStorageDef struct {
-	Technology string `json:"technology"`
-	Purpose    string `json:"purpose,omitempty"`
-	Access     string `json:"access"`
-	MaxSize    string `json:"max_size,omitempty"`
+	Technology   string `json:"technology"`
+	Purpose      string `json:"purpose,omitempty"`
+	Access       string `json:"access"`
+	MaxSize      string `json:"max_size,omitempty"`
+	Domains      string `json:"domains,omitempty"`
+	TTLMinutes   string `json:"ttl_minutes,omitempty"`
+	AllowedTypes string `json:"allowed_types,omitempty"`
 }
 
 // DataPillar groups all data-related configuration.
@@ -447,18 +450,23 @@ type FrontendTheme struct {
 	Spacing      string `json:"spacing"`
 	Elevation    string `json:"elevation"`
 	Motion       string `json:"motion"`
+	Vibe         string `json:"vibe,omitempty"`
+	Colors       string `json:"colors,omitempty"`
+	Description  string `json:"description,omitempty"`
 }
 
 // PageDef describes a frontend page.
 type PageDef struct {
-	Name         string `json:"name"`
-	Route        string `json:"route"`
-	AuthRequired string `json:"auth_required"`
-	Layout       string `json:"layout"`
-	Description  string `json:"description,omitempty"`
-	CoreActions  string `json:"core_actions,omitempty"`
-	Loading      string `json:"loading"`
+	Name          string `json:"name"`
+	Route         string `json:"route"`
+	AuthRequired  string `json:"auth_required"`
+	Layout        string `json:"layout"`
+	Description   string `json:"description,omitempty"`
+	CoreActions   string `json:"core_actions,omitempty"`
+	Loading       string `json:"loading"`
 	ErrorHandling string `json:"error_handling"`
+	AuthRoles     string `json:"auth_roles,omitempty"`
+	LinkedPages   string `json:"linked_pages,omitempty"`
 }
 
 // NavigationConfig describes frontend navigation settings.

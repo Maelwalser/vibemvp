@@ -66,6 +66,17 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				val = StyleFieldVal.Render(val)
 			}
 			valStr = val + StyleSelectArrow.Render(" ▾")
+		case f.Kind == KindMultiSelect:
+			val := f.DisplayValue()
+			if val == "" {
+				val = "(none)"
+			}
+			if isCur {
+				val = StyleFieldValActive.Render(val)
+			} else {
+				val = StyleFieldVal.Render(val)
+			}
+			valStr = val + StyleSelectArrow.Render(" ▾")
 		default:
 			dv := f.DisplayValue()
 			if len(dv) > valW {
@@ -145,6 +156,21 @@ func renderFormFieldsWithDropdown(w int, fields []Field, activeIdx int, insertMo
 			} else {
 				valStr = val + StyleSelectArrow.Render(" ▾")
 			}
+		case f.Kind == KindMultiSelect:
+			val := f.DisplayValue()
+			if val == "" {
+				val = "(none)"
+			}
+			if isCur {
+				val = StyleFieldValActive.Render(val)
+			} else {
+				val = StyleFieldVal.Render(val)
+			}
+			if isCur && ddOpen {
+				valStr = val + StyleSelectArrow.Render(" ▴")
+			} else {
+				valStr = val + StyleSelectArrow.Render(" ▾")
+			}
 		default:
 			dv := f.DisplayValue()
 			if len(dv) > valW {
@@ -169,21 +195,38 @@ func renderFormFieldsWithDropdown(w int, fields []Field, activeIdx int, insertMo
 		}
 		lines = append(lines, row)
 
-		// Inject scrollable dropdown options below the active select field
-		if isCur && ddOpen && f.Kind == KindSelect {
+		// Inject scrollable dropdown options below the active select/multiselect field
+		if isCur && ddOpen && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
 			indent := strings.Repeat(" ", ddIndent)
 			for j, opt := range f.Options {
 				isHL := j == ddOptIdx
 				var optRow string
-				if isHL {
-					optRow = indent + StyleFieldValActive.Render("▶ "+opt)
-					rw := lipgloss.Width(optRow)
-					if rw < w {
-						optRow += strings.Repeat(" ", w-rw)
+				if f.Kind == KindMultiSelect {
+					check := "  "
+					if f.IsMultiSelected(j) {
+						check = "✓ "
 					}
-					optRow = StyleCurLine.Render(optRow)
+					if isHL {
+						optRow = indent + StyleFieldValActive.Render("▶ "+check+opt)
+						rw := lipgloss.Width(optRow)
+						if rw < w {
+							optRow += strings.Repeat(" ", w-rw)
+						}
+						optRow = StyleCurLine.Render(optRow)
+					} else {
+						optRow = indent + StyleFieldVal.Render("  "+check+opt)
+					}
 				} else {
-					optRow = indent + StyleFieldVal.Render("  "+opt)
+					if isHL {
+						optRow = indent + StyleFieldValActive.Render("▶ "+opt)
+						rw := lipgloss.Width(optRow)
+						if rw < w {
+							optRow += strings.Repeat(" ", w-rw)
+						}
+						optRow = StyleCurLine.Render(optRow)
+					} else {
+						optRow = indent + StyleFieldVal.Render("  "+opt)
+					}
 				}
 				lines = append(lines, optRow)
 			}
@@ -238,6 +281,17 @@ func renderFormFieldsWithDisabled(w int, fields []Field, activeIdx int, insertMo
 			valStr = input.View()
 		case f.Kind == KindSelect:
 			val := f.DisplayValue()
+			if isCur {
+				val = StyleFieldValActive.Render(val)
+			} else {
+				val = StyleFieldVal.Render(val)
+			}
+			valStr = val + StyleSelectArrow.Render(" ▾")
+		case f.Kind == KindMultiSelect:
+			val := f.DisplayValue()
+			if val == "" {
+				val = "(none)"
+			}
 			if isCur {
 				val = StyleFieldValActive.Render(val)
 			} else {
@@ -322,6 +376,17 @@ func hintBar(pairs ...string) string {
 
 // fieldGet returns the DisplayValue for the field with the given key in a slice.
 func fieldGet(fields []Field, key string) string {
+	for _, f := range fields {
+		if f.Key == key {
+			return f.DisplayValue()
+		}
+	}
+	return ""
+}
+
+// fieldGetMulti returns the comma-separated DisplayValue for a KindMultiSelect field,
+// or the plain DisplayValue for any other kind.
+func fieldGetMulti(fields []Field, key string) string {
 	for _, f := range fields {
 		if f.Key == key {
 			return f.DisplayValue()

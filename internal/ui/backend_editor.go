@@ -134,7 +134,15 @@ func defaultEnvFields() []Field {
 			},
 			Value: "Docker Compose",
 		},
-		{Key: "regions", Label: "regions       ", Kind: KindText},
+		{
+			Key: "regions", Label: "regions       ", Kind: KindMultiSelect,
+			Options: []string{
+				"us-east-1", "us-east-2", "us-west-1", "us-west-2",
+				"eu-west-1", "eu-west-2", "eu-central-1",
+				"ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+				"sa-east-1", "ca-central-1", "af-south-1",
+			},
+		},
 		{
 			Key: "stages", Label: "stages        ", Kind: KindSelect,
 			Options: []string{
@@ -142,6 +150,17 @@ func defaultEnvFields() []Field {
 				"Staging + Production", "Production only",
 			},
 			Value: "Development + Staging + Production", SelIdx: 2,
+		},
+		// Monolith-only: language and framework defined once at top level
+		{
+			Key: "monolith_lang", Label: "language      ", Kind: KindSelect,
+			Options: backendLanguages,
+			Value:   "Go",
+		},
+		{
+			Key: "monolith_fw", Label: "framework     ", Kind: KindSelect,
+			Options: backendFrameworksByLang["Go"],
+			Value:   "Fiber",
 		},
 	}
 }
@@ -159,6 +178,10 @@ func defaultServiceFields() []Field {
 			Key: "framework", Label: "framework     ", Kind: KindSelect,
 			Options: backendFrameworksByLang["Go"],
 			Value:   "Fiber",
+		},
+		{
+			Key: "technologies", Label: "technologies  ", Kind: KindMultiSelect,
+			Options: []string{"WebSocket", "gRPC", "REST", "GraphQL", "SSE", "tRPC", "MQTT", "Kafka consumer"},
 		},
 		{
 			Key: "pattern_tag", Label: "pattern_tag   ", Kind: KindSelect,
@@ -322,12 +345,11 @@ func defaultAPIGWFields() []Field {
 func defaultAuthFields() []Field {
 	return []Field{
 		{
-			Key: "strategy", Label: "strategy      ", Kind: KindSelect,
+			Key: "strategy", Label: "strategy      ", Kind: KindMultiSelect,
 			Options: []string{
 				"JWT (stateless)", "Session-based", "OAuth 2.0 / OIDC",
 				"API Keys", "mTLS", "None",
 			},
-			Value: "JWT (stateless)",
 		},
 		{
 			Key: "provider", Label: "provider      ", Kind: KindSelect,
@@ -343,12 +365,11 @@ func defaultAuthFields() []Field {
 			Value:   "RBAC",
 		},
 		{
-			Key: "token_storage", Label: "token_storage ", Kind: KindSelect,
+			Key: "token_storage", Label: "token_storage ", Kind: KindMultiSelect,
 			Options: []string{
 				"HttpOnly cookie", "Authorization header (Bearer)",
 				"WebSocket protocol header", "Other",
 			},
-			Value: "HttpOnly cookie",
 		},
 		{
 			Key: "mfa", Label: "mfa           ", Kind: KindSelect,
@@ -471,15 +492,15 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		ComputeEnv:    fieldGet(be.EnvFields, "compute_env"),
 		CloudProvider: fieldGet(be.EnvFields, "cloud_provider"),
 		Orchestrator:  fieldGet(be.EnvFields, "orchestrator"),
-		Regions:       fieldGet(be.EnvFields, "regions"),
+		Regions:       fieldGetMulti(be.EnvFields, "regions"),
 		Stages:        fieldGet(be.EnvFields, "stages"),
 	}
 
 	auth := manifest.AuthConfig{
-		Strategy:     fieldGet(be.AuthFields, "strategy"),
+		Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
 		Provider:     fieldGet(be.AuthFields, "provider"),
 		AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
-		TokenStorage: fieldGet(be.AuthFields, "token_storage"),
+		TokenStorage: fieldGetMulti(be.AuthFields, "token_storage"),
 		MFA:          fieldGet(be.AuthFields, "mfa"),
 	}
 
@@ -515,7 +536,10 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	// Legacy compat fields
 	bp.ComputeEnv = manifest.ComputeEnv(env.ComputeEnv)
 	bp.CloudProvider = env.CloudProvider
-	if len(be.Services) > 0 {
+	if arch == "monolith" {
+		bp.Language = fieldGet(be.EnvFields, "monolith_lang")
+		bp.Framework = fieldGet(be.EnvFields, "monolith_fw")
+	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
 		bp.Framework = be.Services[0].Framework
 	}
@@ -630,6 +654,7 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 // updateDropdown handles navigation while a dropdown menu is open.
 func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
 	opts := be.dropdownOptions()
+	isMulti := be.isMultiSelectDropdown()
 	switch key.String() {
 	case "j", "down":
 		if be.ddOptIdx < len(opts)-1 {
@@ -645,32 +670,93 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if len(opts) > 0 {
 			be.ddOptIdx = len(opts) - 1
 		}
-	case "enter", " ":
-		be.applyDropdown()
-		be.ddOpen = false
+	case " ":
+		if isMulti {
+			// Toggle the current option
+			be.toggleMultiSelectOption()
+		} else {
+			be.applyDropdown()
+			be.ddOpen = false
+		}
+	case "enter":
+		if isMulti {
+			// Toggle and close for single-step; or just close
+			be.ddOpen = false
+			be.saveMultiSelectCursor()
+		} else {
+			be.applyDropdown()
+			be.ddOpen = false
+		}
 	case "esc", "ctrl+c":
+		if isMulti {
+			be.saveMultiSelectCursor()
+		}
 		be.ddOpen = false
 	}
 	return be, nil
 }
 
-// dropdownOptions returns the options of the currently active KindSelect field.
+// isMultiSelectDropdown returns true when the active dropdown field is KindMultiSelect.
+func (be BackendEditor) isMultiSelectDropdown() bool {
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) {
+			return ed.form[ed.formIdx].Kind == KindMultiSelect
+		}
+	}
+	if f := be.mutableFieldPtr(); f != nil {
+		return f.Kind == KindMultiSelect
+	}
+	return false
+}
+
+// toggleMultiSelectOption toggles ddOptIdx in the active KindMultiSelect field.
+func (be *BackendEditor) toggleMultiSelectOption() {
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindMultiSelect {
+			ed.form[ed.formIdx].ToggleMultiSelect(be.ddOptIdx)
+			ed.form[ed.formIdx].DDCursor = be.ddOptIdx
+		}
+		return
+	}
+	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindMultiSelect {
+		f.ToggleMultiSelect(be.ddOptIdx)
+		f.DDCursor = be.ddOptIdx
+	}
+}
+
+// saveMultiSelectCursor saves the current dropdown cursor back to the field.
+func (be *BackendEditor) saveMultiSelectCursor() {
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindMultiSelect {
+			ed.form[ed.formIdx].DDCursor = be.ddOptIdx
+		}
+		return
+	}
+	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindMultiSelect {
+		f.DDCursor = be.ddOptIdx
+	}
+}
+
+// dropdownOptions returns the options of the currently active KindSelect or KindMultiSelect field.
 func (be BackendEditor) dropdownOptions() []string {
 	if be.serviceEditor.itemView == beListViewForm {
 		ed := &be.serviceEditor
-		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+		if ed.formIdx < len(ed.form) && (ed.form[ed.formIdx].Kind == KindSelect || ed.form[ed.formIdx].Kind == KindMultiSelect) {
 			return ed.form[ed.formIdx].Options
 		}
 	}
 	if be.commEditor.itemView == beListViewForm {
 		ed := &be.commEditor
-		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+		if ed.formIdx < len(ed.form) && (ed.form[ed.formIdx].Kind == KindSelect || ed.form[ed.formIdx].Kind == KindMultiSelect) {
 			return ed.form[ed.formIdx].Options
 		}
 	}
 	if be.eventEditor.itemView == beListViewForm {
 		ed := &be.eventEditor
-		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+		if ed.formIdx < len(ed.form) && (ed.form[ed.formIdx].Kind == KindSelect || ed.form[ed.formIdx].Kind == KindMultiSelect) {
 			return ed.form[ed.formIdx].Options
 		}
 	}
@@ -693,6 +779,7 @@ func (be *BackendEditor) applyDropdown() {
 					be.updateServiceFrameworkOptions(ed)
 				}
 			}
+			// KindMultiSelect handled via toggleMultiSelectOption
 		}
 		return
 	}
@@ -815,9 +902,13 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			be.activeField = len(*fields) - 1
 		}
 	case "enter", " ":
-		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
+		if f := be.mutableFieldPtr(); f != nil && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
 			be.ddOpen = true
-			be.ddOptIdx = f.SelIdx
+			if f.Kind == KindSelect {
+				be.ddOptIdx = f.SelIdx
+			} else {
+				be.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return be.tryEnterInsert()
 		}
@@ -888,19 +979,50 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 	return be, nil
 }
 
+// isServiceFieldHidden returns true when a service form field should be hidden for the current arch.
+func (be BackendEditor) isServiceFieldHidden(key string) bool {
+	arch := be.currentArch()
+	if arch == "monolith" && (key == "language" || key == "framework") {
+		return true
+	}
+	if arch != "hybrid" && key == "pattern_tag" {
+		return true
+	}
+	return false
+}
+
+// nextServiceFormIdx advances formIdx skipping hidden fields.
+func (be BackendEditor) nextServiceFormIdx(ed *beListEditor, delta int) int {
+	n := len(ed.form)
+	if n == 0 {
+		return 0
+	}
+	idx := ed.formIdx
+	for i := 0; i < n; i++ {
+		idx = (idx + delta + n) % n
+		if !be.isServiceFieldHidden(ed.form[idx].Key) {
+			return idx
+		}
+	}
+	return ed.formIdx
+}
+
 func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
 	ed := &be.serviceEditor
 	switch key.String() {
 	case "j", "down":
-		ed.formIdx = (ed.formIdx + 1) % len(ed.form)
+		ed.formIdx = be.nextServiceFormIdx(ed, 1)
 	case "k", "up":
-		n := len(ed.form)
-		ed.formIdx = (ed.formIdx - 1 + n) % n
+		ed.formIdx = be.nextServiceFormIdx(ed, -1)
 	case "enter", " ":
 		f := &ed.form[ed.formIdx]
-		if f.Kind == KindSelect {
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
 			be.ddOpen = true
-			be.ddOptIdx = f.SelIdx
+			if f.Kind == KindSelect {
+				be.ddOptIdx = f.SelIdx
+			} else {
+				be.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return be.enterServiceFormInsert()
 		}
@@ -1213,7 +1335,24 @@ func (be *BackendEditor) saveEventForm() {
 	}
 }
 
+// visibleEnvFields returns the ENV fields filtered by the current arch.
+// For monolith, monolith_lang and monolith_fw are shown.
+// For other archs, they are hidden.
+func (be BackendEditor) visibleEnvFields() []Field {
+	arch := be.currentArch()
+	var out []Field
+	for _, f := range be.EnvFields {
+		if (f.Key == "monolith_lang" || f.Key == "monolith_fw") && arch != "monolith" {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // currentEditableFields returns a pointer to the current tab's field slice.
+// For ENV, we return nil (use visibleEnvFields instead) but we keep it for
+// generic field navigation — actual navigation uses visibleEnvFieldIdx.
 func (be *BackendEditor) currentEditableFields() *[]Field {
 	switch be.activeTab() {
 	case beTabEnv:
@@ -1369,7 +1508,8 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 	tab := be.activeTab()
 	switch tab {
 	case beTabEnv:
-		lines = append(lines, renderFormFieldsWithDropdown(w, be.EnvFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+		envFields := be.visibleEnvFields()
+		lines = append(lines, renderFormFieldsWithDropdown(w, envFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	case beTabServices:
 		lines = append(lines, be.viewServiceEditor(w)...)
 	case beTabComm:
@@ -1421,21 +1561,33 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 
 	arch := be.currentArch()
 	var fields []Field
-	if arch != "hybrid" {
-		// Hide pattern_tag for non-hybrid arches
-		for _, f := range ed.form {
-			if f.Key == "pattern_tag" {
-				continue
+	filteredActiveIdx := ed.formIdx
+	skippedBefore := 0
+	for i, f := range ed.form {
+		// For monolith: language and framework are defined at top level (ENV tab)
+		if arch == "monolith" && (f.Key == "language" || f.Key == "framework") {
+			if i < ed.formIdx {
+				skippedBefore++
 			}
-			fields = append(fields, f)
+			continue
 		}
-	} else {
-		fields = ed.form
+		// Hide pattern_tag for non-hybrid arches
+		if arch != "hybrid" && f.Key == "pattern_tag" {
+			if i < ed.formIdx {
+				skippedBefore++
+			}
+			continue
+		}
+		fields = append(fields, f)
+	}
+	filteredActiveIdx = ed.formIdx - skippedBefore
+	if filteredActiveIdx < 0 {
+		filteredActiveIdx = 0
 	}
 
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-	lines = append(lines, renderFormFieldsWithDropdown(w, fields, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, fields, filteredActiveIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 
@@ -1565,6 +1717,34 @@ func (be BackendEditor) viewMessaging(w int) []string {
 		}
 	}
 	return lines
+}
+
+// AuthRoleOptions returns a list of common auth roles for use in frontend page forms.
+// Based on the authz_model configured in auth settings.
+func (be BackendEditor) AuthRoleOptions() []string {
+	model := fieldGet(be.AuthFields, "authz_model")
+	switch model {
+	case "RBAC":
+		return []string{"admin", "user", "moderator", "editor", "viewer", "superadmin"}
+	case "ABAC":
+		return []string{"admin", "user", "owner", "manager", "auditor"}
+	case "ACL":
+		return []string{"admin", "read", "write", "execute", "owner"}
+	default:
+		return []string{"admin", "user", "moderator", "editor", "viewer"}
+	}
+}
+
+// ServiceNames returns the names of all created service units for cross-reference.
+func (be BackendEditor) ServiceNames() []string {
+	var names []string
+	for _, item := range be.serviceEditor.items {
+		name := fieldGet(item, "name")
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // copyFields makes a deep copy of a field slice.

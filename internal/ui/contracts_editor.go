@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,7 +43,7 @@ const (
 
 // ── field definitions ─────────────────────────────────────────────────────────
 
-func defaultDTOFormFields() []Field {
+func defaultDTOFormFields(domainOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{
@@ -50,7 +51,10 @@ func defaultDTOFormFields() []Field {
 			Options: []string{"Request", "Response", "Event Payload", "Shared/Common"},
 			Value:   "Request",
 		},
-		{Key: "source_domains", Label: "source_domains", Kind: KindText},
+		{
+			Key: "source_domains", Label: "source_domains", Kind: KindMultiSelect,
+			Options: domainOptions,
+		},
 		{Key: "description", Label: "description   ", Kind: KindText},
 	}
 }
@@ -79,9 +83,24 @@ func defaultDTOFieldForm() []Field {
 	}
 }
 
-func defaultEndpointFormFields() []Field {
-	return []Field{
-		{Key: "service_unit", Label: "service_unit  ", Kind: KindText},
+func defaultEndpointFormFields(serviceOptions, dtoOptions []string) []Field {
+	// Ensure at least empty slice so KindSelect works
+	if serviceOptions == nil {
+		serviceOptions = []string{}
+	}
+	if dtoOptions == nil {
+		dtoOptions = []string{}
+	}
+	serviceKind := KindText
+	if len(serviceOptions) > 0 {
+		serviceKind = KindSelect
+	}
+	dtoKind := KindText
+	if len(dtoOptions) > 0 {
+		dtoKind = KindSelect
+	}
+	fields := []Field{
+		{Key: "service_unit", Label: "service_unit  ", Kind: serviceKind, Options: serviceOptions},
 		{Key: "name_path", Label: "name_path     ", Kind: KindText},
 		{
 			Key: "protocol", Label: "protocol      ", Kind: KindSelect,
@@ -92,8 +111,8 @@ func defaultEndpointFormFields() []Field {
 			Key: "auth_required", Label: "auth_required ", Kind: KindSelect,
 			Options: []string{"false", "true"}, Value: "false",
 		},
-		{Key: "request_dto", Label: "request_dto   ", Kind: KindText},
-		{Key: "response_dto", Label: "response_dto  ", Kind: KindText},
+		{Key: "request_dto", Label: "request_dto   ", Kind: dtoKind, Options: dtoOptions},
+		{Key: "response_dto", Label: "response_dto  ", Kind: dtoKind, Options: dtoOptions},
 		{
 			Key: "http_method", Label: "http_method   ", Kind: KindSelect,
 			Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
@@ -101,6 +120,7 @@ func defaultEndpointFormFields() []Field {
 		},
 		{Key: "description", Label: "description   ", Kind: KindText},
 	}
+	return fields
 }
 
 func defaultVersioningFields() []Field {
@@ -113,7 +133,13 @@ func defaultVersioningFields() []Field {
 			Value: "URL path (/v1/)",
 		},
 		{Key: "current_version", Label: "current_ver   ", Kind: KindText, Value: "v1"},
-		{Key: "deprecation", Label: "deprecation   ", Kind: KindText},
+		{
+			Key: "deprecation", Label: "deprecation   ", Kind: KindSelect,
+			Options: []string{
+				"None", "Sunset header", "Versioned removal notice", "Changelog entry", "Custom",
+			},
+			Value: "None",
+		},
 	}
 }
 
@@ -130,21 +156,29 @@ type ContractsEditor struct {
 	dtoForm    []Field
 	dtoFormIdx int
 	// DTO fields sub-list
-	dtoFieldItems  [][]Field
-	dtoFieldIdx    int
-	dtoFieldForm   []Field
+	dtoFieldItems   [][]Field
+	dtoFieldIdx     int
+	dtoFieldForm    []Field
 	dtoFieldFormIdx int
 
 	// Endpoints
-	endpoints     []manifest.EndpointDef
-	epSubView     ceSubView
-	epIdx         int
-	epForm        []Field
-	epFormIdx     int
+	endpoints []manifest.EndpointDef
+	epSubView ceSubView
+	epIdx     int
+	epForm    []Field
+	epFormIdx int
 
 	// API Versioning (simple field form)
 	versioningFields []Field
 	verFormIdx       int
+
+	// Cross-editor reference data (set by model.go before each Update)
+	availableDomains []string // from DataTabEditor.domainNames()
+	availableServices []string // from BackendEditor.ServiceNames()
+
+	// Dropdown state for KindSelect/KindMultiSelect fields
+	ddOpen   bool
+	ddOptIdx int
 
 	// Shared
 	internalMode ceMode
@@ -157,6 +191,16 @@ func newContractsEditor() ContractsEditor {
 		versioningFields: defaultVersioningFields(),
 		formInput:        newFormInput(),
 	}
+}
+
+// SetDomains updates the list of available domain names for cross-referencing.
+func (ce *ContractsEditor) SetDomains(domains []string) {
+	ce.availableDomains = domains
+}
+
+// SetServices updates the list of available service names for cross-referencing.
+func (ce *ContractsEditor) SetServices(services []string) {
+	ce.availableServices = services
 }
 
 // ── ToManifest ────────────────────────────────────────────────────────────────
@@ -212,6 +256,94 @@ func (ce ContractsEditor) HintLine() string {
 	return ""
 }
 
+// dtoNames returns the names of all created DTOs for use as dropdown options.
+func (ce ContractsEditor) dtoNames() []string {
+	names := make([]string, 0, len(ce.dtos))
+	for _, d := range ce.dtos {
+		if d.Name != "" {
+			names = append(names, d.Name)
+		}
+	}
+	return names
+}
+
+// activeCEFieldPtr returns a pointer to the currently focused field that supports dropdown.
+func (ce *ContractsEditor) activeCEFieldPtr() *Field {
+	switch ce.activeTab {
+	case contractsTabDTOs:
+		switch ce.dtoSubView {
+		case ceViewForm:
+			if ce.dtoFormIdx < len(ce.dtoForm) {
+				return &ce.dtoForm[ce.dtoFormIdx]
+			}
+		case ceViewSubForm:
+			if ce.dtoFieldFormIdx < len(ce.dtoFieldForm) {
+				return &ce.dtoFieldForm[ce.dtoFieldFormIdx]
+			}
+		}
+	case contractsTabEndpoints:
+		if ce.epSubView == ceViewForm && ce.epFormIdx < len(ce.epForm) {
+			return &ce.epForm[ce.epFormIdx]
+		}
+	case contractsTabVersioning:
+		if ce.verFormIdx < len(ce.versioningFields) {
+			return &ce.versioningFields[ce.verFormIdx]
+		}
+	}
+	return nil
+}
+
+func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	f := ce.activeCEFieldPtr()
+	if f == nil {
+		ce.ddOpen = false
+		return ce, nil
+	}
+	switch key.String() {
+	case "j", "down":
+		if ce.ddOptIdx < len(f.Options)-1 {
+			ce.ddOptIdx++
+		}
+	case "k", "up":
+		if ce.ddOptIdx > 0 {
+			ce.ddOptIdx--
+		}
+	case "g":
+		ce.ddOptIdx = 0
+	case "G":
+		if len(f.Options) > 0 {
+			ce.ddOptIdx = len(f.Options) - 1
+		}
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(ce.ddOptIdx)
+			f.DDCursor = ce.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = ce.ddOptIdx
+			if ce.ddOptIdx < len(f.Options) {
+				f.Value = f.Options[ce.ddOptIdx]
+			}
+			ce.ddOpen = false
+		}
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = ce.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = ce.ddOptIdx
+			if ce.ddOptIdx < len(f.Options) {
+				f.Value = f.Options[ce.ddOptIdx]
+			}
+		}
+		ce.ddOpen = false
+	case "esc", "b":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = ce.ddOptIdx
+		}
+		ce.ddOpen = false
+	}
+	return ce, nil
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
@@ -222,6 +354,11 @@ func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return ce, nil
+	}
+
+	// Handle dropdown if open
+	if ce.ddOpen && ok {
+		return ce.updateDropdown(key)
 	}
 
 	// Sub-tab switching (only from top-level lists)
@@ -397,7 +534,7 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "a":
 		ce.dtos = append(ce.dtos, manifest.DTODef{})
 		ce.dtoIdx = len(ce.dtos) - 1
-		ce.dtoForm = defaultDTOFormFields()
+		ce.dtoForm = defaultDTOFormFields(ce.availableDomains)
 		ce.dtoFormIdx = 0
 		ce.dtoFieldItems = nil
 		ce.dtoSubView = ceViewForm
@@ -412,10 +549,24 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "enter":
 		if n > 0 {
 			d := ce.dtos[ce.dtoIdx]
-			ce.dtoForm = defaultDTOFormFields()
+			ce.dtoForm = defaultDTOFormFields(ce.availableDomains)
 			ce.dtoForm = setFieldValue(ce.dtoForm, "name", d.Name)
 			ce.dtoForm = setFieldValue(ce.dtoForm, "category", d.Category)
-			ce.dtoForm = setFieldValue(ce.dtoForm, "source_domains", d.SourceDomains)
+			// Restore multiselect for source_domains
+			if d.SourceDomains != "" {
+				for i := range ce.dtoForm {
+					if ce.dtoForm[i].Key == "source_domains" {
+						for _, sel := range splitCSV(d.SourceDomains) {
+							for j, opt := range ce.dtoForm[i].Options {
+								if opt == sel {
+									ce.dtoForm[i].SelectedIdxs = append(ce.dtoForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
 			ce.dtoForm = setFieldValue(ce.dtoForm, "description", d.Description)
 			ce.dtoFormIdx = 0
 			// Rebuild field items
@@ -440,6 +591,22 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	return ce, nil
 }
 
+// splitCSV splits a comma-separated string into trimmed parts.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ", ")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
 	switch key.String() {
 	case "j", "down":
@@ -452,8 +619,13 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		}
 	case "enter", " ":
 		f := &ce.dtoForm[ce.dtoFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			ce.ddOpen = true
+			if f.Kind == KindSelect {
+				ce.ddOptIdx = f.SelIdx
+			} else {
+				ce.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return ce.tryEnterInsert()
 		}
@@ -468,6 +640,7 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		}
 	case "F":
 		ce.saveDTOForm()
+		ce.populateDTOFieldsFromDomains()
 		ce.dtoFieldIdx = 0
 		ce.dtoSubView = ceViewSubList
 	case "b", "esc":
@@ -477,6 +650,26 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	return ce, nil
 }
 
+// populateDTOFieldsFromDomains auto-populates DTO fields from selected source domains
+// when navigating to the fields sub-list. Only runs when the field list is empty.
+// Full attribute injection requires domain attribute data which lives in DataTabEditor;
+// for now this creates one placeholder field per selected domain as a starting point.
+func (ce *ContractsEditor) populateDTOFieldsFromDomains() {
+	if len(ce.dtoFieldItems) > 0 {
+		return
+	}
+	sourceDomains := fieldGetMulti(ce.dtoForm, "source_domains")
+	if sourceDomains == "" {
+		return
+	}
+	// Create a placeholder id field to give the user a starting point.
+	placeholder := defaultDTOFieldForm()
+	placeholder = setFieldValue(placeholder, "name", "id")
+	placeholder = setFieldValue(placeholder, "type", "uuid")
+	placeholder = setFieldValue(placeholder, "required", "true")
+	ce.dtoFieldItems = append(ce.dtoFieldItems, placeholder)
+}
+
 func (ce *ContractsEditor) saveDTOForm() {
 	if ce.dtoIdx >= len(ce.dtos) {
 		return
@@ -484,7 +677,7 @@ func (ce *ContractsEditor) saveDTOForm() {
 	d := &ce.dtos[ce.dtoIdx]
 	d.Name = fieldGet(ce.dtoForm, "name")
 	d.Category = fieldGet(ce.dtoForm, "category")
-	d.SourceDomains = fieldGet(ce.dtoForm, "source_domains")
+	d.SourceDomains = fieldGetMulti(ce.dtoForm, "source_domains")
 	d.Description = fieldGet(ce.dtoForm, "description")
 
 	d.Fields = make([]manifest.DTOField, len(ce.dtoFieldItems))
@@ -550,7 +743,8 @@ func (ce ContractsEditor) updateDTOFieldForm(key tea.KeyMsg) (ContractsEditor, t
 	case "enter", " ":
 		f := &ce.dtoFieldForm[ce.dtoFieldFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			ce.ddOpen = true
+			ce.ddOptIdx = f.SelIdx
 		} else {
 			return ce.tryEnterInsert()
 		}
@@ -598,7 +792,7 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "a":
 		ce.endpoints = append(ce.endpoints, manifest.EndpointDef{})
 		ce.epIdx = len(ce.endpoints) - 1
-		ce.epForm = defaultEndpointFormFields()
+		ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames())
 		ce.epFormIdx = 0
 		ce.epSubView = ceViewForm
 		return ce.tryEnterInsert()
@@ -612,7 +806,7 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "enter":
 		if n > 0 {
 			ep := ce.endpoints[ce.epIdx]
-			ce.epForm = defaultEndpointFormFields()
+			ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames())
 			ce.epForm = setFieldValue(ce.epForm, "service_unit", ep.ServiceUnit)
 			ce.epForm = setFieldValue(ce.epForm, "name_path", ep.NamePath)
 			if ep.Protocol != "" {
@@ -645,7 +839,8 @@ func (ce ContractsEditor) updateEPForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "enter", " ":
 		f := &ce.epForm[ce.epFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			ce.ddOpen = true
+			ce.ddOptIdx = f.SelIdx
 		} else {
 			return ce.tryEnterInsert()
 		}
@@ -695,7 +890,8 @@ func (ce ContractsEditor) updateVersioning(key tea.KeyMsg) (ContractsEditor, tea
 	case "enter", " ":
 		f := &ce.versioningFields[ce.verFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			ce.ddOpen = true
+			ce.ddOptIdx = f.SelIdx
 		} else {
 			return ce.tryEnterInsert()
 		}
@@ -758,7 +954,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, ce.dtoForm, ce.dtoFormIdx, ce.internalMode == ceInsert, ce.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, ce.dtoForm, ce.dtoFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  F: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
 		return lines
 
@@ -792,7 +988,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(fname), "")
-		lines = append(lines, renderFormFields(w, ce.dtoFieldForm, ce.dtoFieldFormIdx, ce.internalMode == ceInsert, ce.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, ce.dtoFieldForm, ce.dtoFieldFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -852,7 +1048,7 @@ func (ce ContractsEditor) viewEndpoints(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
-		lines = append(lines, renderFormFields(w, filteredForm, formIdx, ce.internalMode == ceInsert, ce.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, filteredForm, formIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -861,7 +1057,7 @@ func (ce ContractsEditor) viewEndpoints(w int) []string {
 func (ce ContractsEditor) viewVersioning(w int) []string {
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  # API Versioning"), "")
-	lines = append(lines, renderFormFields(w, ce.versioningFields, ce.verFormIdx, ce.internalMode == ceInsert, ce.formInput)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, ce.versioningFields, ce.verFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 	return lines
 }
 

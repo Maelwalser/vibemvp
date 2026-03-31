@@ -1,23 +1,28 @@
 package ui
 
+import "strings"
+
 // FieldKind enumerates the types of form fields.
 type FieldKind int
 
 const (
-	KindText      FieldKind = iota // single-line text input
-	KindSelect                    // cycle through a list of options
-	KindTextArea                  // multi-line text input
-	KindDataModel                 // sentinel: delegates to a sub-editor
+	KindText        FieldKind = iota // single-line text input
+	KindSelect                      // cycle through a list of options
+	KindTextArea                    // multi-line text input
+	KindDataModel                   // sentinel: delegates to a sub-editor
+	KindMultiSelect                 // select multiple options from a list
 )
 
 // Field represents a single form field within a section.
 type Field struct {
-	Key     string    // machine key (e.g. "arch_pattern")
-	Label   string    // padded display label — must be exactly 14 chars
-	Kind    FieldKind
-	Value   string   // current string value
-	Options []string // KindSelect: available choices
-	SelIdx  int      // KindSelect: currently selected index
+	Key          string    // machine key (e.g. "arch_pattern")
+	Label        string    // padded display label — must be exactly 14 chars
+	Kind         FieldKind
+	Value        string   // current string value
+	Options      []string // KindSelect/KindMultiSelect: available choices
+	SelIdx       int      // KindSelect: currently selected index
+	SelectedIdxs []int    // KindMultiSelect: indices of selected options
+	DDCursor     int      // KindMultiSelect: dropdown cursor position
 }
 
 // DisplayValue returns the rendered value string for NORMAL mode.
@@ -28,6 +33,18 @@ func (f Field) DisplayValue() string {
 		}
 		return f.Options[f.SelIdx]
 	}
+	if f.Kind == KindMultiSelect {
+		if len(f.SelectedIdxs) == 0 {
+			return ""
+		}
+		parts := make([]string, 0, len(f.SelectedIdxs))
+		for _, idx := range f.SelectedIdxs {
+			if idx >= 0 && idx < len(f.Options) {
+				parts = append(parts, f.Options[idx])
+			}
+		}
+		return strings.Join(parts, ", ")
+	}
 	// Show a one-line preview for textarea fields.
 	v := f.Value
 	if f.Kind == KindTextArea && len(v) > 0 {
@@ -37,6 +54,32 @@ func (f Field) DisplayValue() string {
 		}
 	}
 	return v
+}
+
+// ToggleMultiSelect toggles the option at ddCursor in a KindMultiSelect field.
+func (f *Field) ToggleMultiSelect(optIdx int) {
+	if f.Kind != KindMultiSelect || optIdx < 0 || optIdx >= len(f.Options) {
+		return
+	}
+	for i, idx := range f.SelectedIdxs {
+		if idx == optIdx {
+			// Remove it
+			f.SelectedIdxs = append(f.SelectedIdxs[:i], f.SelectedIdxs[i+1:]...)
+			return
+		}
+	}
+	// Add it
+	f.SelectedIdxs = append(f.SelectedIdxs, optIdx)
+}
+
+// IsMultiSelected returns whether optIdx is currently selected.
+func (f Field) IsMultiSelected(optIdx int) bool {
+	for _, idx := range f.SelectedIdxs {
+		if idx == optIdx {
+			return true
+		}
+	}
+	return false
 }
 
 // CycleNext advances a KindSelect field to the next option.

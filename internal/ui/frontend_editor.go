@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -148,10 +149,20 @@ func defaultFEThemeFields() []Field {
 			Options: []string{"None", "Subtle transitions", "Animated (spring/ease)"},
 			Value:   "Subtle transitions", SelIdx: 1,
 		},
+		{
+			Key: "vibe", Label: "vibe          ", Kind: KindSelect,
+			Options: []string{
+				"Professional", "Playful", "Minimal", "Bold",
+				"Elegant", "Technical", "Creative", "Friendly", "Serious", "Modern",
+			},
+			Value: "Professional",
+		},
+		{Key: "colors", Label: "colors        ", Kind: KindText},
+		{Key: "description", Label: "description   ", Kind: KindTextArea},
 	}
 }
 
-func defaultPageFormFields() []Field {
+func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "route", Label: "route         ", Kind: KindText},
@@ -175,6 +186,14 @@ func defaultPageFormFields() []Field {
 			Key: "error_handling", Label: "error_handling", Kind: KindSelect,
 			Options: []string{"Inline", "Toast", "Error boundary / fallback page", "Retry"},
 			Value:   "Toast", SelIdx: 1,
+		},
+		{
+			Key: "auth_roles", Label: "auth_roles    ", Kind: KindMultiSelect,
+			Options: authRoleOptions,
+		},
+		{
+			Key: "linked_pages", Label: "linked_pages  ", Kind: KindMultiSelect,
+			Options: pageRouteOptions,
 		},
 	}
 }
@@ -225,6 +244,13 @@ type FrontendEditor struct {
 	navFields  []Field
 	navFormIdx int
 
+	// Cross-editor data
+	availableAuthRoles []string // from BackendEditor auth roles
+
+	// Dropdown state for KindSelect/KindMultiSelect fields
+	ddOpen   bool
+	ddOptIdx int
+
 	// Shared
 	internalMode feMode
 	formInput    textinput.Model
@@ -238,6 +264,22 @@ func newFrontendEditor() FrontendEditor {
 		navFields:   defaultNavFields(),
 		formInput:   newFormInput(),
 	}
+}
+
+// SetAuthRoles sets the available auth role options for page forms.
+func (fe *FrontendEditor) SetAuthRoles(roles []string) {
+	fe.availableAuthRoles = roles
+}
+
+// pageRoutes returns routes of all existing pages (for linked_pages options).
+func (fe FrontendEditor) pageRoutes() []string {
+	routes := make([]string, 0, len(fe.pages))
+	for _, p := range fe.pages {
+		if p.Route != "" {
+			routes = append(routes, p.Route)
+		}
+	}
+	return routes
 }
 
 // ── ToManifest ────────────────────────────────────────────────────────────────
@@ -263,6 +305,9 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 			Spacing:      fieldGet(fe.themeFields, "spacing"),
 			Elevation:    fieldGet(fe.themeFields, "elevation"),
 			Motion:       fieldGet(fe.themeFields, "motion"),
+			Vibe:         fieldGet(fe.themeFields, "vibe"),
+			Colors:       fieldGet(fe.themeFields, "colors"),
+			Description:  fieldGet(fe.themeFields, "description"),
 		},
 		Pages: fe.pages,
 		Navigation: manifest.NavigationConfig{
@@ -408,20 +453,32 @@ func (fe *FrontendEditor) saveInput() {
 	val := fe.formInput.Value()
 	switch fe.activeTab {
 	case feTabTech:
-		if fe.techFormIdx < len(fe.techFields) && fe.techFields[fe.techFormIdx].Kind == KindText {
-			fe.techFields[fe.techFormIdx].Value = val
+		if fe.techFormIdx < len(fe.techFields) {
+			k := fe.techFields[fe.techFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.techFields[fe.techFormIdx].Value = val
+			}
 		}
 	case feTabTheme:
-		if fe.themeFormIdx < len(fe.themeFields) && fe.themeFields[fe.themeFormIdx].Kind == KindText {
-			fe.themeFields[fe.themeFormIdx].Value = val
+		if fe.themeFormIdx < len(fe.themeFields) {
+			k := fe.themeFields[fe.themeFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.themeFields[fe.themeFormIdx].Value = val
+			}
 		}
 	case feTabPages:
-		if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].Kind == KindText {
-			fe.pageForm[fe.pageFormIdx].Value = val
+		if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
+			k := fe.pageForm[fe.pageFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.pageForm[fe.pageFormIdx].Value = val
+			}
 		}
 	case feTabNav:
-		if fe.navFormIdx < len(fe.navFields) && fe.navFields[fe.navFormIdx].Kind == KindText {
-			fe.navFields[fe.navFormIdx].Value = val
+		if fe.navFormIdx < len(fe.navFields) {
+			k := fe.navFields[fe.navFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.navFields[fe.navFormIdx].Value = val
+			}
 		}
 	}
 }
@@ -446,7 +503,7 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 			f = &fe.navFields[fe.navFormIdx]
 		}
 	}
-	if f == nil || f.Kind != KindText {
+	if f == nil || (f.Kind != KindText && f.Kind != KindTextArea) {
 		return fe, nil
 	}
 	fe.internalMode = feInsert
@@ -457,6 +514,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 }
 
 func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.ddOpen {
+		return fe.updateTechDropdown(key)
+	}
 	switch key.String() {
 	case "j", "down":
 		if fe.techFormIdx < len(fe.techFields)-1 {
@@ -469,10 +529,8 @@ func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &fe.techFields[fe.techFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
-			if f.Key == "language" {
-				fe.updateFEFrameworkOptions()
-			}
+			fe.ddOpen = true
+			fe.ddOptIdx = f.SelIdx
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -486,6 +544,36 @@ func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		}
 	case "i":
 		return fe.tryEnterInsert()
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.techFormIdx >= len(fe.techFields) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.techFields[fe.techFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = fe.ddOptIdx
+		if fe.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[fe.ddOptIdx]
+		}
+		fe.ddOpen = false
+		if f.Key == "language" {
+			fe.updateFEFrameworkOptions()
+		}
+	case "esc", "b":
+		fe.ddOpen = false
 	}
 	return fe, nil
 }
@@ -507,6 +595,9 @@ func (fe *FrontendEditor) updateFEFrameworkOptions() {
 }
 
 func (fe FrontendEditor) updateTheme(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.ddOpen {
+		return fe.updateThemeDropdown(key)
+	}
 	switch key.String() {
 	case "j", "down":
 		if fe.themeFormIdx < len(fe.themeFields)-1 {
@@ -519,7 +610,8 @@ func (fe FrontendEditor) updateTheme(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &fe.themeFields[fe.themeFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			fe.ddOpen = true
+			fe.ddOptIdx = f.SelIdx
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -530,6 +622,33 @@ func (fe FrontendEditor) updateTheme(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		}
 	case "i":
 		return fe.tryEnterInsert()
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.themeFormIdx >= len(fe.themeFields) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.themeFields[fe.themeFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = fe.ddOptIdx
+		if fe.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[fe.ddOptIdx]
+		}
+		fe.ddOpen = false
+	case "esc", "b":
+		fe.ddOpen = false
 	}
 	return fe, nil
 }
@@ -555,7 +674,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	case "a":
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
-		fe.pageForm = defaultPageFormFields()
+		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes())
 		fe.pageFormIdx = 0
 		fe.pageSubView = ceViewForm
 		return fe.tryEnterInsert()
@@ -569,7 +688,14 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	case "enter":
 		if n > 0 {
 			p := fe.pages[fe.pageIdx]
-			fe.pageForm = defaultPageFormFields()
+			// Exclude current page's route from linked_pages options
+			otherRoutes := make([]string, 0, len(fe.pages))
+			for i, pg := range fe.pages {
+				if i != fe.pageIdx && pg.Route != "" {
+					otherRoutes = append(otherRoutes, pg.Route)
+				}
+			}
+			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes)
 			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
 			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
 			fe.pageForm = setFieldValue(fe.pageForm, "auth_required", p.AuthRequired)
@@ -584,6 +710,36 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 			if p.ErrorHandling != "" {
 				fe.pageForm = setFieldValue(fe.pageForm, "error_handling", p.ErrorHandling)
 			}
+			// Restore multiselect for auth_roles
+			if p.AuthRoles != "" {
+				for i := range fe.pageForm {
+					if fe.pageForm[i].Key == "auth_roles" {
+						for _, sel := range strings.Split(p.AuthRoles, ", ") {
+							for j, opt := range fe.pageForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
+			// Restore multiselect for linked_pages
+			if p.LinkedPages != "" {
+				for i := range fe.pageForm {
+					if fe.pageForm[i].Key == "linked_pages" {
+						for _, sel := range strings.Split(p.LinkedPages, ", ") {
+							for j, opt := range fe.pageForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
 			fe.pageFormIdx = 0
 			fe.pageSubView = ceViewForm
 		}
@@ -592,6 +748,10 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 }
 
 func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	// Handle dropdown if open
+	if fe.ddOpen {
+		return fe.updatePageFormDropdown(key)
+	}
 	switch key.String() {
 	case "j", "down":
 		if fe.pageFormIdx < len(fe.pageForm)-1 {
@@ -603,8 +763,13 @@ func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		}
 	case "enter", " ":
 		f := &fe.pageForm[fe.pageFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			fe.ddOpen = true
+			if f.Kind == KindSelect {
+				fe.ddOptIdx = f.SelIdx
+			} else {
+				fe.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -624,6 +789,51 @@ func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	return fe, nil
 }
 
+func (fe FrontendEditor) updatePageFormDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.pageFormIdx >= len(fe.pageForm) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.pageForm[fe.pageFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.ddOptIdx)
+			f.DDCursor = fe.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = fe.ddOptIdx
+			if fe.ddOptIdx < len(f.Options) {
+				f.Value = f.Options[fe.ddOptIdx]
+			}
+			fe.ddOpen = false
+		}
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = fe.ddOptIdx
+			if fe.ddOptIdx < len(f.Options) {
+				f.Value = f.Options[fe.ddOptIdx]
+			}
+		}
+		fe.ddOpen = false
+	case "esc", "b":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.ddOptIdx
+		}
+		fe.ddOpen = false
+	}
+	return fe, nil
+}
+
 func (fe *FrontendEditor) savePageForm() {
 	if fe.pageIdx >= len(fe.pages) {
 		return
@@ -637,9 +847,14 @@ func (fe *FrontendEditor) savePageForm() {
 	p.CoreActions = fieldGet(fe.pageForm, "core_actions")
 	p.Loading = fieldGet(fe.pageForm, "loading")
 	p.ErrorHandling = fieldGet(fe.pageForm, "error_handling")
+	p.AuthRoles = fieldGetMulti(fe.pageForm, "auth_roles")
+	p.LinkedPages = fieldGetMulti(fe.pageForm, "linked_pages")
 }
 
 func (fe FrontendEditor) updateNav(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.ddOpen {
+		return fe.updateNavDropdown(key)
+	}
 	switch key.String() {
 	case "j", "down":
 		if fe.navFormIdx < len(fe.navFields)-1 {
@@ -652,7 +867,8 @@ func (fe FrontendEditor) updateNav(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &fe.navFields[fe.navFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			fe.ddOpen = true
+			fe.ddOptIdx = f.SelIdx
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -663,6 +879,33 @@ func (fe FrontendEditor) updateNav(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		}
 	case "i":
 		return fe.tryEnterInsert()
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateNavDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.navFormIdx >= len(fe.navFields) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.navFields[fe.navFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = fe.ddOptIdx
+		if fe.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[fe.ddOptIdx]
+		}
+		fe.ddOpen = false
+	case "esc", "b":
+		fe.ddOpen = false
 	}
 	return fe, nil
 }
@@ -681,13 +924,13 @@ func (fe FrontendEditor) View(w, h int) string {
 
 	switch fe.activeTab {
 	case feTabTech:
-		lines = append(lines, renderFormFields(w, fe.techFields, fe.techFormIdx, fe.internalMode == feInsert, fe.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.techFields, fe.techFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 	case feTabTheme:
-		lines = append(lines, renderFormFields(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == feInsert, fe.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 	case feTabPages:
 		lines = append(lines, fe.viewPages(w)...)
 	case feTabNav:
-		lines = append(lines, renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 	}
 
 	return fillTildes(lines, h)
@@ -718,7 +961,7 @@ func (fe FrontendEditor) viewPages(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == feInsert, fe.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		return lines
 	}
 	return nil

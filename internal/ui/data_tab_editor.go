@@ -94,6 +94,10 @@ type DataTabEditor struct {
 	internalMode dtMode
 	formInput    textinput.Model
 	width        int
+
+	// Dropdown state for multiselect fields in domain/caching/fs forms
+	ddOpen   bool
+	ddOptIdx int
 }
 
 func newDataTabEditor() DataTabEditor {
@@ -105,13 +109,41 @@ func newDataTabEditor() DataTabEditor {
 	}
 }
 
+// dbNames returns the aliases of all created databases for use as dropdown options.
+func (dt DataTabEditor) dbNames() []string {
+	names := make([]string, 0, len(dt.dbEditor.Sources))
+	for _, src := range dt.dbEditor.Sources {
+		if src.Alias != "" {
+			names = append(names, src.Alias)
+		}
+	}
+	return names
+}
+
+// domainNames returns the names of all created domains (excluding current) for use as dropdown options.
+func (dt DataTabEditor) domainNames() []string {
+	names := make([]string, 0, len(dt.domains))
+	for _, d := range dt.domains {
+		if d.Name != "" {
+			names = append(names, d.Name)
+		}
+	}
+	return names
+}
+
 // ── field definitions ─────────────────────────────────────────────────────────
 
-func defaultDomainFormFields() []Field {
+func defaultDomainFormFields(dbOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "description", Label: "description   ", Kind: KindText},
-		{Key: "databases", Label: "databases     ", Kind: KindText},
+		{
+			Key: "databases", Label: "databases     ", Kind: KindMultiSelect,
+			Options: dbOptions,
+		},
+		{Key: "attr_names", Label: "attr_names    ", Kind: KindText,
+			// Hint: type comma-separated attribute names to batch-create attributes
+		},
 	}
 }
 
@@ -136,19 +168,27 @@ func defaultAttrFields() []Field {
 	}
 }
 
-func defaultRelFields() []Field {
+func defaultRelFields(domainOptions []string) []Field {
 	return []Field{
-		{Key: "related_domain", Label: "related_domain", Kind: KindText},
+		{
+			Key: "related_domain", Label: "related_domain", Kind: KindSelect,
+			Options: domainOptions,
+			Value:   func() string {
+				if len(domainOptions) > 0 {
+					return domainOptions[0]
+				}
+				return ""
+			}(),
+		},
 		{
 			Key: "rel_type", Label: "rel_type      ", Kind: KindSelect,
 			Options: []string{"One-to-One", "One-to-Many", "Many-to-Many"},
 			Value:   "One-to-Many",
 		},
-		{Key: "foreign_key", Label: "foreign_key   ", Kind: KindText},
 		{
 			Key: "cascade", Label: "cascade       ", Kind: KindSelect,
-			Options: []string{"Cascade delete", "Set null", "Restrict", "No action"},
-			Value:   "No action",
+			Options: []string{"CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"},
+			Value:   "NO ACTION",
 		},
 	}
 }
@@ -164,20 +204,53 @@ func defaultCachingFields() []Field {
 			Value: "None", SelIdx: 3,
 		},
 		{
-			Key: "strategy", Label: "strategy      ", Kind: KindSelect,
+			Key: "strategy", Label: "strategy      ", Kind: KindMultiSelect,
 			Options: []string{"Cache-aside", "Read-through", "Write-through", "Write-behind"},
-			Value:   "Cache-aside",
 		},
 		{
 			Key: "invalidation", Label: "invalidation  ", Kind: KindSelect,
 			Options: []string{"TTL-based", "Event-driven", "Manual", "Hybrid"},
 			Value:   "TTL-based",
 		},
-		{Key: "entities", Label: "entities      ", Kind: KindText},
+		{
+			Key: "entities", Label: "entities      ", Kind: KindMultiSelect,
+			Options: []string{}, // populated dynamically from domain names
+		},
 	}
 }
 
-func defaultFSFormFields() []Field {
+// withRefreshedCachingEntities returns a copy of the DataTabEditor with the
+// entities multiselect options updated to reflect current domain names.
+func (dt DataTabEditor) withRefreshedCachingEntities() DataTabEditor {
+	domOpts := dt.domainNames()
+	newFields := make([]Field, len(dt.cachingFields))
+	copy(newFields, dt.cachingFields)
+	for i := range newFields {
+		if newFields[i].Key == "entities" {
+			// Preserve existing selections by re-mapping
+			oldOpts := newFields[i].Options
+			newFields[i].Options = domOpts
+			newSelected := make([]int, 0)
+			for _, oldIdx := range newFields[i].SelectedIdxs {
+				if oldIdx < len(oldOpts) {
+					oldVal := oldOpts[oldIdx]
+					for j, newOpt := range domOpts {
+						if newOpt == oldVal {
+							newSelected = append(newSelected, j)
+							break
+						}
+					}
+				}
+			}
+			newFields[i].SelectedIdxs = newSelected
+			break
+		}
+	}
+	dt.cachingFields = newFields
+	return dt
+}
+
+func defaultFSFormFields(domainOptions []string) []Field {
 	return []Field{
 		{
 			Key: "technology", Label: "technology    ", Kind: KindSelect,
@@ -190,27 +263,57 @@ func defaultFSFormFields() []Field {
 			Options: []string{"Public (CDN-fronted)", "Private (signed URLs)", "Internal only"},
 			Value:   "Private (signed URLs)", SelIdx: 1,
 		},
-		{Key: "max_size", Label: "max_size      ", Kind: KindText},
+		{
+			Key: "max_size", Label: "max_size      ", Kind: KindSelect,
+			Options: []string{"1 MB", "5 MB", "10 MB", "25 MB", "50 MB", "100 MB", "500 MB", "1 GB", "Unlimited"},
+			Value:   "10 MB", SelIdx: 2,
+		},
+		{
+			Key: "domains", Label: "domains       ", Kind: KindMultiSelect,
+			Options: domainOptions,
+		},
+		{Key: "ttl_minutes", Label: "ttl_minutes   ", Kind: KindText},
+		{Key: "allowed_types", Label: "allowed_types ", Kind: KindText},
 	}
 }
 
-func fsFormFromDef(def manifest.FileStorageDef) []Field {
-	f := defaultFSFormFields()
+func fsFormFromDef(def manifest.FileStorageDef, domainOptions []string) []Field {
+	f := defaultFSFormFields(domainOptions)
 	f = setFieldValue(f, "technology", def.Technology)
 	f = setFieldValue(f, "purpose", def.Purpose)
 	if def.Access != "" {
 		f = setFieldValue(f, "access", def.Access)
 	}
 	f = setFieldValue(f, "max_size", def.MaxSize)
+	f = setFieldValue(f, "ttl_minutes", def.TTLMinutes)
+	f = setFieldValue(f, "allowed_types", def.AllowedTypes)
+	// Restore multi-select for domains
+	if def.Domains != "" {
+		for i := range f {
+			if f[i].Key == "domains" {
+				for _, sel := range strings.Split(def.Domains, ", ") {
+					for j, opt := range f[i].Options {
+						if opt == sel {
+							f[i].SelectedIdxs = append(f[i].SelectedIdxs, j)
+						}
+					}
+				}
+				break
+			}
+		}
+	}
 	return f
 }
 
 func fsDefFromForm(fields []Field) manifest.FileStorageDef {
 	return manifest.FileStorageDef{
-		Technology: fieldGet(fields, "technology"),
-		Purpose:    fieldGet(fields, "purpose"),
-		Access:     fieldGet(fields, "access"),
-		MaxSize:    fieldGet(fields, "max_size"),
+		Technology:   fieldGet(fields, "technology"),
+		Purpose:      fieldGet(fields, "purpose"),
+		Access:       fieldGet(fields, "access"),
+		MaxSize:      fieldGet(fields, "max_size"),
+		Domains:      fieldGetMulti(fields, "domains"),
+		TTLMinutes:   fieldGet(fields, "ttl_minutes"),
+		AllowedTypes: fieldGet(fields, "allowed_types"),
 	}
 }
 
@@ -225,7 +328,7 @@ func (dt DataTabEditor) ToManifestDataPillar() manifest.DataPillar {
 			Layer:        fieldGet(dt.cachingFields, "layer"),
 			Strategy:     fieldGet(dt.cachingFields, "strategy"),
 			Invalidation: fieldGet(dt.cachingFields, "invalidation"),
-			Entities:     fieldGet(dt.cachingFields, "entities"),
+			Entities:     fieldGetMulti(dt.cachingFields, "entities"),
 		},
 		FileStorages: dt.fileStorages,
 	}
@@ -305,6 +408,81 @@ func (dt DataTabEditor) fsHintLine() string {
 	return ""
 }
 
+// ── Dropdown helpers ──────────────────────────────────────────────────────────
+
+// activeDTFieldPtr returns a pointer to the currently active field that could be a multiselect.
+func (dt *DataTabEditor) activeDTFieldPtr() *Field {
+	switch dt.activeTab {
+	case dataTabDomains:
+		switch dt.domainSubView {
+		case domainViewForm:
+			if dt.domainFormIdx < len(dt.domainForm) {
+				return &dt.domainForm[dt.domainFormIdx]
+			}
+		case domainViewRelForm:
+			if dt.relFormIdx < len(dt.relForm) {
+				return &dt.relForm[dt.relFormIdx]
+			}
+		}
+	case dataTabCaching:
+		if dt.domainFormIdx < len(dt.cachingFields) {
+			return &dt.cachingFields[dt.domainFormIdx]
+		}
+	case dataTabFileStorage:
+		if dt.fsSubView == fsViewForm && dt.fsFormIdx < len(dt.fsForm) {
+			return &dt.fsForm[dt.fsFormIdx]
+		}
+	}
+	return nil
+}
+
+func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
+	f := dt.activeDTFieldPtr()
+	if f == nil {
+		dt.ddOpen = false
+		return dt, nil
+	}
+	switch key.String() {
+	case "j", "down":
+		if dt.ddOptIdx < len(f.Options)-1 {
+			dt.ddOptIdx++
+		}
+	case "k", "up":
+		if dt.ddOptIdx > 0 {
+			dt.ddOptIdx--
+		}
+	case "g":
+		dt.ddOptIdx = 0
+	case "G":
+		if len(f.Options) > 0 {
+			dt.ddOptIdx = len(f.Options) - 1
+		}
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(dt.ddOptIdx)
+			f.DDCursor = dt.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = dt.ddOptIdx
+			f.Value = f.Options[dt.ddOptIdx]
+			dt.ddOpen = false
+		}
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = dt.ddOptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = dt.ddOptIdx
+			f.Value = f.Options[dt.ddOptIdx]
+		}
+		dt.ddOpen = false
+	case "esc", "b":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = dt.ddOptIdx
+		}
+		dt.ddOpen = false
+	}
+	return dt, nil
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
@@ -313,6 +491,11 @@ func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 	// Insert mode is handled globally for all sub-tabs except db
 	if dt.internalMode == dtInsert {
 		return dt.updateInsert(msg)
+	}
+
+	// Dropdown mode for multiselect fields
+	if dt.ddOpen && ok {
+		return dt.updateDropdown(key)
 	}
 
 	if !ok {
@@ -328,6 +511,10 @@ func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 	// Sub-tab switching with h/l (only when not in a sub-view)
 	canSwitchTab := dt.activeTab != dataTabDomains || dt.domainSubView == domainViewList
 	if dt.activeTab == dataTabFileStorage && dt.fsSubView != fsViewList {
+		canSwitchTab = false
+	}
+	// Do not switch tabs when the DB editor is in form view or insert mode
+	if dt.activeTab == dataTabDatabases && (dt.dbEditor.view == dbeViewForm || dt.dbEditor.internalMode == dbeInsert) {
 		canSwitchTab = false
 	}
 
@@ -528,7 +715,7 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 	case "a":
 		dt.domains = append(dt.domains, manifest.DomainDef{})
 		dt.domainIdx = len(dt.domains) - 1
-		dt.domainForm = defaultDomainFormFields()
+		dt.domainForm = defaultDomainFormFields(dt.dbNames())
 		dt.domainFormIdx = 0
 		dt.attrItems = nil
 		dt.relItems = nil
@@ -544,10 +731,25 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 	case "enter":
 		if n > 0 {
 			d := dt.domains[dt.domainIdx]
-			dt.domainForm = defaultDomainFormFields()
+			dbOpts := dt.dbNames()
+			dt.domainForm = defaultDomainFormFields(dbOpts)
 			dt.domainForm = setFieldValue(dt.domainForm, "name", d.Name)
 			dt.domainForm = setFieldValue(dt.domainForm, "description", d.Description)
-			dt.domainForm = setFieldValue(dt.domainForm, "databases", d.Databases)
+			// Restore multiselect for databases
+			if d.Databases != "" {
+				for i := range dt.domainForm {
+					if dt.domainForm[i].Key == "databases" {
+						for _, sel := range strings.Split(d.Databases, ", ") {
+							for j, opt := range dt.domainForm[i].Options {
+								if opt == sel {
+									dt.domainForm[i].SelectedIdxs = append(dt.domainForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
 			dt.domainFormIdx = 0
 			// Rebuild attr items
 			dt.attrItems = make([][]Field, len(d.Attributes))
@@ -564,13 +766,19 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 				dt.attrItems[i] = f
 			}
 			// Rebuild rel items
+			domOpts := dt.domainNames()
 			dt.relItems = make([][]Field, len(d.Relationships))
 			for i, rel := range d.Relationships {
-				f := defaultRelFields()
-				f = setFieldValue(f, "related_domain", rel.RelatedDomain)
-				f = setFieldValue(f, "rel_type", rel.RelType)
-				f = setFieldValue(f, "foreign_key", rel.ForeignKey)
-				f = setFieldValue(f, "cascade", rel.Cascade)
+				f := defaultRelFields(domOpts)
+				if rel.RelatedDomain != "" {
+					f = setFieldValue(f, "related_domain", rel.RelatedDomain)
+				}
+				if rel.RelType != "" {
+					f = setFieldValue(f, "rel_type", rel.RelType)
+				}
+				if rel.Cascade != "" {
+					f = setFieldValue(f, "cascade", rel.Cascade)
+				}
 				dt.relItems[i] = f
 			}
 			dt.domainSubView = domainViewForm
@@ -591,8 +799,13 @@ func (dt DataTabEditor) updateDomainForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		}
 	case "enter", " ":
 		f := &dt.domainForm[dt.domainFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			dt.ddOpen = true
+			if f.Kind == KindSelect {
+				dt.ddOptIdx = f.SelIdx
+			} else {
+				dt.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return dt.tryEnterInsert()
 		}
@@ -627,7 +840,39 @@ func (dt *DataTabEditor) saveDomainForm() {
 	d := &dt.domains[dt.domainIdx]
 	d.Name = fieldGet(dt.domainForm, "name")
 	d.Description = fieldGet(dt.domainForm, "description")
-	d.Databases = fieldGet(dt.domainForm, "databases")
+	d.Databases = fieldGetMulti(dt.domainForm, "databases")
+
+	// Parse attr_names: comma-separated names create new attributes (if typed)
+	attrNamesRaw := fieldGet(dt.domainForm, "attr_names")
+	if attrNamesRaw != "" {
+		parts := strings.Split(attrNamesRaw, ",")
+		for _, p := range parts {
+			name := strings.TrimSpace(p)
+			if name == "" {
+				continue
+			}
+			// Only add if not already present
+			found := false
+			for _, item := range dt.attrItems {
+				if fieldGet(item, "name") == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				f := defaultAttrFields()
+				f = setFieldValue(f, "name", name)
+				dt.attrItems = append(dt.attrItems, f)
+			}
+		}
+		// Clear the field after processing
+		for i := range dt.domainForm {
+			if dt.domainForm[i].Key == "attr_names" {
+				dt.domainForm[i].Value = ""
+				break
+			}
+		}
+	}
 
 	// Save attrs
 	d.Attributes = make([]manifest.DomainAttribute, len(dt.attrItems))
@@ -642,13 +887,27 @@ func (dt *DataTabEditor) saveDomainForm() {
 		}
 	}
 
-	// Save rels
+	// Save rels (no FK field — auto-inferred from rel_type)
 	d.Relationships = make([]manifest.DomainRelationship, len(dt.relItems))
 	for i, item := range dt.relItems {
+		relType := fieldGet(item, "rel_type")
+		relDomain := fieldGet(item, "related_domain")
+		// Auto-generate FK name
+		fk := ""
+		if relDomain != "" {
+			switch relType {
+			case "One-to-Many":
+				fk = strings.ToLower(relDomain) + "_id"
+			case "One-to-One":
+				fk = strings.ToLower(relDomain) + "_id"
+			case "Many-to-Many":
+				fk = "" // junction table; no single FK
+			}
+		}
 		d.Relationships[i] = manifest.DomainRelationship{
-			RelatedDomain: fieldGet(item, "related_domain"),
-			RelType:       fieldGet(item, "rel_type"),
-			ForeignKey:    fieldGet(item, "foreign_key"),
+			RelatedDomain: relDomain,
+			RelType:       relType,
+			ForeignKey:    fk,
 			Cascade:       fieldGet(item, "cascade"),
 		}
 	}
@@ -738,7 +997,7 @@ func (dt DataTabEditor) updateRelList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 			dt.relIdx--
 		}
 	case "a":
-		dt.relItems = append(dt.relItems, defaultRelFields())
+		dt.relItems = append(dt.relItems, defaultRelFields(dt.domainNames()))
 		dt.relIdx = len(dt.relItems) - 1
 		dt.relForm = copyFields(dt.relItems[dt.relIdx])
 		dt.relFormIdx = 0
@@ -774,8 +1033,13 @@ func (dt DataTabEditor) updateRelForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter", " ":
 		f := &dt.relForm[dt.relFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			dt.ddOpen = true
+			if f.Kind == KindSelect {
+				dt.ddOptIdx = f.SelIdx
+			} else {
+				dt.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return dt.tryEnterInsert()
 		}
@@ -800,6 +1064,8 @@ func (dt DataTabEditor) updateRelForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 // ── Caching update ────────────────────────────────────────────────────────────
 
 func (dt DataTabEditor) updateCaching(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
+	// Refresh entities options with current domain names
+	dt = dt.withRefreshedCachingEntities()
 	// Use domainFormIdx as the field cursor for caching
 	switch key.String() {
 	case "j", "down":
@@ -812,8 +1078,13 @@ func (dt DataTabEditor) updateCaching(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter", " ":
 		f := &dt.cachingFields[dt.domainFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			dt.ddOpen = true
+			if f.Kind == KindSelect {
+				dt.ddOptIdx = f.SelIdx
+			} else {
+				dt.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return dt.tryEnterInsert()
 		}
@@ -856,7 +1127,7 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	case "a":
 		dt.fileStorages = append(dt.fileStorages, manifest.FileStorageDef{})
 		dt.fsIdx = len(dt.fileStorages) - 1
-		dt.fsForm = defaultFSFormFields()
+		dt.fsForm = defaultFSFormFields(dt.domainNames())
 		dt.fsFormIdx = 0
 		dt.fsSubView = fsViewForm
 	case "d":
@@ -868,7 +1139,7 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter":
 		if n > 0 {
-			dt.fsForm = fsFormFromDef(dt.fileStorages[dt.fsIdx])
+			dt.fsForm = fsFormFromDef(dt.fileStorages[dt.fsIdx], dt.domainNames())
 			dt.fsFormIdx = 0
 			dt.fsSubView = fsViewForm
 		}
@@ -888,8 +1159,13 @@ func (dt DataTabEditor) updateFSForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter", " ":
 		f := &dt.fsForm[dt.fsFormIdx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			dt.ddOpen = true
+			if f.Kind == KindSelect {
+				dt.ddOptIdx = f.SelIdx
+			} else {
+				dt.ddOptIdx = f.DDCursor
+			}
 		} else {
 			return dt.tryEnterInsert()
 		}
@@ -974,7 +1250,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 			name = "(new domain)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, dt.domainForm, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, dt.domainForm, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		lines = append(lines, "", StyleSectionDesc.Render("  A: edit attributes  R: edit relationships"))
 		attrCount := len(dt.attrItems)
 		relCount := len(dt.relItems)
@@ -1036,7 +1312,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 			relName = "(new relationship)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(relName), "")
-		lines = append(lines, renderFormFields(w, dt.relForm, dt.relFormIdx, dt.internalMode == dtInsert, dt.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, dt.relForm, dt.relFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1045,7 +1321,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 func (dt DataTabEditor) viewCaching(w int) []string {
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  # Caching Strategy"), "")
-	lines = append(lines, renderFormFields(w, dt.cachingFields, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, dt.cachingFields, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 	return lines
 }
 
@@ -1078,8 +1354,7 @@ func (dt DataTabEditor) viewFileStorage(w int) []string {
 			tech = "(new storage)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(tech), "")
-		noDisabled := func(_ []Field, _ int) bool { return false }
-		lines = append(lines, renderFormFieldsWithDisabled(w, dt.fsForm, dt.fsFormIdx, dt.internalMode == dtInsert, dt.formInput, noDisabled)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, dt.fsForm, dt.fsFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		return lines
 	}
 	return nil

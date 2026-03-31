@@ -208,9 +208,14 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dataTabEditor, cmd = m.dataTabEditor.Update(msg)
 		m.modified = true
 	case m.isContractsSection():
+		// Inject current domain and service names before processing
+		m.contractsEditor.SetDomains(m.dataTabEditor.domainNames())
+		m.contractsEditor.SetServices(m.backendEditor.ServiceNames())
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 		m.modified = true
 	case m.isFrontendSection():
+		// Inject auth roles from backend before processing
+		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 		m.modified = true
 	case m.isInfraSection():
