@@ -173,8 +173,9 @@ type ContractsEditor struct {
 	verFormIdx       int
 
 	// Cross-editor reference data (set by model.go before each Update)
-	availableDomains []string // from DataTabEditor.domainNames()
-	availableServices []string // from BackendEditor.ServiceNames()
+	availableDomains    []string               // from DataTabEditor.domainNames()
+	availableDomainDefs []manifest.DomainDef   // from DataTabEditor.domains
+	availableServices   []string               // from BackendEditor.ServiceNames()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	ddOpen   bool
@@ -201,6 +202,11 @@ func (ce *ContractsEditor) SetDomains(domains []string) {
 // SetServices updates the list of available service names for cross-referencing.
 func (ce *ContractsEditor) SetServices(services []string) {
 	ce.availableServices = services
+}
+
+// SetDomainDefs updates the full domain definitions for attribute injection.
+func (ce *ContractsEditor) SetDomainDefs(domains []manifest.DomainDef) {
+	ce.availableDomainDefs = domains
 }
 
 // ── ToManifest ────────────────────────────────────────────────────────────────
@@ -652,8 +658,6 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 
 // populateDTOFieldsFromDomains auto-populates DTO fields from selected source domains
 // when navigating to the fields sub-list. Only runs when the field list is empty.
-// Full attribute injection requires domain attribute data which lives in DataTabEditor;
-// for now this creates one placeholder field per selected domain as a starting point.
 func (ce *ContractsEditor) populateDTOFieldsFromDomains() {
 	if len(ce.dtoFieldItems) > 0 {
 		return
@@ -662,12 +666,65 @@ func (ce *ContractsEditor) populateDTOFieldsFromDomains() {
 	if sourceDomains == "" {
 		return
 	}
-	// Create a placeholder id field to give the user a starting point.
-	placeholder := defaultDTOFieldForm()
-	placeholder = setFieldValue(placeholder, "name", "id")
-	placeholder = setFieldValue(placeholder, "type", "uuid")
-	placeholder = setFieldValue(placeholder, "required", "true")
-	ce.dtoFieldItems = append(ce.dtoFieldItems, placeholder)
+	for _, domainName := range strings.Split(sourceDomains, ", ") {
+		domainName = strings.TrimSpace(domainName)
+		if domainName == "" {
+			continue
+		}
+		for _, domainDef := range ce.availableDomainDefs {
+			if domainDef.Name != domainName {
+				continue
+			}
+			for _, attr := range domainDef.Attributes {
+				f := defaultDTOFieldForm()
+				f = setFieldValue(f, "name", attr.Name)
+				f = setFieldValue(f, "type", domainTypeToDTOType(attr.Type))
+				if attr.Sensitive {
+					f = setFieldValue(f, "nullable", "true")
+				}
+				if attr.Validation != "" {
+					f = setFieldValue(f, "validation", attr.Validation)
+				}
+				ce.dtoFieldItems = append(ce.dtoFieldItems, f)
+			}
+			break
+		}
+	}
+	// Fallback placeholder if no domain attrs found
+	if len(ce.dtoFieldItems) == 0 {
+		placeholder := defaultDTOFieldForm()
+		placeholder = setFieldValue(placeholder, "name", "id")
+		placeholder = setFieldValue(placeholder, "type", "uuid")
+		placeholder = setFieldValue(placeholder, "required", "true")
+		ce.dtoFieldItems = append(ce.dtoFieldItems, placeholder)
+	}
+}
+
+func domainTypeToDTOType(t string) string {
+	switch t {
+	case "String":
+		return "string"
+	case "Int":
+		return "int"
+	case "Float":
+		return "float"
+	case "Boolean":
+		return "boolean"
+	case "DateTime":
+		return "datetime"
+	case "UUID":
+		return "uuid"
+	case "Enum(values)":
+		return "enum(values)"
+	case "JSON/Map":
+		return "map(key,value)"
+	case "Array(type)":
+		return "array(type)"
+	case "Ref(Domain)":
+		return "nested(DTO)"
+	default:
+		return "string"
+	}
 }
 
 func (ce *ContractsEditor) saveDTOForm() {

@@ -235,39 +235,71 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 
 	switch ie.activeTab {
 	case infraTabNetworking:
-		return ie.updateFields(&ie.networkingFields, &ie.netFormIdx, key)
+		return ie.updateFields(key)
 	case infraTabCICD:
-		return ie.updateFields(&ie.cicdFields, &ie.cicdFormIdx, key)
+		return ie.updateFields(key)
 	case infraTabObservability:
-		return ie.updateFields(&ie.obsFields, &ie.obsFormIdx, key)
+		return ie.updateFields(key)
 	}
 	return ie, nil
 }
 
-func (ie InfraEditor) updateFields(fields *[]Field, idx *int, key tea.KeyMsg) (InfraEditor, tea.Cmd) {
-	n := len(*fields)
+func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	var fields []Field
+	var idx int
+	switch ie.activeTab {
+	case infraTabNetworking:
+		fields, idx = ie.networkingFields, ie.netFormIdx
+	case infraTabCICD:
+		fields, idx = ie.cicdFields, ie.cicdFormIdx
+	case infraTabObservability:
+		fields, idx = ie.obsFields, ie.obsFormIdx
+	default:
+		return ie, nil
+	}
+	n := len(fields)
+	wantsInsert := false
 	switch key.String() {
 	case "j", "down":
-		if *idx < n-1 {
-			*idx++
+		if idx < n-1 {
+			idx++
 		}
 	case "k", "up":
-		if *idx > 0 {
-			*idx--
+		if idx > 0 {
+			idx--
 		}
 	case "enter", " ":
-		f := &(*fields)[*idx]
-		if f.Kind == KindSelect {
-			f.CycleNext()
-		} else {
-			return ie.tryEnterInsert()
+		if idx < n {
+			f := &fields[idx]
+			if f.Kind == KindSelect {
+				f.CycleNext()
+			} else {
+				wantsInsert = true
+			}
 		}
 	case "H", "shift+left":
-		f := &(*fields)[*idx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
+		if idx < n {
+			f := &fields[idx]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+			}
 		}
 	case "i":
+		wantsInsert = true
+	}
+	// Write back updated fields and index
+	switch ie.activeTab {
+	case infraTabNetworking:
+		ie.networkingFields = fields
+		ie.netFormIdx = idx
+	case infraTabCICD:
+		ie.cicdFields = fields
+		ie.cicdFormIdx = idx
+	case infraTabObservability:
+		ie.obsFields = fields
+		ie.obsFormIdx = idx
+	}
+	if wantsInsert {
 		return ie.tryEnterInsert()
 	}
 	return ie, nil

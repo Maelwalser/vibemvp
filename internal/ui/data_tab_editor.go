@@ -81,7 +81,8 @@ type DataTabEditor struct {
 	relFormIdx     int
 
 	// CACHING sub-tab
-	cachingFields []Field
+	cachingFields  []Field
+	cachingFormIdx int
 
 	// FILE STORAGE sub-tab
 	fileStorages []manifest.FileStorageDef
@@ -213,6 +214,9 @@ func defaultCachingFields() []Field {
 			Value:   "TTL-based",
 		},
 		{
+			Key: "ttl", Label: "ttl           ", Kind: KindText,
+		},
+		{
 			Key: "entities", Label: "entities      ", Kind: KindMultiSelect,
 			Options: []string{}, // populated dynamically from domain names
 		},
@@ -328,6 +332,7 @@ func (dt DataTabEditor) ToManifestDataPillar() manifest.DataPillar {
 			Layer:        fieldGet(dt.cachingFields, "layer"),
 			Strategy:     fieldGet(dt.cachingFields, "strategy"),
 			Invalidation: fieldGet(dt.cachingFields, "invalidation"),
+			TTL:          fieldGet(dt.cachingFields, "ttl"),
 			Entities:     fieldGetMulti(dt.cachingFields, "entities"),
 		},
 		FileStorages: dt.fileStorages,
@@ -425,8 +430,8 @@ func (dt *DataTabEditor) activeDTFieldPtr() *Field {
 			}
 		}
 	case dataTabCaching:
-		if dt.domainFormIdx < len(dt.cachingFields) {
-			return &dt.cachingFields[dt.domainFormIdx]
+		if dt.cachingFormIdx < len(dt.cachingFields) {
+			return &dt.cachingFields[dt.cachingFormIdx]
 		}
 	case dataTabFileStorage:
 		if dt.fsSubView == fsViewForm && dt.fsFormIdx < len(dt.fsForm) {
@@ -564,6 +569,12 @@ func (dt DataTabEditor) updateInsert(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 			dt.saveInput()
 			dt.internalMode = dtNormal
 			dt.formInput.Blur()
+			// Auto-process attr_names when exiting insert mode on that field
+			if dt.activeTab == dataTabDomains && dt.domainSubView == domainViewForm &&
+				dt.domainFormIdx < len(dt.domainForm) && dt.domainForm[dt.domainFormIdx].Key == "attr_names" {
+				dt.processAttrNames()
+				dt.saveDomainAttrItemsOnly()
+			}
 			return dt, nil
 		case "tab":
 			dt.saveInput()
@@ -603,9 +614,7 @@ func (dt *DataTabEditor) advanceFormField(delta int) {
 	case dataTabCaching:
 		n := len(dt.cachingFields)
 		if n > 0 {
-			// cachingFields uses activeField via domainFormIdx reuse — use a local var
-			// We'll use domainFormIdx as the caching field cursor
-			dt.domainFormIdx = (dt.domainFormIdx + delta + n) % n
+			dt.cachingFormIdx = (dt.cachingFormIdx + delta + n) % n
 		}
 	case dataTabFileStorage:
 		n := len(dt.fsForm)
@@ -634,8 +643,8 @@ func (dt *DataTabEditor) saveInput() {
 			}
 		}
 	case dataTabCaching:
-		if dt.domainFormIdx < len(dt.cachingFields) && dt.cachingFields[dt.domainFormIdx].Kind == KindText {
-			dt.cachingFields[dt.domainFormIdx].Value = val
+		if dt.cachingFormIdx < len(dt.cachingFields) && dt.cachingFields[dt.cachingFormIdx].Kind == KindText {
+			dt.cachingFields[dt.cachingFormIdx].Value = val
 		}
 	case dataTabFileStorage:
 		if dt.fsFormIdx < len(dt.fsForm) && dt.fsForm[dt.fsFormIdx].Kind == KindText {
@@ -663,8 +672,8 @@ func (dt DataTabEditor) tryEnterInsert() (DataTabEditor, tea.Cmd) {
 			}
 		}
 	case dataTabCaching:
-		if dt.domainFormIdx < len(dt.cachingFields) {
-			f = &dt.cachingFields[dt.domainFormIdx]
+		if dt.cachingFormIdx < len(dt.cachingFields) {
+			f = &dt.cachingFields[dt.cachingFormIdx]
 		}
 	case dataTabFileStorage:
 		if dt.fsFormIdx < len(dt.fsForm) {
@@ -843,36 +852,7 @@ func (dt *DataTabEditor) saveDomainForm() {
 	d.Databases = fieldGetMulti(dt.domainForm, "databases")
 
 	// Parse attr_names: comma-separated names create new attributes (if typed)
-	attrNamesRaw := fieldGet(dt.domainForm, "attr_names")
-	if attrNamesRaw != "" {
-		parts := strings.Split(attrNamesRaw, ",")
-		for _, p := range parts {
-			name := strings.TrimSpace(p)
-			if name == "" {
-				continue
-			}
-			// Only add if not already present
-			found := false
-			for _, item := range dt.attrItems {
-				if fieldGet(item, "name") == name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				f := defaultAttrFields()
-				f = setFieldValue(f, "name", name)
-				dt.attrItems = append(dt.attrItems, f)
-			}
-		}
-		// Clear the field after processing
-		for i := range dt.domainForm {
-			if dt.domainForm[i].Key == "attr_names" {
-				dt.domainForm[i].Value = ""
-				break
-			}
-		}
-	}
+	dt.processAttrNames()
 
 	// Save attrs
 	d.Attributes = make([]manifest.DomainAttribute, len(dt.attrItems))
@@ -913,6 +893,59 @@ func (dt *DataTabEditor) saveDomainForm() {
 	}
 }
 
+// saveDomainAttrItemsOnly saves attrItems back to the current domain's Attributes
+// without touching name/description/databases/attr_names fields.
+func (dt *DataTabEditor) saveDomainAttrItemsOnly() {
+	if dt.domainIdx >= len(dt.domains) {
+		return
+	}
+	d := &dt.domains[dt.domainIdx]
+	d.Attributes = make([]manifest.DomainAttribute, len(dt.attrItems))
+	for i, item := range dt.attrItems {
+		d.Attributes[i] = manifest.DomainAttribute{
+			Name:        fieldGet(item, "name"),
+			Type:        fieldGet(item, "type"),
+			Constraints: fieldGet(item, "constraints"),
+			Default:     fieldGet(item, "default"),
+			Sensitive:   fieldGet(item, "sensitive") == "true",
+			Validation:  fieldGet(item, "validation"),
+		}
+	}
+}
+
+// processAttrNames extracts comma-separated names from the attr_names field,
+// adds any missing attributes to attrItems, and clears the field.
+func (dt *DataTabEditor) processAttrNames() {
+	attrNamesRaw := fieldGet(dt.domainForm, "attr_names")
+	if attrNamesRaw == "" {
+		return
+	}
+	for _, p := range strings.Split(attrNamesRaw, ",") {
+		name := strings.TrimSpace(p)
+		if name == "" {
+			continue
+		}
+		found := false
+		for _, item := range dt.attrItems {
+			if fieldGet(item, "name") == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			f := defaultAttrFields()
+			f = setFieldValue(f, "name", name)
+			dt.attrItems = append(dt.attrItems, f)
+		}
+	}
+	for i := range dt.domainForm {
+		if dt.domainForm[i].Key == "attr_names" {
+			dt.domainForm[i].Value = ""
+			break
+		}
+	}
+}
+
 func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	n := len(dt.attrItems)
 	switch key.String() {
@@ -926,6 +959,7 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		}
 	case "a":
 		dt.attrItems = append(dt.attrItems, defaultAttrFields())
+		dt.saveDomainAttrItemsOnly()
 		dt.attrIdx = len(dt.attrItems) - 1
 		dt.attrForm = copyFields(dt.attrItems[dt.attrIdx])
 		dt.attrFormIdx = 0
@@ -937,6 +971,7 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 			if dt.attrIdx > 0 && dt.attrIdx >= len(dt.attrItems) {
 				dt.attrIdx = len(dt.attrItems) - 1
 			}
+			dt.saveDomainAttrItemsOnly()
 		}
 	case "enter":
 		if n > 0 {
@@ -945,6 +980,7 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 			dt.domainSubView = domainViewAttrForm
 		}
 	case "b", "esc":
+		dt.saveDomainAttrItemsOnly()
 		dt.domainSubView = domainViewForm
 	}
 	return dt, nil
@@ -980,6 +1016,7 @@ func (dt DataTabEditor) updateAttrForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		if dt.attrIdx < len(dt.attrItems) {
 			dt.attrItems[dt.attrIdx] = copyFields(dt.attrForm)
 		}
+		dt.saveDomainAttrItemsOnly()
 		dt.domainSubView = domainViewAttrs
 	}
 	return dt, nil
@@ -1066,18 +1103,17 @@ func (dt DataTabEditor) updateRelForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 func (dt DataTabEditor) updateCaching(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	// Refresh entities options with current domain names
 	dt = dt.withRefreshedCachingEntities()
-	// Use domainFormIdx as the field cursor for caching
 	switch key.String() {
 	case "j", "down":
-		if dt.domainFormIdx < len(dt.cachingFields)-1 {
-			dt.domainFormIdx++
+		if dt.cachingFormIdx < len(dt.cachingFields)-1 {
+			dt.cachingFormIdx++
 		}
 	case "k", "up":
-		if dt.domainFormIdx > 0 {
-			dt.domainFormIdx--
+		if dt.cachingFormIdx > 0 {
+			dt.cachingFormIdx--
 		}
 	case "enter", " ":
-		f := &dt.cachingFields[dt.domainFormIdx]
+		f := &dt.cachingFields[dt.cachingFormIdx]
 		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
 			dt.ddOpen = true
 			if f.Kind == KindSelect {
@@ -1089,12 +1125,12 @@ func (dt DataTabEditor) updateCaching(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 			return dt.tryEnterInsert()
 		}
 	case "H", "shift+left":
-		f := &dt.cachingFields[dt.domainFormIdx]
+		f := &dt.cachingFields[dt.cachingFormIdx]
 		if f.Kind == KindSelect {
 			f.CyclePrev()
 		}
 	case "i":
-		if dt.cachingFields[dt.domainFormIdx].Kind == KindText {
+		if dt.cachingFields[dt.cachingFormIdx].Kind == KindText {
 			return dt.tryEnterInsert()
 		}
 	}
@@ -1319,9 +1355,10 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 }
 
 func (dt DataTabEditor) viewCaching(w int) []string {
+	dt = dt.withRefreshedCachingEntities()
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  # Caching Strategy"), "")
-	lines = append(lines, renderFormFieldsWithDropdown(w, dt.cachingFields, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, dt.cachingFields, dt.cachingFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 	return lines
 }
 

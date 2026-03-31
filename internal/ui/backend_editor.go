@@ -680,9 +680,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		}
 	case "enter":
 		if isMulti {
-			// Toggle and close for single-step; or just close
-			be.ddOpen = false
-			be.saveMultiSelectCursor()
+			be.toggleMultiSelectOption()
 		} else {
 			be.applyDropdown()
 			be.ddOpen = false

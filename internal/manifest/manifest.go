@@ -356,6 +356,7 @@ type CachingConfig struct {
 	Layer        string `json:"layer"`
 	Strategy     string `json:"strategy"`
 	Invalidation string `json:"invalidation"`
+	TTL          string `json:"ttl,omitempty"`
 	Entities     string `json:"entities,omitempty"`
 }
 

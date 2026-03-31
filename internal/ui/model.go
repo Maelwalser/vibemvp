@@ -210,6 +210,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case m.isContractsSection():
 		// Inject current domain and service names before processing
 		m.contractsEditor.SetDomains(m.dataTabEditor.domainNames())
+		m.contractsEditor.SetDomainDefs(m.dataTabEditor.domains)
 		m.contractsEditor.SetServices(m.backendEditor.ServiceNames())
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 		m.modified = true
