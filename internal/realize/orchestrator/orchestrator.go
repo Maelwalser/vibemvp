@@ -32,6 +32,18 @@ type Config struct {
 	Parallelism  int
 	DryRun       bool
 	Verbose      bool
+	// LogFunc, if non-nil, receives status lines instead of os.Stderr.
+	LogFunc func(string)
+}
+
+// log emits a formatted status line via LogFunc or os.Stderr.
+func (o *Orchestrator) log(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	if o.cfg.LogFunc != nil {
+		o.cfg.LogFunc(msg)
+	} else {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 }
 
 // Orchestrator drives the full DAG-based code generation pipeline.
@@ -81,7 +93,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		return fmt.Errorf("load progress state: %w", err)
 	}
 	if n := st.CompletedCount(); n > 0 {
-		fmt.Fprintf(os.Stderr, "realize: resuming — %d task(s) already completed, skipping them\n", n)
+		o.log("realize: resuming — %d task(s) already completed, skipping them", n)
 	}
 
 	// Set up agent, verifier registry, and shared memory.
@@ -89,19 +101,18 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	verifiers := verify.NewRegistry()
 	mem := memory.New()
 
-	fmt.Fprintf(os.Stderr, "realize: starting %d tasks across %d wave(s)\n",
-		len(d.Tasks), len(d.Levels()))
+	o.log("realize: starting %d tasks across %d wave(s)", len(d.Tasks), len(d.Levels()))
 
 	// Execute waves in order; tasks within each wave run in parallel.
 	for waveIdx, wave := range d.Levels() {
-		fmt.Fprintf(os.Stderr, "realize: wave %d (%d tasks): %v\n", waveIdx, len(wave), wave)
+		o.log("realize: wave %d (%d tasks): %v", waveIdx, len(wave), wave)
 
 		if err := o.runWave(ctx, wave, d, reg, a, verifiers, writer, st, mem); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "realize: complete — output written to %s\n", o.cfg.OutputDir)
+	o.log("realize: complete — output written to %s", o.cfg.OutputDir)
 	return nil
 }
 
@@ -125,7 +136,7 @@ func (o *Orchestrator) runWave(
 		id := id // capture for goroutine
 
 		if st.IsCompleted(id) {
-			fmt.Fprintf(os.Stderr, "[%s] skipping (already completed)\n", id)
+			o.log("[%s] skipping (already completed)", id)
 			continue
 		}
 
@@ -137,7 +148,7 @@ func (o *Orchestrator) runWave(
 			techs := technologiesFor(task)
 			skillDocs := reg.LookupAll(task.Kind, techs)
 
-			fmt.Fprintf(os.Stderr, "[%s] starting: %s\n", task.ID, task.Label)
+			o.log("[%s] starting: %s", task.ID, task.Label)
 
 			runner := &TaskRunner{
 				task:       task,
@@ -149,6 +160,7 @@ func (o *Orchestrator) runWave(
 				skillDocs:  skillDocs,
 				maxRetries: o.cfg.MaxRetries,
 				verbose:    o.cfg.Verbose,
+				logFn:      o.cfg.LogFunc,
 			}
 			return runner.Run(gctx)
 		})
