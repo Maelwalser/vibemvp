@@ -107,7 +107,7 @@ Rules:
 - Include ALL files needed for the task to be complete and buildable.
 - File paths must use forward slashes and be relative (no leading slash).
 - File content must be complete — no placeholders, no TODO comments for required logic.
-- For Go: include go.mod with correct module paths and all imports.
+- For Go: include go.mod with correct module path and explicit require blocks that pin ALL direct dependencies to specific, well-known recent versions (e.g. "require github.com/gofiber/fiber/v2 v2.52.5"). Do NOT rely solely on "go mod tidy" to resolve versions — transitive deps with invalid version strings will cause build failures. If a library you want has known broken transitive deps (e.g. old github.com/mattn/go-runewidth pulling github.com/rivo/unpad), either choose a newer version or add a replace directive in go.mod to redirect the broken module.
 - For TypeScript/JS: include package.json and all necessary config files.
 - For Terraform: include all .tf files needed to apply successfully.
 - Generated code must pass the relevant linter/build check for its language.
