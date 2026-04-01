@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/vibe-mvp/internal/realize/agent"
 	"github.com/vibe-mvp/internal/realize/orchestrator"
 )
 
@@ -19,21 +18,12 @@ func main() {
 	parallelism  := flag.Int("parallel", 0, "max concurrent tasks (0 = num CPUs)")
 	dryRun       := flag.Bool("dry-run", false, "print task plan without running agents")
 	verbose      := flag.Bool("verbose", false, "print token usage and thinking logs")
-	sessionToken := flag.String("session-token", "", "Claude Pro/Max session token (overrides ANTHROPIC_API_KEY; env: CLAUDE_SESSION_KEY)")
 	flag.Parse()
 
 	p := *parallelism
 	if p <= 0 {
 		p = runtime.NumCPU()
 	}
-
-	// Resolve auth: -session-token flag > CLAUDE_SESSION_KEY env var > Claude Code OAuth > ANTHROPIC_API_KEY
-	explicit := *sessionToken
-	if explicit == "" {
-		explicit = os.Getenv("CLAUDE_SESSION_KEY")
-	}
-	resolvedToken, authSource := agent.ResolveAuthToken(explicit)
-	fmt.Fprintf(os.Stderr, "realize: auth: %s\n", authSource)
 
 	cfg := orchestrator.Config{
 		ManifestPath: *manifestPath,
@@ -43,7 +33,6 @@ func main() {
 		Parallelism:  p,
 		DryRun:       *dryRun,
 		Verbose:      *verbose,
-		AuthToken:    resolvedToken,
 	}
 
 	if err := orchestrator.New(cfg).Run(context.Background()); err != nil {
