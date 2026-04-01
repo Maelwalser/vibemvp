@@ -264,7 +264,7 @@ func (r RealizeEditor) View(w, h int) string {
 		StyleSectionDesc.Render("  # Realization — configure output directory, app name, and agent options"),
 		"",
 	)
-	lines = append(lines, renderFormFieldsWithDropdown(w, r.fields, r.activeIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, r.fields, r.activeIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
 	lines = append(lines, "")
 
 	// Start button row

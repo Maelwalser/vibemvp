@@ -1968,7 +1968,7 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 	case beTabEnv:
 		if be.envEnabled {
 			envFields := be.visibleEnvFields()
-			lines = append(lines, renderFormFieldsWithDropdown(w, envFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, envFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -1980,7 +1980,7 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 		lines = append(lines, be.viewMessaging(w)...)
 	case beTabAPIGW:
 		if be.apiGWEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -1988,13 +1988,13 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 		lines = append(lines, be.viewJobs(w)...)
 	case beTabSecurity:
 		if be.secEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, be.securityFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, be.securityFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case beTabAuth:
 		if be.authEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -2065,7 +2065,7 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-	lines = append(lines, renderFormFieldsWithDropdown(w, fields, filteredActiveIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, fields, filteredActiveIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 
@@ -2101,7 +2101,7 @@ func (be BackendEditor) viewCommEditor(w int) []string {
 	}
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
-	lines = append(lines, renderFormFieldsWithDropdown(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 
@@ -2114,7 +2114,7 @@ func (be BackendEditor) viewMessaging(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		return lines
 	}
 
@@ -2465,7 +2465,7 @@ func (be BackendEditor) viewJobs(w int) []string {
 	}
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-	lines = append(lines, renderFormFieldsWithDropdown(w, be.jobsForm, be.jobsFormIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, be.jobsForm, be.jobsFormIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 

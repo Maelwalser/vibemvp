@@ -621,15 +621,8 @@ func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 
 	// Sub-tab switching always available in normal mode
 	switch key.String() {
-	case "h", "left":
-		if dt.activeTab > 0 {
-			dt.activeTab--
-		}
-		return dt, nil
-	case "l", "right":
-		if int(dt.activeTab) < len(dataTabLabels)-1 {
-			dt.activeTab++
-		}
+	case "h", "left", "l", "right":
+		dt.activeTab = dataTabIdx(NavigateTab(key.String(), int(dt.activeTab), len(dataTabLabels)))
 		return dt, nil
 	}
 
@@ -1451,7 +1444,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 			name = "(new domain)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, dt.domainForm, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, dt.domainForm, dt.domainFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		lines = append(lines, "", StyleSectionDesc.Render("  A: edit attributes  R: edit relationships"))
 		attrCount := len(dt.attrItems)
 		relCount := len(dt.relItems)
@@ -1484,7 +1477,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 			attrName = "(new attribute)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(attrName), "")
-		lines = append(lines, renderFormFields(w, dt.attrForm, dt.attrFormIdx, dt.internalMode == dtInsert, dt.formInput)...)
+		lines = append(lines, renderFormFields(w, dt.attrForm, dt.attrFormIdx, dt.internalMode == dtInsert, dt.formInput, false, 0)...)
 		return lines
 
 	case domainViewRels:
@@ -1513,7 +1506,7 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 			relName = "(new relationship)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(relName), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, dt.relForm, dt.relFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, dt.relForm, dt.relFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1527,7 +1520,7 @@ func (dt DataTabEditor) viewCaching(w int) []string {
 		return lines
 	}
 	dt = dt.withRefreshedCachingEntities()
-	lines = append(lines, renderFormFieldsWithDropdown(w, dt.cachingFields, dt.cachingFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, dt.cachingFields, dt.cachingFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 	return lines
 }
 
@@ -1560,7 +1553,7 @@ func (dt DataTabEditor) viewFileStorage(w int) []string {
 			tech = "(new storage)"
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(tech), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, dt.fsForm, dt.fsFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, dt.fsForm, dt.fsFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1573,7 +1566,7 @@ func (dt DataTabEditor) viewGovernance(w int) []string {
 		lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		return lines
 	}
-	lines = append(lines, renderFormFieldsWithDropdown(w, dt.governanceFields, dt.govFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, dt.governanceFields, dt.govFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
 	return lines
 }
 
