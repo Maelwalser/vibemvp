@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultModel     = "claude-opus-4-6"
-	defaultMaxTokens = int64(8000)
+	defaultMaxTokens = int64(32000)
 )
 
 // Config holds all runtime configuration for the orchestrator.

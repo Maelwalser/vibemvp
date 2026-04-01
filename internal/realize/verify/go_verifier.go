@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -33,11 +34,15 @@ func (g *GoVerifier) Verify(ctx context.Context, outputDir string, files []strin
 			continue
 		}
 
-		// Run go mod tidy first to resolve missing go.sum entries and
-		// any dependency drift introduced by the generated code.
+		// Resolve dependencies before building.
 		tidyOut, tidyErr := runCmd(ctx, absDir, "go", "mod", "tidy")
-		if tidyErr != nil || strings.TrimSpace(tidyOut) != "" {
+		if tidyErr != nil {
 			combined.WriteString(fmt.Sprintf("=== go mod tidy in %s ===\n%s\n", dir, tidyOut))
+			if hint := modTidyHint(tidyOut); hint != "" {
+				combined.WriteString(hint)
+			}
+			allPassed = false
+			continue
 		}
 
 		// Run go build.
@@ -74,6 +79,50 @@ func (g *GoVerifier) Verify(ctx context.Context, outputDir string, files []strin
 	}
 
 	return &Result{Passed: allPassed, Output: combined.String()}, nil
+}
+
+// modTidyHint inspects go mod tidy output and returns an actionable fix suggestion
+// when the failure is caused by an unresolvable transitive dependency.
+// Returns "" when the failure has no specific actionable hint.
+func modTidyHint(output string) string {
+	// Pattern: "github.com/foo/bar@vX: invalid version: git ls-remote ... terminal prompts disabled"
+	// or:      "github.com/foo/bar@vX: reading github.com/foo/bar/...: ... 404 Not Found"
+	reInvalidVer := regexp.MustCompile(`([\w.-]+(?:/[\w.-]+)+)@(v[\w.+-]+):\s+invalid version`)
+	reNotFound := regexp.MustCompile(`([\w.-]+(?:/[\w.-]+)+)@(v[\w.+-]+).*(?:404 Not Found|no matching versions)`)
+
+	var broken []string
+	seen := make(map[string]bool)
+
+	for _, re := range []*regexp.Regexp{reInvalidVer, reNotFound} {
+		for _, m := range re.FindAllStringSubmatch(output, -1) {
+			key := m[1] + "@" + m[2]
+			if !seen[key] {
+				seen[key] = true
+				broken = append(broken, key)
+			}
+		}
+	}
+
+	if len(broken) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\nFIX REQUIRED — unresolvable transitive dependencies detected:\n")
+	for _, mod := range broken {
+		b.WriteString(fmt.Sprintf("  • %s\n", mod))
+	}
+	b.WriteString(`
+To fix this in go.mod, use one or more of these strategies:
+  1. Add a 'replace' directive to redirect the broken module to a working fork or newer version:
+       replace github.com/broken/pkg v0.0.0-old => github.com/working/pkg v1.0.0
+  2. Upgrade the direct dependency that pulls in the broken module to a version that no longer needs it.
+  3. Remove any direct dependency on packages that transitively require the broken module.
+  4. Explicitly 'require' the broken module at a newer, resolvable version to override the transitive pin.
+
+Regenerate go.mod with explicit 'require' pins for ALL direct dependencies at known-good recent versions.
+`)
+	return b.String()
 }
 
 // goModDirs finds unique directories containing a go.mod file among the generated files.

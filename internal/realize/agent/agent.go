@@ -80,6 +80,12 @@ func (a *ClaudeAgent) Run(ctx context.Context, ac *Context) (*Result, error) {
 		OutputTokens: msg.Usage.OutputTokens,
 	}
 
+	// Detect truncation before trying to parse — a max_tokens stop means the
+	// </files> closing tag was never written and parsing will always fail.
+	if msg.StopReason == anthropic.StopReasonMaxTokens {
+		return nil, fmt.Errorf("response truncated (max_tokens reached at %d output tokens); increase maxTokens or split the task", msg.Usage.OutputTokens)
+	}
+
 	// Extract text and thinking content.
 	var fullText strings.Builder
 	var thinkingParts strings.Builder
