@@ -13,9 +13,10 @@ type ccTabIdx int
 const (
 	ccTabTesting ccTabIdx = iota
 	ccTabDocs
+	ccTabStandards
 )
 
-var ccTabLabels = []string{"TESTING", "DOCS"}
+var ccTabLabels = []string{"TESTING", "DOCS", "STANDARDS"}
 
 // ── mode ──────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,41 @@ func defaultTestingFields() []Field {
 	}
 }
 
+func defaultStandardsFields() []Field {
+	return []Field{
+		{
+			Key: "branch_strategy", Label: "Branch Strat. ", Kind: KindSelect,
+			Options: []string{"GitHub Flow", "GitFlow", "Trunk-based", "Custom"},
+			Value:   "GitHub Flow",
+		},
+		{
+			Key: "dep_updates", Label: "Dep. Updates  ", Kind: KindSelect,
+			Options: []string{"Dependabot", "Renovate", "Manual", "None"},
+			Value:   "Dependabot",
+		},
+		{
+			Key: "code_review", Label: "Code Review   ", Kind: KindSelect,
+			Options: []string{"Required (1 approval)", "Required (2 approvals)", "Optional", "None"},
+			Value:   "Required (1 approval)",
+		},
+		{
+			Key: "feature_flags", Label: "Feature Flags ", Kind: KindSelect,
+			Options: []string{"LaunchDarkly", "Unleash", "Flagsmith", "Custom (env vars)", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "uptime_slo", Label: "Uptime SLO    ", Kind: KindSelect,
+			Options: []string{"99.9%", "99.95%", "99.99%", "Custom"},
+			Value:   "99.9%",
+		},
+		{
+			Key: "latency_p99", Label: "Latency P99   ", Kind: KindSelect,
+			Options: []string{"<50ms", "<100ms", "<200ms", "<500ms", "<1s", "Custom"},
+			Value:   "<200ms", SelIdx: 2,
+		},
+	}
+}
+
 func defaultDocsFields() []Field {
 	return []Field{
 		{
@@ -102,6 +138,9 @@ type CrossCutEditor struct {
 	docsFields  []Field
 	docsFormIdx int
 
+	standardsFields  []Field
+	standardsFormIdx int
+
 	internalMode ccMode
 	formInput    textinput.Model
 	width        int
@@ -113,9 +152,10 @@ type CrossCutEditor struct {
 
 func newCrossCutEditor() CrossCutEditor {
 	return CrossCutEditor{
-		testingFields: defaultTestingFields(),
-		docsFields:    defaultDocsFields(),
-		formInput:     newFormInput(),
+		testingFields:   defaultTestingFields(),
+		docsFields:      defaultDocsFields(),
+		standardsFields: defaultStandardsFields(),
+		formInput:       newFormInput(),
 	}
 }
 
@@ -136,6 +176,12 @@ func (cc CrossCutEditor) ToManifestCrossCutPillar() manifest.CrossCutPillar {
 			AutoGenerate: fieldGet(cc.docsFields, "auto_generate") == "true",
 			Changelog:    fieldGet(cc.docsFields, "changelog"),
 		},
+		BranchStrategy:    fieldGet(cc.standardsFields, "branch_strategy"),
+		DependencyUpdates: fieldGet(cc.standardsFields, "dep_updates"),
+		CodeReview:        fieldGet(cc.standardsFields, "code_review"),
+		FeatureFlags:      fieldGet(cc.standardsFields, "feature_flags"),
+		UptimeSLO:         fieldGet(cc.standardsFields, "uptime_slo"),
+		LatencyP99:        fieldGet(cc.standardsFields, "latency_p99"),
 	}
 }
 
@@ -186,6 +232,8 @@ func (cc CrossCutEditor) Update(msg tea.Msg) (CrossCutEditor, tea.Cmd) {
 		return cc.updateFields(key)
 	case ccTabDocs:
 		return cc.updateFields(key)
+	case ccTabStandards:
+		return cc.updateFields(key)
 	}
 	return cc, nil
 }
@@ -198,6 +246,8 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 		fields, idx = cc.testingFields, cc.testFormIdx
 	case ccTabDocs:
 		fields, idx = cc.docsFields, cc.docsFormIdx
+	case ccTabStandards:
+		fields, idx = cc.standardsFields, cc.standardsFormIdx
 	default:
 		return cc, nil
 	}
@@ -286,6 +336,9 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 	case ccTabDocs:
 		cc.docsFields = fields
 		cc.docsFormIdx = idx
+	case ccTabStandards:
+		cc.standardsFields = fields
+		cc.standardsFormIdx = idx
 	}
 	if wantsInsert {
 		return cc.tryEnterInsert()
@@ -329,6 +382,11 @@ func (cc *CrossCutEditor) advanceField(delta int) {
 		if n > 0 {
 			cc.docsFormIdx = (cc.docsFormIdx + delta + n) % n
 		}
+	case ccTabStandards:
+		n := len(cc.standardsFields)
+		if n > 0 {
+			cc.standardsFormIdx = (cc.standardsFormIdx + delta + n) % n
+		}
 	}
 }
 
@@ -343,6 +401,10 @@ func (cc *CrossCutEditor) saveInput() {
 		if cc.docsFormIdx < len(cc.docsFields) && cc.docsFields[cc.docsFormIdx].Kind == KindText {
 			cc.docsFields[cc.docsFormIdx].Value = val
 		}
+	case ccTabStandards:
+		if cc.standardsFormIdx < len(cc.standardsFields) && cc.standardsFields[cc.standardsFormIdx].Kind == KindText {
+			cc.standardsFields[cc.standardsFormIdx].Value = val
+		}
 	}
 }
 
@@ -356,6 +418,10 @@ func (cc CrossCutEditor) tryEnterInsert() (CrossCutEditor, tea.Cmd) {
 	case ccTabDocs:
 		if cc.docsFormIdx < len(cc.docsFields) {
 			f = &cc.docsFields[cc.docsFormIdx]
+		}
+	case ccTabStandards:
+		if cc.standardsFormIdx < len(cc.standardsFields) {
+			f = &cc.standardsFields[cc.standardsFormIdx]
 		}
 	}
 	if f == nil || f.Kind != KindText {
@@ -385,6 +451,8 @@ func (cc CrossCutEditor) View(w, h int) string {
 		lines = append(lines, renderFormFields(w, cc.testingFields, cc.testFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
 	case ccTabDocs:
 		lines = append(lines, renderFormFields(w, cc.docsFields, cc.docsFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
+	case ccTabStandards:
+		lines = append(lines, renderFormFields(w, cc.standardsFields, cc.standardsFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
 	}
 
 	return fillTildes(lines, h)
