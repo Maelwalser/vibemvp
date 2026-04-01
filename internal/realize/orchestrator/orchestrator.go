@@ -192,21 +192,17 @@ func resolveAgent(taskID string, providers manifest.ProviderAssignments, def age
 	if !ok || pa.Credential == "" {
 		return def
 	}
+	model := resolveModelID(pa.Provider, pa.Model, pa.Version)
 	switch pa.Provider {
 	case "Claude":
-		model := claudeModelID(pa.Model, pa.Version)
 		return agent.NewClaudeAgentWithKey(model, defaultMaxTokens, verbose, pa.Credential)
 	case "ChatGPT":
-		model := openaiModelID(pa.Model, pa.Version)
 		return agent.NewOpenAIAgent("https://api.openai.com", pa.Credential, model, defaultMaxTokens, verbose)
 	case "Gemini":
-		model := geminiModelID(pa.Model, pa.Version)
 		return agent.NewGeminiAgent(pa.Credential, model, defaultMaxTokens, verbose)
 	case "Mistral":
-		model := mistralModelID(pa.Model, pa.Version)
 		return agent.NewOpenAIAgent("https://api.mistral.ai", pa.Credential, model, defaultMaxTokens, verbose)
 	case "Llama":
-		model := llamaModelID(pa.Model, pa.Version)
 		return agent.NewOpenAIAgent("https://api.groq.com/openai", pa.Credential, model, defaultMaxTokens, verbose)
 	default:
 		return def
@@ -243,103 +239,6 @@ func describeProvider(taskID string, providers manifest.ProviderAssignments) str
 		s += " " + pa.Version
 	}
 	return s
-}
-
-// claudeModelID maps a tier name + version to the Anthropic model string.
-func claudeModelID(tier, version string) string {
-	switch tier {
-	case "Haiku":
-		return "claude-haiku-4-5-20251001"
-	case "Sonnet":
-		return "claude-sonnet-4-6"
-	case "Opus":
-		return "claude-opus-4-6"
-	default:
-		return defaultModel
-	}
-}
-
-// openaiModelID maps ChatGPT tier + version to the OpenAI model string.
-func openaiModelID(tier, version string) string {
-	switch tier {
-	case "Mini":
-		if version == "o3-mini" {
-			return "o3-mini"
-		}
-		return "gpt-4o-mini"
-	case "4o":
-		if version == "4o-2024" {
-			return "gpt-4o-2024-11-20"
-		}
-		return "gpt-4o"
-	case "o1":
-		if version == "o1-preview" {
-			return "o1-preview"
-		}
-		return "o1"
-	default:
-		return "gpt-4o"
-	}
-}
-
-// geminiModelID maps a Gemini tier + version to the Google model string.
-func geminiModelID(tier, version string) string {
-	switch tier {
-	case "Flash":
-		if version == "1.5" {
-			return "gemini-1.5-flash"
-		}
-		return "gemini-2.0-flash"
-	case "Pro":
-		if version == "1.5" {
-			return "gemini-1.5-pro"
-		}
-		return "gemini-2.0-pro-exp"
-	case "Ultra":
-		return "gemini-ultra"
-	default:
-		return "gemini-2.0-flash"
-	}
-}
-
-// mistralModelID maps a Mistral tier + version to the Mistral API model string.
-func mistralModelID(tier, version string) string {
-	switch tier {
-	case "Nemo":
-		return "open-mistral-nemo"
-	case "Small":
-		if version == "3.0" {
-			return "mistral-small-2402"
-		}
-		return "mistral-small-2409"
-	case "Large":
-		if version == "2.0" {
-			return "mistral-large-2407"
-		}
-		return "mistral-large-2411"
-	default:
-		return "mistral-large-2411"
-	}
-}
-
-// llamaModelID maps a Llama tier + version to the Groq model string.
-func llamaModelID(tier, version string) string {
-	switch tier {
-	case "8B":
-		if version == "3.1" {
-			return "llama-3.1-8b-instant"
-		}
-		return "llama-3.2-8b-preview"
-	case "70B":
-		if version == "3.1" {
-			return "llama-3.1-70b-versatile"
-		}
-		return "llama-3.3-70b-versatile"
-	case "405B":
-		return "llama-3.1-405b-reasoning"
-	default:
-		return "llama-3.3-70b-versatile"
-	}
 }
 
 // printPlan prints the task DAG in dry-run mode without invoking any agents.

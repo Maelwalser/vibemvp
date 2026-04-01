@@ -35,6 +35,26 @@ func (m Mode) String() string {
 // SaveFunc is called when the user issues :w.
 type SaveFunc func(m *manifest.Manifest) error
 
+// cmdState holds vim command-line state.
+type cmdState struct {
+	buffer string
+	status string
+	isErr  bool
+}
+
+// modalState holds provider-menu modal state.
+type modalState struct {
+	open bool
+	menu ProviderMenu
+}
+
+// realizeState holds realization-screen state.
+type realizeState struct {
+	screen    RealizationScreen
+	show      bool
+	triggered bool
+}
+
 // Model is the root bubbletea model for the declaration UI.
 type Model struct {
 	sections      []Section
@@ -47,30 +67,21 @@ type Model struct {
 	textArea  textarea.Model
 
 	// ── Main tab editors (one per section) ───────────────────────────────────
-	backendEditor      BackendEditor
-	dataTabEditor      DataTabEditor
-	contractsEditor    ContractsEditor
-	frontendEditor     FrontendEditor
-	infraEditor        InfraEditor
-	crossCutEditor     CrossCutEditor
-	realizeEditor      RealizeEditor
-	realizationScreen  RealizationScreen
-	showRealization    bool
+	backendEditor   BackendEditor
+	dataTabEditor   DataTabEditor
+	contractsEditor ContractsEditor
+	frontendEditor  FrontendEditor
+	infraEditor     InfraEditor
+	crossCutEditor  CrossCutEditor
+	realizeEditor   RealizeEditor
 
-	realizeTriggered bool
+	cmd     cmdState
+	modal   modalState
+	realize realizeState
 
-	cmdBuffer string
-	statusMsg string
-	statusErr bool
-	modified  bool
-
-	width  int
-	height int
-
-	providerMenuOpen bool
-	providerMenu     ProviderMenu
-
-	onSave SaveFunc
+	modified      bool
+	width, height int
+	onSave        SaveFunc
 }
 
 // NewModel creates and returns the initial UI model.
@@ -94,19 +105,19 @@ func NewModel(onSave SaveFunc) Model {
 		Background(lipgloss.Color(clrBgHL))
 
 	return Model{
-		sections:          initSections(),
-		textInput:         ti,
-		textArea:          ta,
-		backendEditor:     newBackendEditor(),
-		dataTabEditor:     newDataTabEditor(),
-		contractsEditor:   newContractsEditor(),
-		frontendEditor:    newFrontendEditor(),
-		infraEditor:       newInfraEditor(),
-		crossCutEditor:    newCrossCutEditor(),
-		realizeEditor:     newRealizeEditor(),
-		realizationScreen: newRealizationScreen(),
-		providerMenu:      newProviderMenu(),
-		onSave:            onSave,
+		sections:        initSections(),
+		textInput:       ti,
+		textArea:        ta,
+		backendEditor:   newBackendEditor(),
+		dataTabEditor:   newDataTabEditor(),
+		contractsEditor: newContractsEditor(),
+		frontendEditor:  newFrontendEditor(),
+		infraEditor:     newInfraEditor(),
+		crossCutEditor:  newCrossCutEditor(),
+		realizeEditor:   newRealizeEditor(),
+		realize:         realizeState{screen: newRealizationScreen()},
+		modal:           modalState{menu: newProviderMenu()},
+		onSave:          onSave,
 	}
 }
 
@@ -121,31 +132,36 @@ func (m Model) activeSectionID() string {
 	return m.sections[m.activeSection].ID
 }
 
-func (m Model) isBackendSection() bool   { return m.activeSectionID() == "backend" }
-func (m Model) isDataSection() bool      { return m.activeSectionID() == "data" }
-func (m Model) isContractsSection() bool { return m.activeSectionID() == "contracts" }
-func (m Model) isFrontendSection() bool  { return m.activeSectionID() == "frontend" }
-func (m Model) isInfraSection() bool     { return m.activeSectionID() == "infrastructure" }
-func (m Model) isCrossCutSection() bool  { return m.activeSectionID() == "crosscut" }
-func (m Model) isRealizeSection() bool   { return m.activeSectionID() == "realize" }
+// activeEditor returns the Editor interface for the currently visible section,
+// allowing Mode, View, and HintLine to be dispatched without per-operation switches.
+// Returns nil when no delegated editor is active (fallback generic renderer).
+func (m Model) activeEditor() Editor {
+	switch m.activeSectionID() {
+	case "backend":
+		return m.backendEditor
+	case "data":
+		return m.dataTabEditor
+	case "contracts":
+		return m.contractsEditor
+	case "frontend":
+		return m.frontendEditor
+	case "infrastructure":
+		return m.infraEditor
+	case "crosscut":
+		return m.crossCutEditor
+	case "realize":
+		if m.realize.show {
+			return m.realize.screen
+		}
+		return m.realizeEditor
+	}
+	return nil
+}
 
-// activeMode returns the effective mode, delegating to sub-editors when appropriate.
+// activeMode returns the effective mode, delegating to the active sub-editor.
 func (m Model) activeMode() Mode {
-	switch {
-	case m.isBackendSection():
-		return m.backendEditor.Mode()
-	case m.isDataSection():
-		return m.dataTabEditor.Mode()
-	case m.isContractsSection():
-		return m.contractsEditor.Mode()
-	case m.isFrontendSection():
-		return m.frontendEditor.Mode()
-	case m.isInfraSection():
-		return m.infraEditor.Mode()
-	case m.isCrossCutSection():
-		return m.crossCutEditor.Mode()
-	case m.isRealizeSection():
-		return m.realizeEditor.Mode()
+	if e := m.activeEditor(); e != nil {
+		return e.Mode()
 	}
 	return m.mode
 }
@@ -161,21 +177,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if _, ok := msg.(RealizeMsg); ok {
-		m.realizeTriggered = true
+		m.realize.triggered = true
 		m2, saveCmd := m.execSave()
 		m = m2.(Model)
 		mf := m.BuildManifest()
 		var startCmd tea.Cmd
-		m.realizationScreen, startCmd = m.realizationScreen.Start("manifest.json", mf)
-		m.showRealization = true
+		m.realize.screen, startCmd = m.realize.screen.Start("manifest.json", mf)
+		m.realize.show = true
 		return m, tea.Sequence(saveCmd, startCmd)
 	}
 
 	// Route all messages to the realization screen while it is active.
-	if m.showRealization {
+	if m.realize.show {
 		var cmd tea.Cmd
-		m.realizationScreen, cmd = m.realizationScreen.Update(msg)
-		if m.realizationScreen.WantsQuit() {
+		m.realize.screen, cmd = m.realize.screen.Update(msg)
+		if m.realize.screen.WantsQuit() {
 			return m, tea.Quit
 		}
 		return m, cmd
@@ -198,33 +214,33 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pass non-key messages to active delegated editor.
 		return m.delegateUpdate(msg)
 	}
-	m.statusMsg = ""
+	m.cmd.status = ""
 
 	// Provider menu intercepts all input when open.
-	if m.providerMenuOpen {
+	if m.modal.open {
 		switch key.String() {
 		case "M":
-			if m.providerMenu.focus != pmFocusCredential {
-				m.providerMenuOpen = false
+			if m.modal.menu.focus != pmFocusCredential {
+				m.modal.open = false
 				return m, nil
 			}
 		case "esc":
 			// Esc closes the version dropdown first; a second Esc closes the modal.
 			// But if in credential step, let the menu handle it (steps back to auth).
-			if !m.providerMenu.dropdownOpen && m.providerMenu.focus == pmFocusSections {
-				m.providerMenuOpen = false
+			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusSections {
+				m.modal.open = false
 				return m, nil
 			}
 		}
 		var cmd tea.Cmd
-		m.providerMenu, cmd = m.providerMenu.Update(msg)
+		m.modal.menu, cmd = m.modal.menu.Update(msg)
 		return m, cmd
 	}
 
 	// Global keys always processed regardless of section.
 	switch key.String() {
 	case "M":
-		m.providerMenuOpen = true
+		m.modal.open = true
 		return m, nil
 
 	case "ctrl+c":
@@ -234,7 +250,7 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ":":
 		m.mode = ModeCommand
-		m.cmdBuffer = ""
+		m.cmd.buffer = ""
 		return m, nil
 
 	case "ctrl+s":
@@ -259,39 +275,31 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	switch {
-	case m.isBackendSection():
-		// Inject domain names for event domain dropdowns
+	switch m.activeSectionID() {
+	case "backend":
 		m.backendEditor.SetDomainNames(m.dataTabEditor.domainNames())
 		m.backendEditor, cmd = m.backendEditor.Update(msg)
-		m.modified = true
-	case m.isDataSection():
+	case "data":
 		m.dataTabEditor, cmd = m.dataTabEditor.Update(msg)
-		m.modified = true
-	case m.isContractsSection():
-		// Inject current domain and service names before processing
+	case "contracts":
 		m.contractsEditor.SetDomains(m.dataTabEditor.domainNames())
 		m.contractsEditor.SetDomainDefs(m.dataTabEditor.domains)
 		m.contractsEditor.SetServices(m.backendEditor.ServiceNames())
 		m.contractsEditor.SetServiceDefs(m.backendEditor.ServiceDefs())
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
-		m.modified = true
-	case m.isFrontendSection():
-		// Inject auth roles from backend before processing
+	case "frontend":
 		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
-		m.modified = true
-	case m.isInfraSection():
+	case "infrastructure":
 		m.infraEditor, cmd = m.infraEditor.Update(msg)
-		m.modified = true
-	case m.isCrossCutSection():
+	case "crosscut":
 		m.crossCutEditor, cmd = m.crossCutEditor.Update(msg)
-		m.modified = true
-	case m.isRealizeSection():
+	case "realize":
 		m.realizeEditor, cmd = m.realizeEditor.Update(msg)
-		m.modified = true
+	default:
+		return m, nil
 	}
-
+	m.modified = true
 	return m, cmd
 }
 
@@ -378,18 +386,18 @@ func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc", "ctrl+c":
 		m.mode = ModeNormal
-		m.cmdBuffer = ""
+		m.cmd.buffer = ""
 	case "enter":
-		return m.execCommand(m.cmdBuffer)
+		return m.execCommand(m.cmd.buffer)
 	case "backspace":
-		if len(m.cmdBuffer) > 0 {
-			m.cmdBuffer = m.cmdBuffer[:len(m.cmdBuffer)-1]
+		if len(m.cmd.buffer) > 0 {
+			m.cmd.buffer = m.cmd.buffer[:len(m.cmd.buffer)-1]
 		} else {
 			m.mode = ModeNormal
 		}
 	default:
 		if len(key.Runes) > 0 {
-			m.cmdBuffer += string(key.Runes)
+			m.cmd.buffer += string(key.Runes)
 		}
 	}
 	return m, nil
@@ -397,7 +405,7 @@ func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
-	m.cmdBuffer = ""
+	m.cmd.buffer = ""
 
 	switch strings.TrimSpace(cmd) {
 	case "q", "quit":
@@ -417,8 +425,8 @@ func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.activeSection = (m.activeSection - 1 + len(m.sections)) % len(m.sections)
 		m.activeField = 0
 	case "help", "h":
-		m.statusMsg = "Tab:section  j/k:nav  i:insert  Space:cycle  :w save  :q quit"
-		m.statusErr = false
+		m.cmd.status = "Tab:section  j/k:nav  i:insert  Space:cycle  :w save  :q quit"
+		m.cmd.isErr = false
 	default:
 		if len(cmd) == 1 && cmd[0] >= '1' && cmd[0] <= '9' {
 			idx := int(cmd[0] - '1')
@@ -428,27 +436,27 @@ func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.statusMsg = fmt.Sprintf("E492: Not an editor command: %s", cmd)
-		m.statusErr = true
+		m.cmd.status = fmt.Sprintf("E492: Not an editor command: %s", cmd)
+		m.cmd.isErr = true
 	}
 	return m, nil
 }
 
 func (m Model) execSave() (tea.Model, tea.Cmd) {
 	if m.onSave == nil {
-		m.statusMsg = "No save handler configured."
-		m.statusErr = true
+		m.cmd.status = "No save handler configured."
+		m.cmd.isErr = true
 		return m, nil
 	}
 	mf := m.BuildManifest()
 	if err := m.onSave(mf); err != nil {
-		m.statusMsg = fmt.Sprintf("Error: %v", err)
-		m.statusErr = true
+		m.cmd.status = fmt.Sprintf("Error: %v", err)
+		m.cmd.isErr = true
 		return m, nil
 	}
 	m.modified = false
-	m.statusMsg = `"manifest.json" written`
-	m.statusErr = false
+	m.cmd.status = `"manifest.json" written`
+	m.cmd.isErr = false
 	return m, nil
 }
 
@@ -463,7 +471,7 @@ func (m Model) BuildManifest() *manifest.Manifest {
 		Infra:     m.infraEditor.ToManifestInfraPillar(),
 		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
 		Realize:   m.realizeEditor.ToManifestRealizeOptions(),
-		Providers: m.providerMenu.ToManifestProviderAssignments(),
+		Providers: m.modal.menu.ToManifestProviderAssignments(),
 
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,
@@ -472,7 +480,7 @@ func (m Model) BuildManifest() *manifest.Manifest {
 }
 
 // RealizeTriggered reports whether the user requested realization.
-func (m Model) RealizeTriggered() bool { return m.realizeTriggered }
+func (m Model) RealizeTriggered() bool { return m.realize.triggered }
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
@@ -492,8 +500,8 @@ func (m Model) View() string {
 
 	base := m.renderBaseView()
 
-	if m.providerMenuOpen {
-		modal := m.providerMenu.View()
+	if m.modal.open {
+		modal := m.modal.menu.View()
 		modalLines := strings.Split(modal, "\n")
 		modalH := len(modalLines)
 		modalW := 0
@@ -548,30 +556,10 @@ func (m Model) renderHeader(w int) string {
 
 func (m Model) renderContent(w int) string {
 	ch := m.contentHeight()
-
-	// Show realization screen in place of the config form while running.
-	if m.showRealization && m.isRealizeSection() {
-		return m.realizationScreen.View(w, ch)
+	if e := m.activeEditor(); e != nil {
+		return e.View(w, ch)
 	}
-
-	switch {
-	case m.isBackendSection():
-		return m.backendEditor.View(w, ch)
-	case m.isDataSection():
-		return m.dataTabEditor.View(w, ch)
-	case m.isContractsSection():
-		return m.contractsEditor.View(w, ch)
-	case m.isFrontendSection():
-		return m.frontendEditor.View(w, ch)
-	case m.isInfraSection():
-		return m.infraEditor.View(w, ch)
-	case m.isCrossCutSection():
-		return m.crossCutEditor.View(w, ch)
-	case m.isRealizeSection():
-		return m.realizeEditor.View(w, ch)
-	}
-
-	// Fallback: should not be reached for 7-section layout
+	// Fallback: generic field list for sections without a delegated editor.
 	sec := m.sections[m.activeSection]
 	return m.renderFieldList(w, ch, sec)
 }
@@ -677,7 +665,7 @@ func (m Model) renderTabBar(w int) string {
 // providerBadge returns a short colored indicator for the provider assigned to
 // the given section ID, or an empty string if none is assigned.
 func (m Model) providerBadge(sectionID string) string {
-	sel, ok := m.providerMenu.SectionAssignment(sectionID)
+	sel, ok := m.modal.menu.SectionAssignment(sectionID)
 	if !ok {
 		return ""
 	}
@@ -715,11 +703,11 @@ func (m Model) renderStatusLine(w int) string {
 	right := StyleStatusRight.Render(fmt.Sprintf(" %s.manifest  %s  All ", sec.ID, pos))
 
 	msg := ""
-	if m.statusMsg != "" {
-		if m.statusErr {
-			msg = StyleMsgErr.Render(m.statusMsg)
+	if m.cmd.status != "" {
+		if m.cmd.isErr {
+			msg = StyleMsgErr.Render(m.cmd.status)
 		} else {
-			msg = StyleMsgOK.Render(m.statusMsg)
+			msg = StyleMsgOK.Render(m.cmd.status)
 		}
 	}
 
@@ -738,31 +726,15 @@ func (m Model) renderStatusLine(w int) string {
 func (m Model) renderCmdLine(w int) string {
 	if m.mode == ModeCommand {
 		cursor := StyleCursor.Render(" ")
-		return StyleCmdLine.Render(":"+m.cmdBuffer) + cursor
+		return StyleCmdLine.Render(":"+m.cmd.buffer) + cursor
 	}
 
-	// Delegate hint line to the active sub-editor.
+	// Delegate hint line to the active sub-editor, with a fallback for the
+	// generic field-list renderer (which has no delegated editor).
 	var line string
-	switch {
-	case m.isBackendSection():
-		line = m.backendEditor.HintLine()
-	case m.isDataSection():
-		line = m.dataTabEditor.HintLine()
-	case m.isContractsSection():
-		line = m.contractsEditor.HintLine()
-	case m.isFrontendSection():
-		line = m.frontendEditor.HintLine()
-	case m.isInfraSection():
-		line = m.infraEditor.HintLine()
-	case m.isCrossCutSection():
-		line = m.crossCutEditor.HintLine()
-	case m.isRealizeSection():
-		if m.showRealization {
-			line = m.realizationScreen.HintLine()
-		} else {
-			line = m.realizeEditor.HintLine()
-		}
-	default:
+	if e := m.activeEditor(); e != nil {
+		line = e.HintLine()
+	} else {
 		switch m.mode {
 		case ModeNormal:
 			hints := []string{

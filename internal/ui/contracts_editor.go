@@ -567,15 +567,8 @@ func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
 
 	// Sub-tab switching always available in normal mode
 	switch key.String() {
-	case "h", "left":
-		if ce.activeTab > 0 {
-			ce.activeTab--
-		}
-		return ce, nil
-	case "l", "right":
-		if int(ce.activeTab) < len(contractsTabLabels)-1 {
-			ce.activeTab++
-		}
+	case "h", "left", "l", "right":
+		ce.activeTab = contractsTabIdx(NavigateTab(key.String(), int(ce.activeTab), len(contractsTabLabels)))
 		return ce, nil
 	}
 
@@ -1342,7 +1335,7 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, ce.extForm, ce.extFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, ce.extForm, ce.extFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1396,7 +1389,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, ce.dtoForm, ce.dtoFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, ce.dtoForm, ce.dtoFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  F: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
 		return lines
 
@@ -1430,7 +1423,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(fname), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, ce.dtoFieldForm, ce.dtoFieldFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, ce.dtoFieldForm, ce.dtoFieldFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1466,7 +1459,7 @@ func (ce ContractsEditor) viewEndpoints(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, visible, ce.epFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, visible, ce.epFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
@@ -1479,7 +1472,7 @@ func (ce ContractsEditor) viewVersioning(w int) []string {
 		lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		return lines
 	}
-	lines = append(lines, renderFormFieldsWithDropdown(w, ce.versioningFields, ce.verFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, ce.versioningFields, ce.verFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 	return lines
 }
 

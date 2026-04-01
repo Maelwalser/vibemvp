@@ -153,8 +153,7 @@ type CrossCutEditor struct {
 	ddOptIdx int
 
 	// Vim motion state
-	countBuf string
-	gBuf     bool
+	nav VimNav
 }
 
 func (cc CrossCutEditor) activeTabEnabled() bool {
@@ -313,15 +312,8 @@ func (cc CrossCutEditor) Update(msg tea.Msg) (CrossCutEditor, tea.Cmd) {
 	}
 
 	switch key.String() {
-	case "h", "left":
-		if cc.activeTab > 0 {
-			cc.activeTab--
-		}
-		return cc, nil
-	case "l", "right":
-		if int(cc.activeTab) < len(ccTabLabels)-1 {
-			cc.activeTab++
-		}
+	case "h", "left", "l", "right":
+		cc.activeTab = ccTabIdx(NavigateTab(key.String(), int(cc.activeTab), len(ccTabLabels)))
 		return cc, nil
 	}
 
@@ -356,82 +348,34 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 		return cc, nil
 	}
 	n := len(fields)
+	k := key.String()
 	wantsInsert := false
 
-	k := key.String()
-
-	// Vim count prefix
-	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
-		cc.countBuf += k
-		cc.gBuf = false
-		return cc, nil
-	}
-	if k == "0" && cc.countBuf != "" {
-		cc.countBuf += "0"
-		cc.gBuf = false
-		return cc, nil
-	}
-
-	switch k {
-	case "j", "down":
-		count := parseVimCount(cc.countBuf)
-		cc.countBuf = ""
-		cc.gBuf = false
-		for i := 0; i < count; i++ {
-			if idx < n-1 {
-				idx++
+	if newIdx, consumed := cc.nav.Handle(k, idx, n); consumed {
+		idx = newIdx
+	} else {
+		cc.nav.Reset()
+		switch k {
+		case "enter", " ":
+			if idx < n {
+				f := &fields[idx]
+				if f.Kind == KindSelect {
+					cc.ddOpen = true
+					cc.ddOptIdx = f.SelIdx
+				} else {
+					wantsInsert = true
+				}
 			}
-		}
-	case "k", "up":
-		count := parseVimCount(cc.countBuf)
-		cc.countBuf = ""
-		cc.gBuf = false
-		for i := 0; i < count; i++ {
-			if idx > 0 {
-				idx--
+		case "H", "shift+left":
+			if idx < n {
+				f := &fields[idx]
+				if f.Kind == KindSelect {
+					f.CyclePrev()
+				}
 			}
+		case "i", "a":
+			wantsInsert = true
 		}
-	case "g":
-		if cc.gBuf {
-			// gg — go to top
-			idx = 0
-			cc.gBuf = false
-		} else {
-			cc.gBuf = true
-		}
-		cc.countBuf = ""
-	case "G":
-		idx = n - 1
-		cc.countBuf = ""
-		cc.gBuf = false
-	case "enter", " ":
-		cc.countBuf = ""
-		cc.gBuf = false
-		if idx < n {
-			f := &fields[idx]
-			if f.Kind == KindSelect {
-				cc.ddOpen = true
-				cc.ddOptIdx = f.SelIdx
-			} else {
-				wantsInsert = true
-			}
-		}
-	case "H", "shift+left":
-		cc.countBuf = ""
-		cc.gBuf = false
-		if idx < n {
-			f := &fields[idx]
-			if f.Kind == KindSelect {
-				f.CyclePrev()
-			}
-		}
-	case "i", "a":
-		cc.countBuf = ""
-		cc.gBuf = false
-		wantsInsert = true
-	default:
-		cc.countBuf = ""
-		cc.gBuf = false
 	}
 	// Write back updated fields and index
 	switch cc.activeTab {
@@ -554,19 +498,19 @@ func (cc CrossCutEditor) View(w, h int) string {
 	switch cc.activeTab {
 	case ccTabTesting:
 		if cc.testingEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, cc.testingFields, cc.testFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, cc.testingFields, cc.testFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case ccTabDocs:
 		if cc.docsEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, cc.docsFields, cc.docsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, cc.docsFields, cc.docsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case ccTabStandards:
 		if cc.standardsEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, cc.standardsFields, cc.standardsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, cc.standardsFields, cc.standardsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}

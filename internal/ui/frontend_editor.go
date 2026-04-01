@@ -531,15 +531,8 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 
 	// Sub-tab switching always available in normal mode
 	switch key.String() {
-	case "h", "left":
-		if fe.activeTab > 0 {
-			fe.activeTab--
-		}
-		return fe, nil
-	case "l", "right":
-		if int(fe.activeTab) < len(feTabLabels)-1 {
-			fe.activeTab++
-		}
+	case "h", "left", "l", "right":
+		fe.activeTab = feTabIdx(NavigateTab(key.String(), int(fe.activeTab), len(feTabLabels)))
 		return fe, nil
 	}
 
@@ -1146,13 +1139,13 @@ func (fe FrontendEditor) View(w, h int) string {
 	switch fe.activeTab {
 	case feTabTech:
 		if fe.techEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, fe.techFields, fe.techFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, fe.techFields, fe.techFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabTheme:
 		if fe.themeEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -1160,19 +1153,19 @@ func (fe FrontendEditor) View(w, h int) string {
 		lines = append(lines, fe.viewPages(w)...)
 	case feTabNav:
 		if fe.navEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabI18n:
 		if fe.i18nEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabA11ySEO:
 		if fe.a11yEnabled {
-			lines = append(lines, renderFormFieldsWithDropdown(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -1338,7 +1331,7 @@ func (fe FrontendEditor) viewPages(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFieldsWithDropdown(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 		return lines
 	}
 	return nil
