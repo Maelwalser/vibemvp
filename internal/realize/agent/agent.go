@@ -43,6 +43,22 @@ func NewClaudeAgent(model string, maxTokens int64, verbose bool) *ClaudeAgent {
 	}
 }
 
+// NewClaudeAgentWithKey returns a ClaudeAgent authenticated with the given API key.
+// If apiKey is empty, falls back to ANTHROPIC_API_KEY from the environment.
+func NewClaudeAgentWithKey(model string, maxTokens int64, verbose bool, apiKey string) *ClaudeAgent {
+	opts := []option.RequestOption{option.WithMaxRetries(0)}
+	if apiKey != "" {
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+	c := anthropic.NewClient(opts...)
+	return &ClaudeAgent{
+		client:    &c,
+		model:     model,
+		maxTokens: maxTokens,
+		verbose:   verbose,
+	}
+}
+
 // Run invokes Claude for the task, streams the response, parses the <files> block,
 // and returns the generated files.
 func (a *ClaudeAgent) Run(ctx context.Context, ac *Context) (*Result, error) {

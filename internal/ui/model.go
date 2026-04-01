@@ -186,18 +186,21 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.providerMenuOpen {
 		switch key.String() {
 		case "M":
-			m.providerMenuOpen = false
+			if m.providerMenu.focus != pmFocusCredential {
+				m.providerMenuOpen = false
+				return m, nil
+			}
 		case "esc":
 			// Esc closes the version dropdown first; a second Esc closes the modal.
-			if m.providerMenu.dropdownOpen {
-				m.providerMenu = m.providerMenu.Update(msg)
-			} else {
+			// But if in credential step, let the menu handle it (steps back to auth).
+			if !m.providerMenu.dropdownOpen && m.providerMenu.focus == pmFocusSections {
 				m.providerMenuOpen = false
+				return m, nil
 			}
-		default:
-			m.providerMenu = m.providerMenu.Update(msg)
 		}
-		return m, nil
+		var cmd tea.Cmd
+		m.providerMenu, cmd = m.providerMenu.Update(msg)
+		return m, cmd
 	}
 
 	// Global keys always processed regardless of section.
@@ -442,6 +445,7 @@ func (m Model) BuildManifest() *manifest.Manifest {
 		Infra:     m.infraEditor.ToManifestInfraPillar(),
 		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
 		Realize:   m.realizeEditor.ToManifestRealizeOptions(),
+		Providers: m.providerMenu.ToManifestProviderAssignments(),
 
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,

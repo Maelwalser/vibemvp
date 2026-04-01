@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 
@@ -84,10 +85,12 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "realize: resuming — %d task(s) already completed, skipping them\n", n)
 	}
 
-	// Set up agent, verifier registry, and shared memory.
-	a := agent.NewClaudeAgent(defaultModel, defaultMaxTokens, o.cfg.Verbose)
+	// Set up verifier registry and shared memory.
 	verifiers := verify.NewRegistry()
 	mem := memory.New()
+
+	// Build a default agent; per-section agents are resolved below.
+	defaultAgent := agent.NewClaudeAgent(defaultModel, defaultMaxTokens, o.cfg.Verbose)
 
 	fmt.Fprintf(os.Stderr, "realize: starting %d tasks across %d wave(s)\n",
 		len(d.Tasks), len(d.Levels()))
@@ -96,7 +99,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for waveIdx, wave := range d.Levels() {
 		fmt.Fprintf(os.Stderr, "realize: wave %d (%d tasks): %v\n", waveIdx, len(wave), wave)
 
-		if err := o.runWave(ctx, wave, d, reg, a, verifiers, writer, st, mem); err != nil {
+		if err := o.runWave(ctx, wave, d, m.Providers, reg, defaultAgent, verifiers, writer, st, mem); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
@@ -111,8 +114,9 @@ func (o *Orchestrator) runWave(
 	ctx context.Context,
 	taskIDs []string,
 	d *dag.DAG,
+	providers manifest.ProviderAssignments,
 	reg *skills.FileRegistry,
-	a agent.Agent,
+	defaultAgent agent.Agent,
 	verifiers *verify.Registry,
 	writer *output.Writer,
 	st *state.Store,
@@ -139,6 +143,9 @@ func (o *Orchestrator) runWave(
 
 			fmt.Fprintf(os.Stderr, "[%s] starting: %s\n", task.ID, task.Label)
 
+			// Resolve per-section agent if a provider assignment exists.
+			a := resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
+
 			runner := &TaskRunner{
 				task:       task,
 				agent:      a,
@@ -155,6 +162,49 @@ func (o *Orchestrator) runWave(
 	}
 
 	return g.Wait()
+}
+
+// resolveAgent returns a task-specific agent if the manifest has a provider
+// assignment for the task's section, otherwise returns the default agent.
+func resolveAgent(taskID string, providers manifest.ProviderAssignments, def agent.Agent, verbose bool) agent.Agent {
+	if providers == nil {
+		return def
+	}
+	// Task IDs follow the pattern "<section>.<name>" or just "<section>".
+	sectionID := taskID
+	if dot := strings.Index(taskID, "."); dot >= 0 {
+		sectionID = taskID[:dot]
+	}
+	pa, ok := providers[sectionID]
+	if !ok || pa.Credential == "" {
+		return def
+	}
+	// Only Claude is supported natively; other providers fall back to default.
+	if pa.Provider != "Claude" {
+		return def
+	}
+	model := claudeModelID(pa.Model, pa.Version)
+	return agent.NewClaudeAgentWithKey(model, defaultMaxTokens, verbose, pa.Credential)
+}
+
+// claudeModelID converts a tier name + version to the Anthropic model string.
+func claudeModelID(tier, version string) string {
+	switch tier {
+	case "Haiku":
+		if version == "3.5" {
+			return "claude-haiku-4-5-20251001"
+		}
+		return "claude-haiku-4-5-20251001"
+	case "Sonnet":
+		if version == "4.5" || version == "4.6" {
+			return "claude-sonnet-4-6"
+		}
+		return "claude-sonnet-4-6"
+	case "Opus":
+		return "claude-opus-4-6"
+	default:
+		return defaultModel
+	}
 }
 
 // printPlan prints the task DAG in dry-run mode without invoking any agents.

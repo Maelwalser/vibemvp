@@ -721,6 +721,20 @@ type RealizeOptions struct {
 	DryRun      bool   `json:"dry_run"`
 }
 
+// ── Provider assignments ──────────────────────────────────────────────────────
+
+// ProviderAssignment maps a pillar section to a specific AI provider and auth config.
+type ProviderAssignment struct {
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	Version    string `json:"version"`
+	Auth       string `json:"auth"`
+	Credential string `json:"credential,omitempty"` // API key or OAuth token
+}
+
+// ProviderAssignments maps section IDs (backend, data, etc.) to their provider config.
+type ProviderAssignments map[string]ProviderAssignment
+
 // ── Root manifest ─────────────────────────────────────────────────────────────
 
 // Manifest is the root document holding all configuration.
@@ -735,6 +749,9 @@ type Manifest struct {
 	Infra     InfraPillar     `json:"infrastructure"`
 	CrossCut  CrossCutPillar  `json:"cross_cutting"`
 	Realize   RealizeOptions  `json:"realize,omitempty"`
+
+	// Provider assignments per section (API keys / OAuth tokens stored here).
+	Providers ProviderAssignments `json:"providers,omitempty"`
 
 	// Legacy fields kept for backward compatibility during transition.
 	Databases []DBSourceDef `json:"databases,omitempty"`

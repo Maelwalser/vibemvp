@@ -1,10 +1,15 @@
 package ui
 
 import (
+	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vibe-mvp/internal/manifest"
 )
 
 // pmFocus tracks which column owns keyboard input.
@@ -15,6 +20,7 @@ const (
 	pmFocusProviders
 	pmFocusModels
 	pmFocusAuth
+	pmFocusCredential // API key / OAuth token input step
 )
 
 // sectionEntry is a tab section that can be assigned a provider.
@@ -24,17 +30,18 @@ type sectionEntry struct {
 	badge string // 1-char abbreviation shown in tab bar
 }
 
-// ProviderSelection holds a confirmed provider/model/auth triple.
+// ProviderSelection holds a confirmed provider/model/auth/credential quad.
 type ProviderSelection struct {
-	Provider string
-	Model    string
-	Version  string
-	Auth     string
+	Provider   string
+	Model      string
+	Version    string
+	Auth       string
+	Credential string // API key or OAuth token
 }
 
 // IsSet reports whether this selection is fully configured.
 func (p ProviderSelection) IsSet() bool {
-	return p.Provider != "" && p.Model != "" && p.Auth != ""
+	return p.Provider != "" && p.Model != "" && p.Auth != "" && p.Credential != ""
 }
 
 // Short returns a compact display string like "Claude Sonnet 4.5 / API Key".
@@ -63,7 +70,7 @@ type providerEntry struct {
 	authMethods []string
 }
 
-// ProviderMenu is the centered modal for picking section → provider → model version → auth.
+// ProviderMenu is the centered modal for picking section → provider → model version → auth → credential.
 // It carries no integration logic — UI only.
 type ProviderMenu struct {
 	// Section column
@@ -83,10 +90,20 @@ type ProviderMenu struct {
 	selectedModel   int     // -1 = none confirmed (index in models slice)
 	selectedVersion int     // -1 = none confirmed (index in tier.versions)
 	selectedAuth    int     // -1 = none confirmed
+
+	// Credential input step
+	credInput textinput.Model
 }
 
 func newProviderMenu() ProviderMenu {
+	ci := textinput.New()
+	ci.Prompt = ""
+	ci.Width = pmBoxW - 10
+	ci.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
+	ci.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
+
 	pm := ProviderMenu{
+		credInput:   ci,
 		sectionList: []sectionEntry{
 			{id: "backend", label: "Backend", badge: "B"},
 			{id: "data", label: "Data", badge: "D"},
@@ -171,6 +188,28 @@ func (p ProviderMenu) SectionAssignment(sectionID string) (ProviderSelection, bo
 	return ProviderSelection{}, false
 }
 
+// ToManifestProviderAssignments converts all confirmed assignments to manifest types.
+func (p ProviderMenu) ToManifestProviderAssignments() manifest.ProviderAssignments {
+	result := make(manifest.ProviderAssignments)
+	for i, s := range p.sectionList {
+		sel, ok := p.assignments[i]
+		if !ok || !sel.IsSet() {
+			continue
+		}
+		result[s.id] = manifest.ProviderAssignment{
+			Provider:   sel.Provider,
+			Model:      sel.Model,
+			Version:    sel.Version,
+			Auth:       sel.Auth,
+			Credential: sel.Credential,
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 // loadSectionState restores the provider/model/auth cursor positions from the
 // assignment saved for the currently selected section.
 func (p ProviderMenu) loadSectionState() ProviderMenu {
@@ -225,11 +264,14 @@ func (p ProviderMenu) loadSectionState() ProviderMenu {
 		}
 	}
 
+	// Restore credential input.
+	p.credInput.SetValue(sel.Credential)
+
 	return p
 }
 
-// confirmCurrentSelection saves the current provider/model/auth choices as the
-// assignment for the active section, if all three are confirmed.
+// confirmCurrentSelection saves the current provider/model/auth/credential choices as the
+// assignment for the active section, if all are confirmed.
 func (p ProviderMenu) confirmCurrentSelection() ProviderMenu {
 	if p.selectedProv < 0 || p.selectedModel < 0 || p.selectedVersion < 0 || p.selectedAuth < 0 {
 		return p
@@ -239,10 +281,11 @@ func (p ProviderMenu) confirmCurrentSelection() ProviderMenu {
 	tier := prov.models[p.selectedModel]
 
 	sel := ProviderSelection{
-		Provider: prov.label,
-		Model:    tier.name,
-		Version:  tier.versions[p.selectedVersion],
-		Auth:     prov.authMethods[p.selectedAuth],
+		Provider:   prov.label,
+		Model:      tier.name,
+		Version:    tier.versions[p.selectedVersion],
+		Auth:       prov.authMethods[p.selectedAuth],
+		Credential: p.credInput.Value(),
 	}
 
 	// Copy map (immutable pattern).
@@ -271,14 +314,97 @@ func (p ProviderMenu) clearCurrentSection() ProviderMenu {
 	p.cursor = 0
 	p.modelCursor = 0
 	p.authCursor = 0
+	p.credInput.SetValue("")
 	return p
 }
 
-// Update handles keyboard input and returns a new ProviderMenu (immutable).
-func (p ProviderMenu) Update(msg tea.Msg) ProviderMenu {
+// oauthURL returns a browser URL for the given provider's authentication page.
+func oauthURL(provider string) string {
+	switch provider {
+	case "Claude":
+		return "https://console.anthropic.com/settings/keys"
+	case "ChatGPT":
+		return "https://platform.openai.com/api-keys"
+	case "Gemini":
+		return "https://aistudio.google.com/app/apikey"
+	case "Mistral":
+		return "https://console.mistral.ai/api-keys"
+	default:
+		return ""
+	}
+}
+
+// openBrowser attempts to open url in the system browser.
+func openBrowser(url string) {
+	var cmd string
+	var args []string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd, args = "open", []string{url}
+	case "windows":
+		cmd, args = "rundll32", []string{"url.dll,FileProtocolHandler", url}
+	default:
+		cmd, args = "xdg-open", []string{url}
+	}
+	_ = exec.Command(cmd, args...).Start()
+}
+
+// enterCredentialStep prepares the credential input for the current auth method.
+func (p ProviderMenu) enterCredentialStep() (ProviderMenu, tea.Cmd) {
+	p.focus = pmFocusCredential
+	p.credInput.SetValue("")
+	authMethod := ""
+	if p.selectedProv >= 0 && p.selectedAuth >= 0 {
+		authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
+	}
+	if authMethod == "API Key" {
+		p.credInput.Placeholder = "sk-…"
+		p.credInput.EchoMode = textinput.EchoPassword
+		p.credInput.EchoCharacter = '•'
+	} else {
+		// OAuth: show instructions, treat as plain text token input
+		p.credInput.Placeholder = "paste token here"
+		p.credInput.EchoMode = textinput.EchoNormal
+	}
+	return p, p.credInput.Focus()
+}
+
+// Update handles keyboard input and returns a new ProviderMenu and optional command.
+func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
+	// Delegate to textinput when credential focus is active.
+	if p.focus == pmFocusCredential {
+		key, ok := msg.(tea.KeyMsg)
+		if ok {
+			switch key.String() {
+			case "enter":
+				// Confirm credential, save assignment, return to sections.
+				p = p.confirmCurrentSelection()
+				p.focus = pmFocusSections
+				p.credInput.Blur()
+				return p, nil
+			case "esc":
+				// Go back to auth column.
+				p.focus = pmFocusAuth
+				p.credInput.Blur()
+				return p, nil
+			case "ctrl+o":
+				// Open browser for the current provider.
+				if p.selectedProv >= 0 {
+					if u := oauthURL(p.providers[p.selectedProv].label); u != "" {
+						openBrowser(u)
+					}
+				}
+				return p, nil
+			}
+		}
+		var cmd tea.Cmd
+		p.credInput, cmd = p.credInput.Update(msg)
+		return p, cmd
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
-		return p
+		return p, nil
 	}
 
 	switch key.String() {
@@ -407,10 +533,8 @@ func (p ProviderMenu) Update(msg tea.Msg) ProviderMenu {
 
 		case pmFocusAuth:
 			p.selectedAuth = p.authCursor
-			// Save assignment for the current section.
-			p = p.confirmCurrentSelection()
-			// Return focus to sections so the user can configure the next one.
-			p.focus = pmFocusSections
+			// Advance to the credential input step.
+			return p.enterCredentialStep()
 		}
 
 	// ── Cancel dropdown (handled here; modal-level Esc is in model.go) ────────
@@ -431,7 +555,7 @@ func (p ProviderMenu) Update(msg tea.Msg) ProviderMenu {
 		}
 	}
 
-	return p
+	return p, nil
 }
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -482,11 +606,27 @@ func (p ProviderMenu) View() string {
 		rows = append(rows, pmRow(col0[i], col1[i], col2[i], col3[i]))
 	}
 
-	rows = append(rows, "") // spacer before hints
+	rows = append(rows, "") // spacer before hints/credential
+
+	// Credential input step: show an inline input panel.
+	if p.focus == pmFocusCredential {
+		rows = append(rows, p.renderCredentialPanel())
+		rows = append(rows, "")
+	}
 
 	// Context-sensitive hint bar.
 	var hints string
 	switch {
+	case p.focus == pmFocusCredential:
+		authMethod := ""
+		if p.selectedProv >= 0 && p.selectedAuth >= 0 {
+			authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
+		}
+		if authMethod == "OAuth" {
+			hints = hintBar("Enter", "confirm", "Ctrl+O", "open browser", "Esc", "back")
+		} else {
+			hints = hintBar("Enter", "confirm", "Esc", "back")
+		}
 	case p.dropdownOpen:
 		hints = hintBar("j/k", "version", "Enter", "confirm", "Esc", "cancel")
 	case p.focus == pmFocusSections:
@@ -497,6 +637,47 @@ func (p ProviderMenu) View() string {
 	rows = append(rows, hints)
 
 	return StyleModalBorder.Width(pmBoxW).Render(strings.Join(rows, "\n"))
+}
+
+// renderCredentialPanel renders the inline API key / OAuth token input.
+func (p ProviderMenu) renderCredentialPanel() string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
+	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true)
+
+	authMethod := ""
+	provLabel := ""
+	if p.selectedProv >= 0 {
+		provLabel = p.providers[p.selectedProv].label
+		if p.selectedAuth >= 0 {
+			authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
+		}
+	}
+
+	var label string
+	var subText string
+	if authMethod == "OAuth" {
+		label = active.Render("OAuth Token")
+		if u := oauthURL(provLabel); u != "" {
+			subText = dim.Render(fmt.Sprintf("  Get token: %s", u))
+		} else {
+			subText = dim.Render("  Paste your OAuth access token below")
+		}
+	} else {
+		label = active.Render("API Key")
+		subText = dim.Render(fmt.Sprintf("  Enter %s API key", provLabel))
+	}
+
+	inputBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(clrCyan)).
+		Padding(0, 1).
+		Width(pmBoxW - 4).
+		Render(label + "  " + p.credInput.View())
+
+	var lines []string
+	lines = append(lines, subText)
+	lines = append(lines, inputBox)
+	return strings.Join(lines, "\n")
 }
 
 // renderHeaders returns the column header row.
