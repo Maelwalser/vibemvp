@@ -145,6 +145,10 @@ type CrossCutEditor struct {
 	formInput    textinput.Model
 	width        int
 
+	// Dropdown state
+	ddOpen   bool
+	ddOptIdx int
+
 	// Vim motion state
 	countBuf string
 	gBuf     bool
@@ -202,6 +206,58 @@ func (cc CrossCutEditor) HintLine() string {
 	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
 }
 
+// activeCCFieldPtr returns a pointer to the currently focused field.
+func (cc *CrossCutEditor) activeCCFieldPtr() *Field {
+	switch cc.activeTab {
+	case ccTabTesting:
+		if cc.testFormIdx < len(cc.testingFields) {
+			return &cc.testingFields[cc.testFormIdx]
+		}
+	case ccTabDocs:
+		if cc.docsFormIdx < len(cc.docsFields) {
+			return &cc.docsFields[cc.docsFormIdx]
+		}
+	case ccTabStandards:
+		if cc.standardsFormIdx < len(cc.standardsFields) {
+			return &cc.standardsFields[cc.standardsFormIdx]
+		}
+	}
+	return nil
+}
+
+func (cc CrossCutEditor) updateCCDropdown(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) {
+	f := cc.activeCCFieldPtr()
+	if f == nil {
+		cc.ddOpen = false
+		return cc, nil
+	}
+	switch key.String() {
+	case "j", "down":
+		if cc.ddOptIdx < len(f.Options)-1 {
+			cc.ddOptIdx++
+		}
+	case "k", "up":
+		if cc.ddOptIdx > 0 {
+			cc.ddOptIdx--
+		}
+	case "g":
+		cc.ddOptIdx = 0
+	case "G":
+		if len(f.Options) > 0 {
+			cc.ddOptIdx = len(f.Options) - 1
+		}
+	case " ", "enter":
+		f.SelIdx = cc.ddOptIdx
+		if cc.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[cc.ddOptIdx]
+		}
+		cc.ddOpen = false
+	case "esc", "b":
+		cc.ddOpen = false
+	}
+	return cc, nil
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (cc CrossCutEditor) Update(msg tea.Msg) (CrossCutEditor, tea.Cmd) {
@@ -212,6 +268,10 @@ func (cc CrossCutEditor) Update(msg tea.Msg) (CrossCutEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return cc, nil
+	}
+
+	if cc.ddOpen {
+		return cc.updateCCDropdown(key)
 	}
 
 	switch key.String() {
@@ -306,7 +366,8 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 		if idx < n {
 			f := &fields[idx]
 			if f.Kind == KindSelect {
-				f.CycleNext()
+				cc.ddOpen = true
+				cc.ddOptIdx = f.SelIdx
 			} else {
 				wantsInsert = true
 			}
@@ -448,11 +509,11 @@ func (cc CrossCutEditor) View(w, h int) string {
 
 	switch cc.activeTab {
 	case ccTabTesting:
-		lines = append(lines, renderFormFields(w, cc.testingFields, cc.testFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, cc.testingFields, cc.testFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 	case ccTabDocs:
-		lines = append(lines, renderFormFields(w, cc.docsFields, cc.docsFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, cc.docsFields, cc.docsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 	case ccTabStandards:
-		lines = append(lines, renderFormFields(w, cc.standardsFields, cc.standardsFormIdx, cc.internalMode == ccInsert, cc.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, cc.standardsFields, cc.standardsFormIdx, cc.internalMode == ccInsert, cc.formInput, cc.ddOpen, cc.ddOptIdx)...)
 	}
 
 	return fillTildes(lines, h)
