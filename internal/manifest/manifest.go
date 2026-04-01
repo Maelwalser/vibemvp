@@ -300,6 +300,36 @@ type AuthConfig struct {
 	Roles        string `json:"roles,omitempty"`
 }
 
+// WAFConfig describes Web Application Firewall and rate limiting settings.
+type WAFConfig struct {
+	Provider          string `json:"provider,omitempty"`
+	Ruleset           string `json:"ruleset,omitempty"`
+	CAPTCHA           string `json:"captcha,omitempty"`
+	BotProtection     string `json:"bot_protection,omitempty"`
+	RateLimitStrategy string `json:"rate_limit_strategy,omitempty"`
+	RateLimitBackend  string `json:"rate_limit_backend,omitempty"`
+	DDoSProtection    string `json:"ddos_protection,omitempty"`
+}
+
+// CronJobDef describes a scheduled/cron job.
+type CronJobDef struct {
+	Name     string `json:"name"`
+	Schedule string `json:"schedule"`
+	Handler  string `json:"handler,omitempty"`
+	Timeout  string `json:"timeout,omitempty"`
+}
+
+// JobQueueDef describes a worker pool or task queue.
+type JobQueueDef struct {
+	Name        string       `json:"name"`
+	Technology  string       `json:"technology"`
+	Concurrency string       `json:"concurrency,omitempty"`
+	MaxRetries  string       `json:"max_retries,omitempty"`
+	RetryPolicy string       `json:"retry_policy"`
+	DLQ         string       `json:"dlq,omitempty"`
+	CronJobs    []CronJobDef `json:"cron_jobs,omitempty"`
+}
+
 // EnvConfig describes the deployment environment configuration.
 type EnvConfig struct {
 	ComputeEnv    string `json:"compute_env"`
@@ -318,6 +348,8 @@ type BackendPillar struct {
 	Messaging   *MessagingConfig `json:"messaging,omitempty"`
 	APIGateway  *APIGatewayConfig `json:"api_gateway,omitempty"`
 	Auth        AuthConfig       `json:"auth"`
+	JobQueues   []JobQueueDef    `json:"job_queues,omitempty"`
+	WAF         WAFConfig        `json:"waf,omitempty"`
 
 	// Legacy monolith fields kept for backward compatibility.
 	ComputeEnv    ComputeEnv `json:"compute_env,omitempty"`
@@ -373,13 +405,24 @@ type FileStorageDef struct {
 	AllowedTypes string `json:"allowed_types,omitempty"`
 }
 
+// DataGovernanceConfig describes data lifecycle, privacy, and compliance settings.
+type DataGovernanceConfig struct {
+	RetentionPolicy      string `json:"retention_policy,omitempty"`
+	DeleteStrategy       string `json:"delete_strategy,omitempty"`
+	PIIEncryption        string `json:"pii_encryption,omitempty"`
+	ComplianceFrameworks string `json:"compliance_frameworks,omitempty"`
+	DataResidency        string `json:"data_residency,omitempty"`
+	ArchivalStorage      string `json:"archival_storage,omitempty"`
+}
+
 // DataPillar groups all data-related configuration.
 type DataPillar struct {
-	Databases    []DBSourceDef    `json:"databases,omitempty"`
-	Domains      []DomainDef      `json:"domains,omitempty"`
-	Entities     []EntityDef      `json:"entities,omitempty"` // legacy
-	Caching      CachingConfig    `json:"caching"`
-	FileStorages []FileStorageDef `json:"file_storages,omitempty"`
+	Databases    []DBSourceDef       `json:"databases,omitempty"`
+	Domains      []DomainDef         `json:"domains,omitempty"`
+	Entities     []EntityDef         `json:"entities,omitempty"` // legacy
+	Caching      CachingConfig       `json:"caching"`
+	FileStorages []FileStorageDef    `json:"file_storages,omitempty"`
+	Governance   DataGovernanceConfig `json:"governance,omitempty"`
 }
 
 // ── Contracts tab types ───────────────────────────────────────────────────────
@@ -422,11 +465,22 @@ type APIVersioning struct {
 	DeprecationPolicy string `json:"deprecation_policy,omitempty"`
 }
 
+// ExternalAPIDef describes a third-party API that the system consumes.
+type ExternalAPIDef struct {
+	Provider        string `json:"provider"`
+	AuthMechanism   string `json:"auth_mechanism"`
+	RateLimit       string `json:"rate_limit,omitempty"`
+	WebhookEndpoint string `json:"webhook_endpoint,omitempty"`
+	FailureStrategy string `json:"failure_strategy"`
+	BaseURL         string `json:"base_url,omitempty"`
+}
+
 // ContractsPillar groups all contract-related configuration.
 type ContractsPillar struct {
-	DTOs       []DTODef      `json:"dtos,omitempty"`
-	Endpoints  []EndpointDef `json:"endpoints,omitempty"`
-	Versioning APIVersioning `json:"versioning"`
+	DTOs         []DTODef        `json:"dtos,omitempty"`
+	Endpoints    []EndpointDef   `json:"endpoints,omitempty"`
+	Versioning   APIVersioning   `json:"versioning"`
+	ExternalAPIs []ExternalAPIDef `json:"external_apis,omitempty"`
 }
 
 // ── Frontend tab types ────────────────────────────────────────────────────────
@@ -479,12 +533,33 @@ type NavigationConfig struct {
 	AuthAware   bool   `json:"auth_aware"`
 }
 
+// I18nConfig describes internationalization and localization settings.
+type I18nConfig struct {
+	Enabled             string `json:"enabled,omitempty"`
+	DefaultLocale       string `json:"default_locale,omitempty"`
+	SupportedLocales    string `json:"supported_locales,omitempty"`
+	TranslationStrategy string `json:"translation_strategy,omitempty"`
+	TimezoneHandling    string `json:"timezone_handling,omitempty"`
+}
+
+// A11ySEOConfig describes accessibility and SEO settings.
+type A11ySEOConfig struct {
+	WCAGLevel         string `json:"wcag_level,omitempty"`
+	SEORenderStrategy string `json:"seo_render_strategy,omitempty"`
+	Sitemap           string `json:"sitemap,omitempty"`
+	MetaTagInjection  string `json:"meta_tag_injection,omitempty"`
+	Analytics         string `json:"analytics,omitempty"`
+	Telemetry         string `json:"telemetry,omitempty"`
+}
+
 // FrontendPillar covers the full frontend configuration.
 type FrontendPillar struct {
 	Tech       FrontendTechConfig `json:"tech"`
 	Theme      FrontendTheme      `json:"theme"`
 	Pages      []PageDef          `json:"pages,omitempty"`
 	Navigation NavigationConfig   `json:"navigation"`
+	I18n       I18nConfig         `json:"i18n,omitempty"`
+	A11ySEO    A11ySEOConfig      `json:"a11y_seo,omitempty"`
 
 	// Legacy fields preserved for backward compatibility.
 	Rendering     RenderingMode `json:"rendering,omitempty"`
@@ -524,11 +599,22 @@ type ObservabilityConfig struct {
 	Alerting      string `json:"alerting"`
 }
 
+// EnvTopologyConfig describes environment staging, promotion, and secret topology.
+type EnvTopologyConfig struct {
+	Stages            string `json:"stages,omitempty"`
+	PromotionPipeline string `json:"promotion_pipeline,omitempty"`
+	SecretKeyStrategy string `json:"secret_key_strategy,omitempty"`
+	MigrationStrategy string `json:"migration_strategy,omitempty"`
+	DBSeeding         string `json:"db_seeding,omitempty"`
+	PreviewEnvs       string `json:"preview_envs,omitempty"`
+}
+
 // InfraPillar groups infrastructure configuration.
 type InfraPillar struct {
 	Networking    NetworkingConfig    `json:"networking"`
 	CICD          CICDConfig          `json:"cicd"`
 	Observability ObservabilityConfig `json:"observability"`
+	EnvTopology   EnvTopologyConfig   `json:"env_topology,omitempty"`
 }
 
 // ── Cross-cutting tab types ───────────────────────────────────────────────────

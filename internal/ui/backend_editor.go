@@ -46,6 +46,8 @@ const (
 	beTabComm
 	beTabMessaging
 	beTabAPIGW
+	beTabJobs
+	beTabSecurity
 	beTabAuth
 )
 
@@ -53,17 +55,17 @@ const (
 func subTabsForArch(arch string) []backendSubTab {
 	switch arch {
 	case "monolith":
-		return []backendSubTab{beTabEnv, beTabServices, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabJobs, beTabSecurity, beTabAuth}
 	case "modular-monolith":
-		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabJobs, beTabSecurity, beTabAuth}
 	case "microservices":
-		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabAPIGW, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabAPIGW, beTabJobs, beTabSecurity, beTabAuth}
 	case "event-driven":
-		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabJobs, beTabSecurity, beTabAuth}
 	case "hybrid":
-		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabAPIGW, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabComm, beTabMessaging, beTabAPIGW, beTabJobs, beTabSecurity, beTabAuth}
 	default:
-		return []backendSubTab{beTabEnv, beTabServices, beTabAuth}
+		return []backendSubTab{beTabEnv, beTabServices, beTabJobs, beTabSecurity, beTabAuth}
 	}
 }
 
@@ -79,6 +81,10 @@ func subTabLabel(t backendSubTab) string {
 		return "MESSAGING"
 	case beTabAPIGW:
 		return "API GW"
+	case beTabJobs:
+		return "JOBS"
+	case beTabSecurity:
+		return "SECURITY"
 	case beTabAuth:
 		return "AUTH"
 	}
@@ -391,6 +397,77 @@ func defaultAuthFields() []Field {
 	}
 }
 
+func defaultSecurityFields() []Field {
+	return []Field{
+		{
+			Key: "waf_provider", Label: "waf_provider  ", Kind: KindSelect,
+			Options: []string{"Cloudflare WAF", "AWS WAF", "ModSecurity", "NGINX ModSec", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "waf_ruleset", Label: "waf_ruleset   ", Kind: KindSelect,
+			Options: []string{"OWASP Core Rule Set", "Managed rules", "Custom", "None"},
+			Value:   "None", SelIdx: 3,
+		},
+		{
+			Key: "captcha", Label: "captcha       ", Kind: KindSelect,
+			Options: []string{"hCaptcha", "reCAPTCHA v2", "reCAPTCHA v3", "Cloudflare Turnstile", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "bot_protection", Label: "bot_protection", Kind: KindSelect,
+			Options: []string{"Cloudflare Bot Management", "Imperva", "DataDome", "Custom", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "rate_limit_strategy", Label: "rate_limit    ", Kind: KindSelect,
+			Options: []string{"Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "rate_limit_backend", Label: "rl_backend    ", Kind: KindSelect,
+			Options: []string{"Redis", "Memcached", "In-memory", "None"},
+			Value:   "None", SelIdx: 3,
+		},
+		{
+			Key: "ddos_protection", Label: "ddos_protect  ", Kind: KindSelect,
+			Options: []string{"CDN-level (Cloudflare)", "Provider-managed", "None"},
+			Value:   "None", SelIdx: 2,
+		},
+	}
+}
+
+func defaultJobQueueFormFields() []Field {
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{
+			Key: "technology", Label: "technology    ", Kind: KindSelect,
+			Options: []string{"Temporal", "BullMQ", "Sidekiq", "Celery", "Faktory", "Asynq", "River", "Custom"},
+			Value:   "BullMQ", SelIdx: 1,
+		},
+		{Key: "concurrency", Label: "concurrency   ", Kind: KindText, Value: "10"},
+		{Key: "max_retries", Label: "max_retries   ", Kind: KindText, Value: "3"},
+		{
+			Key: "retry_policy", Label: "retry_policy  ", Kind: KindSelect,
+			Options: []string{"Exponential backoff", "Fixed interval", "Linear backoff", "None"},
+			Value:   "Exponential backoff",
+		},
+		{
+			Key: "dlq", Label: "dead_letter_q ", Kind: KindSelect,
+			Options: []string{"false", "true"}, Value: "false",
+		},
+	}
+}
+
+// ── beSubView type ────────────────────────────────────────────────────────────
+
+type beSubView int
+
+const (
+	beViewList beSubView = iota
+	beViewForm
+)
+
 // ── list + form sub-editor for services and comm links ───────────────────────
 
 type beListView int
@@ -432,6 +509,17 @@ type BackendEditor struct {
 	APIGWFields    []Field
 	AuthFields     []Field
 
+	// Security/WAF tab
+	securityFields []Field
+	secFormIdx     int
+
+	// Jobs tab
+	jobQueues   []manifest.JobQueueDef
+	jobsSubView beSubView
+	jobsIdx     int
+	jobsForm    []Field
+	jobsFormIdx int
+
 	// List editors
 	serviceEditor beListEditor
 	commEditor    beListEditor
@@ -465,6 +553,7 @@ func newBackendEditor() BackendEditor {
 		MessagingFields: defaultMessagingFields(),
 		APIGWFields:     defaultAPIGWFields(),
 		AuthFields:      defaultAuthFields(),
+		securityFields:  defaultSecurityFields(),
 		serviceEditor:   newBeListEditor(),
 		commEditor:      newBeListEditor(),
 		eventEditor:     newBeListEditor(),
@@ -604,6 +693,16 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		Services:    be.Services,
 		CommLinks:   be.CommLinks,
 		Auth:        auth,
+		JobQueues:   be.jobQueues,
+		WAF: manifest.WAFConfig{
+			Provider:          fieldGet(be.securityFields, "waf_provider"),
+			Ruleset:           fieldGet(be.securityFields, "waf_ruleset"),
+			CAPTCHA:           fieldGet(be.securityFields, "captcha"),
+			BotProtection:     fieldGet(be.securityFields, "bot_protection"),
+			RateLimitStrategy: fieldGet(be.securityFields, "rate_limit_strategy"),
+			RateLimitBackend:  fieldGet(be.securityFields, "rate_limit_backend"),
+			DDoSProtection:    fieldGet(be.securityFields, "ddos_protection"),
+		},
 	}
 
 	tabs := subTabsForArch(arch)
@@ -683,6 +782,13 @@ func (be BackendEditor) HintLine() string {
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
 		return hintBar("j/k", "navigate", "Space", "cycle", "a", "add event", "d", "del event", "h/l", "sub-tab")
+	case beTabJobs:
+		if be.jobsSubView == beViewForm {
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
+		return hintBar("j/k", "navigate", "a", "add job queue", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+	case beTabSecurity:
+		return hintBar("j/k", "navigate", "gg/G", "top/bottom", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab")
 	default:
 		return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab", "b", "change arch")
 	}
@@ -852,6 +958,11 @@ func (be BackendEditor) dropdownOptions() []string {
 			return ed.form[ed.formIdx].Options
 		}
 	}
+	if be.jobsSubView == beViewForm {
+		if be.jobsFormIdx < len(be.jobsForm) && (be.jobsForm[be.jobsFormIdx].Kind == KindSelect || be.jobsForm[be.jobsFormIdx].Kind == KindMultiSelect) {
+			return be.jobsForm[be.jobsFormIdx].Options
+		}
+	}
 	if f := be.mutableFieldPtr(); f != nil {
 		return f.Options
 	}
@@ -897,6 +1008,16 @@ func (be *BackendEditor) applyDropdown() {
 		}
 		return
 	}
+	if be.jobsSubView == beViewForm {
+		if be.jobsFormIdx < len(be.jobsForm) {
+			f := &be.jobsForm[be.jobsFormIdx]
+			if f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+				f.SelIdx = be.ddOptIdx
+				f.Value = f.Options[be.ddOptIdx]
+			}
+		}
+		return
+	}
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
 		f.SelIdx = be.ddOptIdx
 		f.Value = f.Options[be.ddOptIdx]
@@ -914,6 +1035,14 @@ func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			return be, nil
 		case "tab":
 			be.saveInput()
+			if be.jobsSubView == beViewForm {
+				n := len(be.jobsForm)
+				if n > 0 {
+					be.jobsFormIdx = (be.jobsFormIdx + 1) % n
+					be.activeField = be.jobsFormIdx
+				}
+				return be.enterJobsFormInsert()
+			}
 			fields := be.currentEditableFields()
 			if fields != nil {
 				be.activeField = (be.activeField + 1) % len(*fields)
@@ -921,6 +1050,14 @@ func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			}
 		case "shift+tab":
 			be.saveInput()
+			if be.jobsSubView == beViewForm {
+				n := len(be.jobsForm)
+				if n > 0 {
+					be.jobsFormIdx = (be.jobsFormIdx - 1 + n) % n
+					be.activeField = be.jobsFormIdx
+				}
+				return be.enterJobsFormInsert()
+			}
 			fields := be.currentEditableFields()
 			if fields != nil {
 				n := len(*fields)
@@ -959,6 +1096,13 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			return be.updateEventForm(key)
 		}
 		return be.updateMessaging(key)
+	case beTabJobs:
+		if be.jobsSubView == beViewList {
+			return be.updateJobsList(key)
+		}
+		return be.updateJobsForm(key)
+	case beTabSecurity:
+		return be.updateSecurity(key)
 	}
 
 	// Vim count prefix (digits 1-9, or 0 when count already started)
@@ -1504,6 +1648,8 @@ func (be *BackendEditor) currentEditableFields() *[]Field {
 		return &be.APIGWFields
 	case beTabAuth:
 		return &be.AuthFields
+	case beTabSecurity:
+		return &be.securityFields
 	}
 	return nil
 }
@@ -1560,6 +1706,13 @@ func (be *BackendEditor) saveInput() {
 		ed := &be.eventEditor
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindText {
 			ed.form[ed.formIdx].Value = val
+		}
+		return
+	}
+	// Check if we're in a jobs form
+	if be.jobsSubView == beViewForm {
+		if be.jobsFormIdx < len(be.jobsForm) && be.jobsForm[be.jobsFormIdx].Kind == KindText {
+			be.jobsForm[be.jobsFormIdx].Value = val
 		}
 		return
 	}
@@ -1659,6 +1812,10 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 		lines = append(lines, be.viewMessaging(w)...)
 	case beTabAPIGW:
 		lines = append(lines, renderFormFieldsWithDropdown(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+	case beTabJobs:
+		lines = append(lines, be.viewJobs(w)...)
+	case beTabSecurity:
+		lines = append(lines, renderFormFieldsWithDropdown(w, be.securityFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	case beTabAuth:
 		lines = append(lines, renderFormFieldsWithDropdown(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	}
@@ -1857,6 +2014,260 @@ func (be BackendEditor) viewMessaging(w int) []string {
 			lines = append(lines, renderListItem(w, isCur, "  ▶ ", name, domain))
 		}
 	}
+	return lines
+}
+
+// ── Jobs updates ──────────────────────────────────────────────────────────────
+
+func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.jobQueues)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && be.jobsIdx < n-1 {
+			be.jobsIdx++
+		}
+	case "k", "up":
+		if be.jobsIdx > 0 {
+			be.jobsIdx--
+		}
+	case "a":
+		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
+		be.jobsIdx = len(be.jobQueues) - 1
+		be.jobsForm = defaultJobQueueFormFields()
+		be.jobsFormIdx = 0
+		be.jobsSubView = beViewForm
+		be.activeField = 0
+	case "d":
+		if n > 0 {
+			be.jobQueues = append(be.jobQueues[:be.jobsIdx], be.jobQueues[be.jobsIdx+1:]...)
+			if be.jobsIdx > 0 && be.jobsIdx >= len(be.jobQueues) {
+				be.jobsIdx = len(be.jobQueues) - 1
+			}
+		}
+	case "enter":
+		if n > 0 {
+			jq := be.jobQueues[be.jobsIdx]
+			be.jobsForm = defaultJobQueueFormFields()
+			be.jobsForm = setFieldValue(be.jobsForm, "name", jq.Name)
+			be.jobsForm = setFieldValue(be.jobsForm, "technology", jq.Technology)
+			be.jobsForm = setFieldValue(be.jobsForm, "concurrency", jq.Concurrency)
+			be.jobsForm = setFieldValue(be.jobsForm, "max_retries", jq.MaxRetries)
+			be.jobsForm = setFieldValue(be.jobsForm, "retry_policy", jq.RetryPolicy)
+			be.jobsForm = setFieldValue(be.jobsForm, "dlq", jq.DLQ)
+			be.jobsFormIdx = 0
+			be.jobsSubView = beViewForm
+			be.activeField = 0
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+			be.activeField = 0
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+			be.activeField = 0
+		}
+	case "b":
+		be.ArchConfirmed = false
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateJobsForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.jobsForm)
+	switch key.String() {
+	case "j", "down":
+		if be.jobsFormIdx < n-1 {
+			be.jobsFormIdx++
+		}
+		be.activeField = be.jobsFormIdx
+	case "k", "up":
+		if be.jobsFormIdx > 0 {
+			be.jobsFormIdx--
+		}
+		be.activeField = be.jobsFormIdx
+	case "enter", " ":
+		if be.jobsFormIdx < n {
+			f := &be.jobsForm[be.jobsFormIdx]
+			if f.Kind == KindSelect {
+				be.ddOpen = true
+				be.ddOptIdx = f.SelIdx
+			} else {
+				return be.enterJobsFormInsert()
+			}
+		}
+	case "H", "shift+left":
+		if be.jobsFormIdx < n {
+			f := &be.jobsForm[be.jobsFormIdx]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+			}
+		}
+	case "i", "a":
+		if be.jobsFormIdx < n && be.jobsForm[be.jobsFormIdx].Kind == KindText {
+			return be.enterJobsFormInsert()
+		}
+	case "b", "esc":
+		be.saveJobsForm()
+		be.jobsSubView = beViewList
+	}
+	return be, nil
+}
+
+func (be BackendEditor) enterJobsFormInsert() (BackendEditor, tea.Cmd) {
+	if be.jobsFormIdx >= len(be.jobsForm) {
+		return be, nil
+	}
+	f := be.jobsForm[be.jobsFormIdx]
+	if f.Kind != KindText {
+		return be, nil
+	}
+	be.internalMode = beInsert
+	be.formInput.SetValue(f.Value)
+	be.formInput.Width = be.width - 22
+	be.formInput.CursorEnd()
+	return be, be.formInput.Focus()
+}
+
+func (be *BackendEditor) saveJobsForm() {
+	if be.jobsIdx >= len(be.jobQueues) {
+		return
+	}
+	jq := &be.jobQueues[be.jobsIdx]
+	jq.Name = fieldGet(be.jobsForm, "name")
+	jq.Technology = fieldGet(be.jobsForm, "technology")
+	jq.Concurrency = fieldGet(be.jobsForm, "concurrency")
+	jq.MaxRetries = fieldGet(be.jobsForm, "max_retries")
+	jq.RetryPolicy = fieldGet(be.jobsForm, "retry_policy")
+	jq.DLQ = fieldGet(be.jobsForm, "dlq")
+}
+
+// ── Security updates ──────────────────────────────────────────────────────────
+
+func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	// Security uses generic field navigation via currentEditableFields / mutableFieldPtr
+	// which already handles beTabSecurity. Just fall through to normal key handling.
+	n := len(be.securityFields)
+	k := key.String()
+
+	// Vim count prefix
+	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
+		be.countBuf += k
+		be.gBuf = false
+		return be, nil
+	}
+	if k == "0" && be.countBuf != "" {
+		be.countBuf += "0"
+		be.gBuf = false
+		return be, nil
+	}
+
+	switch k {
+	case "j", "down":
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		for i := 0; i < count; i++ {
+			if be.activeField < n-1 {
+				be.activeField++
+			}
+		}
+	case "k", "up":
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		for i := 0; i < count; i++ {
+			if be.activeField > 0 {
+				be.activeField--
+			}
+		}
+	case "g":
+		if be.gBuf {
+			be.activeField = 0
+			be.gBuf = false
+		} else {
+			be.gBuf = true
+		}
+		be.countBuf = ""
+	case "G":
+		be.countBuf = ""
+		be.gBuf = false
+		be.activeField = n - 1
+	case "h", "left":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+			be.activeField = 0
+		}
+	case "l", "right":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
+			be.activeField = 0
+		}
+	case "b":
+		be.countBuf = ""
+		be.gBuf = false
+		be.ArchConfirmed = false
+		be.dropdownOpen = false
+		be.dropdownIdx = be.ArchIdx
+		be.activeTabIdx = 0
+		be.activeField = 0
+	case "enter", " ":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeField < n {
+			f := &be.securityFields[be.activeField]
+			if f.Kind == KindSelect {
+				be.ddOpen = true
+				be.ddOptIdx = f.SelIdx
+			}
+		}
+	case "H", "shift+left":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeField < n {
+			f := &be.securityFields[be.activeField]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+			}
+		}
+	default:
+		be.countBuf = ""
+		be.gBuf = false
+	}
+	return be, nil
+}
+
+func (be BackendEditor) viewJobs(w int) []string {
+	if be.jobsSubView == beViewList {
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Job Queues — a: add  d: delete  Enter: edit"), "")
+		if len(be.jobQueues) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no job queues yet — press 'a' to add)"))
+		} else {
+			for i, jq := range be.jobQueues {
+				name := jq.Name
+				if name == "" {
+					name = fmt.Sprintf("(queue #%d)", i+1)
+				}
+				lines = append(lines, renderListItem(w, i == be.jobsIdx, "  ▶ ", name, jq.Technology))
+			}
+		}
+		return lines
+	}
+	// Form view
+	name := fieldGet(be.jobsForm, "name")
+	if name == "" {
+		name = "(new job queue)"
+	}
+	var lines []string
+	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+	lines = append(lines, renderFormFieldsWithDropdown(w, be.jobsForm, be.jobsFormIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 

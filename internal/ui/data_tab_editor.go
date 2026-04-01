@@ -18,9 +18,10 @@ const (
 	dataTabDomains
 	dataTabCaching
 	dataTabFileStorage
+	dataTabGovernance
 )
 
-var dataTabLabels = []string{"DATABASES", "DOMAINS", "CACHING", "FILE STORAGE"}
+var dataTabLabels = []string{"DATABASES", "DOMAINS", "CACHING", "FILE STORAGE", "GOVERNANCE"}
 
 // ── domain list+form types ────────────────────────────────────────────────────
 
@@ -91,6 +92,10 @@ type DataTabEditor struct {
 	fsForm       []Field
 	fsFormIdx    int
 
+	// GOVERNANCE sub-tab
+	governanceFields []Field
+	govFormIdx       int
+
 	// Shared
 	internalMode dtMode
 	formInput    textinput.Model
@@ -103,10 +108,11 @@ type DataTabEditor struct {
 
 func newDataTabEditor() DataTabEditor {
 	return DataTabEditor{
-		dbEditor:      newDBEditor(),
-		dataEditor:    newDataEditor(),
-		cachingFields: defaultCachingFields(),
-		formInput:     newFormInput(),
+		dbEditor:         newDBEditor(),
+		dataEditor:       newDataEditor(),
+		cachingFields:    defaultCachingFields(),
+		governanceFields: defaultGovernanceFields(),
+		formInput:        newFormInput(),
 	}
 }
 
@@ -219,6 +225,40 @@ func defaultCachingFields() []Field {
 		{
 			Key: "entities", Label: "entities      ", Kind: KindMultiSelect,
 			Options: []string{}, // populated dynamically from domain names
+		},
+	}
+}
+
+func defaultGovernanceFields() []Field {
+	return []Field{
+		{
+			Key: "retention_policy", Label: "retention     ", Kind: KindSelect,
+			Options: []string{"30 days", "90 days", "1 year", "3 years", "7 years", "Indefinite", "Custom"},
+			Value:   "Indefinite", SelIdx: 5,
+		},
+		{
+			Key: "delete_strategy", Label: "delete_strat  ", Kind: KindSelect,
+			Options: []string{"Soft-delete", "Hard-delete", "Archival", "Soft + periodic purge"},
+			Value:   "Soft-delete",
+		},
+		{
+			Key: "pii_encryption", Label: "pii_encryption", Kind: KindSelect,
+			Options: []string{"Field-level AES-256", "Full database encryption", "Application-level", "None"},
+			Value:   "None", SelIdx: 3,
+		},
+		{
+			Key: "compliance_frameworks", Label: "compliance    ", Kind: KindMultiSelect,
+			Options: []string{"GDPR", "HIPAA", "SOC2 Type II", "PCI-DSS", "ISO-27001", "CCPA", "PIPEDA"},
+		},
+		{
+			Key: "data_residency", Label: "data_residency", Kind: KindSelect,
+			Options: []string{"US", "EU", "APAC", "US + EU", "Global", "Custom"},
+			Value:   "Global", SelIdx: 4,
+		},
+		{
+			Key: "archival_storage", Label: "archival      ", Kind: KindSelect,
+			Options: []string{"S3 Glacier", "GCS Archive", "Azure Archive", "On-premise", "None"},
+			Value:   "None", SelIdx: 4,
 		},
 	}
 }
@@ -336,6 +376,14 @@ func (dt DataTabEditor) ToManifestDataPillar() manifest.DataPillar {
 			Entities:     fieldGetMulti(dt.cachingFields, "entities"),
 		},
 		FileStorages: dt.fileStorages,
+		Governance: manifest.DataGovernanceConfig{
+			RetentionPolicy:      fieldGet(dt.governanceFields, "retention_policy"),
+			DeleteStrategy:       fieldGet(dt.governanceFields, "delete_strategy"),
+			PIIEncryption:        fieldGet(dt.governanceFields, "pii_encryption"),
+			ComplianceFrameworks: fieldGetMulti(dt.governanceFields, "compliance_frameworks"),
+			DataResidency:        fieldGet(dt.governanceFields, "data_residency"),
+			ArchivalStorage:      fieldGet(dt.governanceFields, "archival_storage"),
+		},
 	}
 }
 
@@ -373,6 +421,12 @@ func (dt DataTabEditor) HintLine() string {
 		return hintBar("j/k", "navigate", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab")
 	case dataTabFileStorage:
 		return dt.fsHintLine()
+	case dataTabGovernance:
+		if dt.internalMode == dtInsert {
+			return StyleInsertMode.Render(" -- INSERT -- ") +
+				StyleHelpDesc.Render("  Esc: normal  Tab: next field")
+		}
+		return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "h/l", "sub-tab")
 	}
 	return ""
 }
@@ -436,6 +490,10 @@ func (dt *DataTabEditor) activeDTFieldPtr() *Field {
 	case dataTabFileStorage:
 		if dt.fsSubView == fsViewForm && dt.fsFormIdx < len(dt.fsForm) {
 			return &dt.fsForm[dt.fsFormIdx]
+		}
+	case dataTabGovernance:
+		if dt.govFormIdx < len(dt.governanceFields) {
+			return &dt.governanceFields[dt.govFormIdx]
 		}
 	}
 	return nil
@@ -553,6 +611,8 @@ func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 		return dt.updateCaching(key)
 	case dataTabFileStorage:
 		return dt.updateFileStorage(key)
+	case dataTabGovernance:
+		return dt.updateGovernance(key)
 	}
 	return dt, nil
 }
@@ -621,6 +681,11 @@ func (dt *DataTabEditor) advanceFormField(delta int) {
 		if n > 0 {
 			dt.fsFormIdx = (dt.fsFormIdx + delta + n) % n
 		}
+	case dataTabGovernance:
+		n := len(dt.governanceFields)
+		if n > 0 {
+			dt.govFormIdx = (dt.govFormIdx + delta + n) % n
+		}
 	}
 }
 
@@ -650,6 +715,10 @@ func (dt *DataTabEditor) saveInput() {
 		if dt.fsFormIdx < len(dt.fsForm) && dt.fsForm[dt.fsFormIdx].Kind == KindText {
 			dt.fsForm[dt.fsFormIdx].Value = val
 		}
+	case dataTabGovernance:
+		if dt.govFormIdx < len(dt.governanceFields) && dt.governanceFields[dt.govFormIdx].Kind == KindText {
+			dt.governanceFields[dt.govFormIdx].Value = val
+		}
 	}
 }
 
@@ -678,6 +747,10 @@ func (dt DataTabEditor) tryEnterInsert() (DataTabEditor, tea.Cmd) {
 	case dataTabFileStorage:
 		if dt.fsFormIdx < len(dt.fsForm) {
 			f = &dt.fsForm[dt.fsFormIdx]
+		}
+	case dataTabGovernance:
+		if dt.govFormIdx < len(dt.governanceFields) {
+			f = &dt.governanceFields[dt.govFormIdx]
 		}
 	}
 	if f == nil || f.Kind != KindText {
@@ -1137,6 +1210,43 @@ func (dt DataTabEditor) updateCaching(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	return dt, nil
 }
 
+// ── Governance update ─────────────────────────────────────────────────────────
+
+func (dt DataTabEditor) updateGovernance(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
+	switch key.String() {
+	case "j", "down":
+		if dt.govFormIdx < len(dt.governanceFields)-1 {
+			dt.govFormIdx++
+		}
+	case "k", "up":
+		if dt.govFormIdx > 0 {
+			dt.govFormIdx--
+		}
+	case "enter", " ":
+		f := &dt.governanceFields[dt.govFormIdx]
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			dt.ddOpen = true
+			if f.Kind == KindSelect {
+				dt.ddOptIdx = f.SelIdx
+			} else {
+				dt.ddOptIdx = f.DDCursor
+			}
+		} else {
+			return dt.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &dt.governanceFields[dt.govFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i":
+		if dt.governanceFields[dt.govFormIdx].Kind == KindText {
+			return dt.tryEnterInsert()
+		}
+	}
+	return dt, nil
+}
+
 // ── File storage update ───────────────────────────────────────────────────────
 
 func (dt DataTabEditor) updateFileStorage(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
@@ -1255,6 +1365,8 @@ func (dt DataTabEditor) View(w, h int) string {
 		contentLines = dt.viewCaching(w)
 	case dataTabFileStorage:
 		contentLines = dt.viewFileStorage(w)
+	case dataTabGovernance:
+		contentLines = dt.viewGovernance(w)
 	}
 
 	lines = append(lines, contentLines...)
@@ -1395,6 +1507,13 @@ func (dt DataTabEditor) viewFileStorage(w int) []string {
 		return lines
 	}
 	return nil
+}
+
+func (dt DataTabEditor) viewGovernance(w int) []string {
+	var lines []string
+	lines = append(lines, StyleSectionDesc.Render("  # Data Governance & Privacy"), "")
+	lines = append(lines, renderFormFieldsWithDropdown(w, dt.governanceFields, dt.govFormIdx, dt.internalMode == dtInsert, dt.formInput, dt.ddOpen, dt.ddOptIdx)...)
+	return lines
 }
 
 // Expose db sources for syncing into the DataEditor.

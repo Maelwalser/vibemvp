@@ -14,9 +14,10 @@ const (
 	infraTabNetworking infraTabIdx = iota
 	infraTabCICD
 	infraTabObservability
+	infraTabEnvironments
 )
 
-var infraTabLabels = []string{"NETWORKING", "CI/CD", "OBSERVABILITY"}
+var infraTabLabels = []string{"NETWORKING", "CI/CD", "OBSERVABILITY", "ENVIRONMENTS"}
 
 // ── mode ──────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,49 @@ func defaultInfraCICDFields() []Field {
 	}
 }
 
+func defaultEnvTopologyFields() []Field {
+	return []Field{
+		{
+			Key: "stages", Label: "stages        ", Kind: KindSelect,
+			Options: []string{
+				"dev + prod", "dev + staging + prod",
+				"dev + qa + staging + prod", "dev + staging + qa + preview + prod", "Custom",
+			},
+			Value: "dev + staging + prod", SelIdx: 1,
+		},
+		{
+			Key: "promotion_pipeline", Label: "promotion     ", Kind: KindSelect,
+			Options: []string{
+				"Dev → Staging → Prod", "Dev → QA → Staging → Prod",
+				"Dev → Prod (direct)", "Manual", "None",
+			},
+			Value: "Dev → Staging → Prod",
+		},
+		{
+			Key: "secret_key_strategy", Label: "secret_keys   ", Kind: KindSelect,
+			Options: []string{"Per-environment", "Shared base + overrides", "Fully shared", "None"},
+			Value:   "Per-environment",
+		},
+		{
+			Key: "migration_strategy", Label: "db_migrations ", Kind: KindSelect,
+			Options: []string{
+				"Auto on deploy", "Manual CI step", "Flyway", "Liquibase",
+				"Atlas", "golang-migrate", "None",
+			},
+			Value: "Manual CI step", SelIdx: 1,
+		},
+		{
+			Key: "db_seeding", Label: "db_seeding    ", Kind: KindSelect,
+			Options: []string{"Automatic (fixtures)", "Manual", "None"},
+			Value:   "None", SelIdx: 2,
+		},
+		{
+			Key: "preview_envs", Label: "preview_envs  ", Kind: KindSelect,
+			Options: []string{"false", "true"}, Value: "false",
+		},
+	}
+}
+
 func defaultObservabilityFields() []Field {
 	return []Field{
 		{
@@ -149,6 +193,9 @@ type InfraEditor struct {
 	obsFields  []Field
 	obsFormIdx int
 
+	envTopoFields []Field
+	envTopoFormIdx int
+
 	internalMode infraMode
 	formInput    textinput.Model
 	width        int
@@ -163,6 +210,7 @@ func newInfraEditor() InfraEditor {
 		networkingFields: defaultNetworkingFields(),
 		cicdFields:       defaultInfraCICDFields(),
 		obsFields:        defaultObservabilityFields(),
+		envTopoFields:    defaultEnvTopologyFields(),
 		formInput:        newFormInput(),
 	}
 }
@@ -191,6 +239,14 @@ func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 			ErrorTracking: fieldGet(ie.obsFields, "error_tracking"),
 			HealthChecks:  fieldGet(ie.obsFields, "health_checks") == "true",
 			Alerting:      fieldGet(ie.obsFields, "alerting"),
+		},
+		EnvTopology: manifest.EnvTopologyConfig{
+			Stages:            fieldGet(ie.envTopoFields, "stages"),
+			PromotionPipeline: fieldGet(ie.envTopoFields, "promotion_pipeline"),
+			SecretKeyStrategy: fieldGet(ie.envTopoFields, "secret_key_strategy"),
+			MigrationStrategy: fieldGet(ie.envTopoFields, "migration_strategy"),
+			DBSeeding:         fieldGet(ie.envTopoFields, "db_seeding"),
+			PreviewEnvs:       fieldGet(ie.envTopoFields, "preview_envs"),
 		},
 	}
 }
@@ -244,6 +300,8 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 		return ie.updateFields(key)
 	case infraTabObservability:
 		return ie.updateFields(key)
+	case infraTabEnvironments:
+		return ie.updateFields(key)
 	}
 	return ie, nil
 }
@@ -258,6 +316,8 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 		fields, idx = ie.cicdFields, ie.cicdFormIdx
 	case infraTabObservability:
 		fields, idx = ie.obsFields, ie.obsFormIdx
+	case infraTabEnvironments:
+		fields, idx = ie.envTopoFields, ie.envTopoFormIdx
 	default:
 		return ie, nil
 	}
@@ -349,6 +409,9 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 	case infraTabObservability:
 		ie.obsFields = fields
 		ie.obsFormIdx = idx
+	case infraTabEnvironments:
+		ie.envTopoFields = fields
+		ie.envTopoFormIdx = idx
 	}
 	if wantsInsert {
 		return ie.tryEnterInsert()
@@ -397,6 +460,11 @@ func (ie *InfraEditor) advanceField(delta int) {
 		if n > 0 {
 			ie.obsFormIdx = (ie.obsFormIdx + delta + n) % n
 		}
+	case infraTabEnvironments:
+		n := len(ie.envTopoFields)
+		if n > 0 {
+			ie.envTopoFormIdx = (ie.envTopoFormIdx + delta + n) % n
+		}
 	}
 }
 
@@ -415,6 +483,10 @@ func (ie *InfraEditor) saveInput() {
 		if ie.obsFormIdx < len(ie.obsFields) && ie.obsFields[ie.obsFormIdx].Kind == KindText {
 			ie.obsFields[ie.obsFormIdx].Value = val
 		}
+	case infraTabEnvironments:
+		if ie.envTopoFormIdx < len(ie.envTopoFields) && ie.envTopoFields[ie.envTopoFormIdx].Kind == KindText {
+			ie.envTopoFields[ie.envTopoFormIdx].Value = val
+		}
 	}
 }
 
@@ -432,6 +504,10 @@ func (ie InfraEditor) tryEnterInsert() (InfraEditor, tea.Cmd) {
 	case infraTabObservability:
 		if ie.obsFormIdx < len(ie.obsFields) {
 			f = &ie.obsFields[ie.obsFormIdx]
+		}
+	case infraTabEnvironments:
+		if ie.envTopoFormIdx < len(ie.envTopoFields) {
+			f = &ie.envTopoFields[ie.envTopoFormIdx]
 		}
 	}
 	if f == nil || f.Kind != KindText {
@@ -463,6 +539,8 @@ func (ie InfraEditor) View(w, h int) string {
 		lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput)...)
 	case infraTabObservability:
 		lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput)...)
+	case infraTabEnvironments:
+		lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput)...)
 	}
 
 	return fillTildes(lines, h)

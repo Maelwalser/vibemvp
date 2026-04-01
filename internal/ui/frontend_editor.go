@@ -18,9 +18,11 @@ const (
 	feTabTheme
 	feTabPages
 	feTabNav
+	feTabI18n
+	feTabA11ySEO
 )
 
-var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "NAVIGATION"}
+var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "NAVIGATION", "I18N", "A11Y/SEO"}
 
 // ── mode ──────────────────────────────────────────────────────────────────────
 
@@ -198,6 +200,61 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 	}
 }
 
+func defaultI18nFields() []Field {
+	return []Field{
+		{
+			Key: "enabled", Label: "enabled       ", Kind: KindSelect,
+			Options: []string{"false", "true"}, Value: "false",
+		},
+		{Key: "default_locale", Label: "default_locale", Kind: KindText, Value: "en"},
+		{Key: "supported_locales", Label: "locales       ", Kind: KindText, Value: "en"},
+		{
+			Key: "translation_strategy", Label: "i18n_library  ", Kind: KindSelect,
+			Options: []string{"i18next", "next-intl", "react-i18next", "LinguiJS", "vue-i18n", "Custom", "None"},
+			Value:   "None", SelIdx: 6,
+		},
+		{
+			Key: "timezone_handling", Label: "timezone      ", Kind: KindSelect,
+			Options: []string{"UTC always", "User preference", "Auto-detect", "Manual"},
+			Value:   "UTC always",
+		},
+	}
+}
+
+func defaultA11ySEOFields() []Field {
+	return []Field{
+		{
+			Key: "wcag_level", Label: "wcag_level    ", Kind: KindSelect,
+			Options: []string{"A", "AA", "AAA", "None"},
+			Value:   "AA", SelIdx: 1,
+		},
+		{
+			Key: "seo_render_strategy", Label: "seo_rendering ", Kind: KindSelect,
+			Options: []string{"SSR", "SSG", "ISR", "Prerender", "None"},
+			Value:   "None", SelIdx: 4,
+		},
+		{
+			Key: "sitemap", Label: "sitemap       ", Kind: KindSelect,
+			Options: []string{"false", "true"}, Value: "false",
+		},
+		{
+			Key: "meta_tag_injection", Label: "meta_tags     ", Kind: KindSelect,
+			Options: []string{"Manual", "Automatic (react-helmet)", "Framework-native", "None"},
+			Value:   "None", SelIdx: 3,
+		},
+		{
+			Key: "analytics", Label: "analytics     ", Kind: KindSelect,
+			Options: []string{"PostHog", "Google Analytics 4", "Plausible", "Mixpanel", "Segment", "Custom", "None"},
+			Value:   "None", SelIdx: 6,
+		},
+		{
+			Key: "telemetry", Label: "frontend_rum  ", Kind: KindSelect,
+			Options: []string{"Sentry", "Datadog RUM", "LogRocket", "New Relic Browser", "Custom", "None"},
+			Value:   "None", SelIdx: 5,
+		},
+	}
+}
+
 func defaultNavFields() []Field {
 	return []Field{
 		{
@@ -244,6 +301,14 @@ type FrontendEditor struct {
 	navFields  []Field
 	navFormIdx int
 
+	// I18N
+	i18nFields  []Field
+	i18nFormIdx int
+
+	// A11Y/SEO
+	a11yFields  []Field
+	a11yFormIdx int
+
 	// Cross-editor data
 	availableAuthRoles []string // from BackendEditor auth roles
 
@@ -262,6 +327,8 @@ func newFrontendEditor() FrontendEditor {
 		techFields:  defaultFETechFields(),
 		themeFields: defaultFEThemeFields(),
 		navFields:   defaultNavFields(),
+		i18nFields:  defaultI18nFields(),
+		a11yFields:  defaultA11ySEOFields(),
 		formInput:   newFormInput(),
 	}
 }
@@ -315,6 +382,21 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 			Breadcrumbs: fieldGet(fe.navFields, "breadcrumbs") == "true",
 			AuthAware:   fieldGet(fe.navFields, "auth_aware") == "true",
 		},
+		I18n: manifest.I18nConfig{
+			Enabled:             fieldGet(fe.i18nFields, "enabled"),
+			DefaultLocale:       fieldGet(fe.i18nFields, "default_locale"),
+			SupportedLocales:    fieldGet(fe.i18nFields, "supported_locales"),
+			TranslationStrategy: fieldGet(fe.i18nFields, "translation_strategy"),
+			TimezoneHandling:    fieldGet(fe.i18nFields, "timezone_handling"),
+		},
+		A11ySEO: manifest.A11ySEOConfig{
+			WCAGLevel:         fieldGet(fe.a11yFields, "wcag_level"),
+			SEORenderStrategy: fieldGet(fe.a11yFields, "seo_render_strategy"),
+			Sitemap:           fieldGet(fe.a11yFields, "sitemap"),
+			MetaTagInjection:  fieldGet(fe.a11yFields, "meta_tag_injection"),
+			Analytics:         fieldGet(fe.a11yFields, "analytics"),
+			Telemetry:         fieldGet(fe.a11yFields, "telemetry"),
+		},
 		// Legacy compatibility
 		Rendering: manifest.RenderingMode(fieldGet(fe.techFields, "platform")),
 		Framework: fieldGet(fe.techFields, "framework"),
@@ -337,7 +419,7 @@ func (fe FrontendEditor) HintLine() string {
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
 	switch fe.activeTab {
-	case feTabTech, feTabTheme, feTabNav:
+	case feTabTech, feTabTheme, feTabNav, feTabI18n, feTabA11ySEO:
 		return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
 	case feTabPages:
 		if fe.pageSubView == ceViewList {
@@ -388,6 +470,10 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 		return fe.updatePages(key)
 	case feTabNav:
 		return fe.updateNav(key)
+	case feTabI18n:
+		return fe.updateI18n(key)
+	case feTabA11ySEO:
+		return fe.updateA11ySEO(key)
 	}
 	return fe, nil
 }
@@ -446,6 +532,16 @@ func (fe *FrontendEditor) advanceField(delta int) {
 		if n > 0 {
 			fe.navFormIdx = (fe.navFormIdx + delta + n) % n
 		}
+	case feTabI18n:
+		n := len(fe.i18nFields)
+		if n > 0 {
+			fe.i18nFormIdx = (fe.i18nFormIdx + delta + n) % n
+		}
+	case feTabA11ySEO:
+		n := len(fe.a11yFields)
+		if n > 0 {
+			fe.a11yFormIdx = (fe.a11yFormIdx + delta + n) % n
+		}
 	}
 }
 
@@ -480,6 +576,20 @@ func (fe *FrontendEditor) saveInput() {
 				fe.navFields[fe.navFormIdx].Value = val
 			}
 		}
+	case feTabI18n:
+		if fe.i18nFormIdx < len(fe.i18nFields) {
+			k := fe.i18nFields[fe.i18nFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.i18nFields[fe.i18nFormIdx].Value = val
+			}
+		}
+	case feTabA11ySEO:
+		if fe.a11yFormIdx < len(fe.a11yFields) {
+			k := fe.a11yFields[fe.a11yFormIdx].Kind
+			if k == KindText || k == KindTextArea {
+				fe.a11yFields[fe.a11yFormIdx].Value = val
+			}
+		}
 	}
 }
 
@@ -501,6 +611,14 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	case feTabNav:
 		if fe.navFormIdx < len(fe.navFields) {
 			f = &fe.navFields[fe.navFormIdx]
+		}
+	case feTabI18n:
+		if fe.i18nFormIdx < len(fe.i18nFields) {
+			f = &fe.i18nFields[fe.i18nFormIdx]
+		}
+	case feTabA11ySEO:
+		if fe.a11yFormIdx < len(fe.a11yFields) {
+			f = &fe.a11yFields[fe.a11yFormIdx]
 		}
 	}
 	if f == nil || (f.Kind != KindText && f.Kind != KindTextArea) {
@@ -931,9 +1049,131 @@ func (fe FrontendEditor) View(w, h int) string {
 		lines = append(lines, fe.viewPages(w)...)
 	case feTabNav:
 		lines = append(lines, renderFormFieldsWithDropdown(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+	case feTabI18n:
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+	case feTabA11ySEO:
+		lines = append(lines, renderFormFieldsWithDropdown(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
 	}
 
 	return fillTildes(lines, h)
+}
+
+func (fe FrontendEditor) updateI18n(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.ddOpen {
+		return fe.updateI18nDropdown(key)
+	}
+	switch key.String() {
+	case "j", "down":
+		if fe.i18nFormIdx < len(fe.i18nFields)-1 {
+			fe.i18nFormIdx++
+		}
+	case "k", "up":
+		if fe.i18nFormIdx > 0 {
+			fe.i18nFormIdx--
+		}
+	case "enter", " ":
+		f := &fe.i18nFields[fe.i18nFormIdx]
+		if f.Kind == KindSelect {
+			fe.ddOpen = true
+			fe.ddOptIdx = f.SelIdx
+		} else {
+			return fe.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &fe.i18nFields[fe.i18nFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i":
+		return fe.tryEnterInsert()
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateI18nDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.i18nFormIdx >= len(fe.i18nFields) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.i18nFields[fe.i18nFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = fe.ddOptIdx
+		if fe.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[fe.ddOptIdx]
+		}
+		fe.ddOpen = false
+	case "esc", "b":
+		fe.ddOpen = false
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateA11ySEO(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.ddOpen {
+		return fe.updateA11ySEODropdown(key)
+	}
+	switch key.String() {
+	case "j", "down":
+		if fe.a11yFormIdx < len(fe.a11yFields)-1 {
+			fe.a11yFormIdx++
+		}
+	case "k", "up":
+		if fe.a11yFormIdx > 0 {
+			fe.a11yFormIdx--
+		}
+	case "enter", " ":
+		f := &fe.a11yFields[fe.a11yFormIdx]
+		if f.Kind == KindSelect {
+			fe.ddOpen = true
+			fe.ddOptIdx = f.SelIdx
+		} else {
+			return fe.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &fe.a11yFields[fe.a11yFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i":
+		return fe.tryEnterInsert()
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateA11ySEODropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.a11yFormIdx >= len(fe.a11yFields) {
+		fe.ddOpen = false
+		return fe, nil
+	}
+	f := &fe.a11yFields[fe.a11yFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if fe.ddOptIdx < len(f.Options)-1 {
+			fe.ddOptIdx++
+		}
+	case "k", "up":
+		if fe.ddOptIdx > 0 {
+			fe.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = fe.ddOptIdx
+		if fe.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[fe.ddOptIdx]
+		}
+		fe.ddOpen = false
+	case "esc", "b":
+		fe.ddOpen = false
+	}
+	return fe, nil
 }
 
 func (fe FrontendEditor) viewPages(w int) []string {

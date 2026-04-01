@@ -17,9 +17,10 @@ const (
 	contractsTabDTOs contractsTabIdx = iota
 	contractsTabEndpoints
 	contractsTabVersioning
+	contractsTabExternal
 )
 
-var contractsTabLabels = []string{"DTOs", "ENDPOINTS", "API VERSIONING"}
+var contractsTabLabels = []string{"DTOs", "ENDPOINTS", "API VERSIONING", "EXTERNAL APIS"}
 
 // ── mode ──────────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,25 @@ func defaultVersioningFields() []Field {
 	}
 }
 
+func defaultExternalAPIFormFields() []Field {
+	return []Field{
+		{Key: "provider", Label: "provider      ", Kind: KindText},
+		{
+			Key: "auth_mechanism", Label: "auth_mechanism", Kind: KindSelect,
+			Options: []string{"API Key", "OAuth2 Client Credentials", "OAuth2 PKCE", "Bearer Token", "Basic Auth", "mTLS", "None"},
+			Value:   "API Key",
+		},
+		{Key: "base_url", Label: "base_url      ", Kind: KindText},
+		{Key: "rate_limit", Label: "rate_limit    ", Kind: KindText, Value: ""},
+		{Key: "webhook_endpoint", Label: "webhook_path  ", Kind: KindText},
+		{
+			Key: "failure_strategy", Label: "failure_strat ", Kind: KindSelect,
+			Options: []string{"Circuit Breaker", "Retry with backoff", "Fallback value", "Timeout + fail", "None"},
+			Value:   "Circuit Breaker",
+		},
+	}
+}
+
 // ── ContractsEditor ───────────────────────────────────────────────────────────
 
 // ContractsEditor manages the CONTRACTS main-tab: DTOs, Endpoints, API Versioning.
@@ -171,6 +191,13 @@ type ContractsEditor struct {
 	// API Versioning (simple field form)
 	versioningFields []Field
 	verFormIdx       int
+
+	// External APIs
+	externalAPIs []manifest.ExternalAPIDef
+	extSubView   ceSubView
+	extIdx       int
+	extForm      []Field
+	extFormIdx   int
 
 	// Cross-editor reference data (set by model.go before each Update)
 	availableDomains    []string               // from DataTabEditor.domainNames()
@@ -220,6 +247,7 @@ func (ce ContractsEditor) ToManifestContractsPillar() manifest.ContractsPillar {
 			CurrentVersion:    fieldGet(ce.versioningFields, "current_version"),
 			DeprecationPolicy: fieldGet(ce.versioningFields, "deprecation"),
 		},
+		ExternalAPIs: ce.externalAPIs,
 	}
 }
 
@@ -258,6 +286,13 @@ func (ce ContractsEditor) HintLine() string {
 		}
 	case contractsTabVersioning:
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab")
+	case contractsTabExternal:
+		switch ce.extSubView {
+		case ceViewList:
+			return hintBar("j/k", "navigate", "a", "add provider", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		case ceViewForm:
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
 	}
 	return ""
 }
@@ -294,6 +329,10 @@ func (ce *ContractsEditor) activeCEFieldPtr() *Field {
 	case contractsTabVersioning:
 		if ce.verFormIdx < len(ce.versioningFields) {
 			return &ce.versioningFields[ce.verFormIdx]
+		}
+	case contractsTabExternal:
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) {
+			return &ce.extForm[ce.extFormIdx]
 		}
 	}
 	return nil
@@ -370,7 +409,8 @@ func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
 	// Sub-tab switching (only from top-level lists)
 	canSwitch := (ce.activeTab == contractsTabDTOs && ce.dtoSubView == ceViewList) ||
 		(ce.activeTab == contractsTabEndpoints && ce.epSubView == ceViewList) ||
-		ce.activeTab == contractsTabVersioning
+		ce.activeTab == contractsTabVersioning ||
+		(ce.activeTab == contractsTabExternal && ce.extSubView == ceViewList)
 
 	if canSwitch {
 		switch key.String() {
@@ -394,6 +434,8 @@ func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
 		return ce.updateEndpoints(key)
 	case contractsTabVersioning:
 		return ce.updateVersioning(key)
+	case contractsTabExternal:
+		return ce.updateExternal(key)
 	}
 	return ce, nil
 }
@@ -449,6 +491,13 @@ func (ce *ContractsEditor) advanceField(delta int) {
 		if n > 0 {
 			ce.verFormIdx = (ce.verFormIdx + delta + n) % n
 		}
+	case contractsTabExternal:
+		if ce.extSubView == ceViewForm {
+			n := len(ce.extForm)
+			if n > 0 {
+				ce.extFormIdx = (ce.extFormIdx + delta + n) % n
+			}
+		}
 	}
 }
 
@@ -474,6 +523,10 @@ func (ce *ContractsEditor) saveInput() {
 		if ce.verFormIdx < len(ce.versioningFields) && ce.versioningFields[ce.verFormIdx].Kind == KindText {
 			ce.versioningFields[ce.verFormIdx].Value = val
 		}
+	case contractsTabExternal:
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) && ce.extForm[ce.extFormIdx].Kind == KindText {
+			ce.extForm[ce.extFormIdx].Value = val
+		}
 	}
 }
 
@@ -498,6 +551,10 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 	case contractsTabVersioning:
 		if ce.verFormIdx < len(ce.versioningFields) {
 			f = &ce.versioningFields[ce.verFormIdx]
+		}
+	case contractsTabExternal:
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) {
+			f = &ce.extForm[ce.extFormIdx]
 		}
 	}
 	if f == nil || f.Kind != KindText {
@@ -965,6 +1022,138 @@ func (ce ContractsEditor) updateVersioning(key tea.KeyMsg) (ContractsEditor, tea
 	return ce, nil
 }
 
+// ── External APIs updates ─────────────────────────────────────────────────────
+
+func (ce ContractsEditor) updateExternal(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	switch ce.extSubView {
+	case ceViewList:
+		return ce.updateExtList(key)
+	case ceViewForm:
+		return ce.updateExtForm(key)
+	}
+	return ce, nil
+}
+
+func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	n := len(ce.externalAPIs)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && ce.extIdx < n-1 {
+			ce.extIdx++
+		}
+	case "k", "up":
+		if ce.extIdx > 0 {
+			ce.extIdx--
+		}
+	case "a":
+		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
+		ce.extIdx = len(ce.externalAPIs) - 1
+		ce.extForm = defaultExternalAPIFormFields()
+		ce.extFormIdx = 0
+		ce.extSubView = ceViewForm
+		return ce.tryEnterInsert()
+	case "d":
+		if n > 0 {
+			ce.externalAPIs = append(ce.externalAPIs[:ce.extIdx], ce.externalAPIs[ce.extIdx+1:]...)
+			if ce.extIdx > 0 && ce.extIdx >= len(ce.externalAPIs) {
+				ce.extIdx = len(ce.externalAPIs) - 1
+			}
+		}
+	case "enter":
+		if n > 0 {
+			api := ce.externalAPIs[ce.extIdx]
+			ce.extForm = defaultExternalAPIFormFields()
+			ce.extForm = setFieldValue(ce.extForm, "provider", api.Provider)
+			ce.extForm = setFieldValue(ce.extForm, "auth_mechanism", api.AuthMechanism)
+			ce.extForm = setFieldValue(ce.extForm, "base_url", api.BaseURL)
+			ce.extForm = setFieldValue(ce.extForm, "rate_limit", api.RateLimit)
+			ce.extForm = setFieldValue(ce.extForm, "webhook_endpoint", api.WebhookEndpoint)
+			ce.extForm = setFieldValue(ce.extForm, "failure_strategy", api.FailureStrategy)
+			ce.extFormIdx = 0
+			ce.extSubView = ceViewForm
+		}
+	}
+	return ce, nil
+}
+
+func (ce ContractsEditor) updateExtForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	switch key.String() {
+	case "j", "down":
+		if ce.extFormIdx < len(ce.extForm)-1 {
+			ce.extFormIdx++
+		}
+	case "k", "up":
+		if ce.extFormIdx > 0 {
+			ce.extFormIdx--
+		}
+	case "enter", " ":
+		f := &ce.extForm[ce.extFormIdx]
+		if f.Kind == KindSelect {
+			ce.ddOpen = true
+			ce.ddOptIdx = f.SelIdx
+		} else {
+			return ce.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &ce.extForm[ce.extFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i", "a":
+		if ce.extForm[ce.extFormIdx].Kind == KindText {
+			return ce.tryEnterInsert()
+		}
+	case "b", "esc":
+		ce.saveExtForm()
+		ce.extSubView = ceViewList
+	}
+	return ce, nil
+}
+
+func (ce *ContractsEditor) saveExtForm() {
+	if ce.extIdx >= len(ce.externalAPIs) {
+		return
+	}
+	api := &ce.externalAPIs[ce.extIdx]
+	api.Provider = fieldGet(ce.extForm, "provider")
+	api.AuthMechanism = fieldGet(ce.extForm, "auth_mechanism")
+	api.BaseURL = fieldGet(ce.extForm, "base_url")
+	api.RateLimit = fieldGet(ce.extForm, "rate_limit")
+	api.WebhookEndpoint = fieldGet(ce.extForm, "webhook_endpoint")
+	api.FailureStrategy = fieldGet(ce.extForm, "failure_strategy")
+}
+
+func (ce ContractsEditor) viewExternal(w int) []string {
+	switch ce.extSubView {
+	case ceViewList:
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # External APIs — a: add  d: delete  Enter: edit"), "")
+		if len(ce.externalAPIs) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no external APIs yet — press 'a' to add one)"))
+		} else {
+			for i, api := range ce.externalAPIs {
+				name := api.Provider
+				if name == "" {
+					name = fmt.Sprintf("(api #%d)", i+1)
+				}
+				lines = append(lines, renderListItem(w, i == ce.extIdx, "  ▶ ", name, api.AuthMechanism))
+			}
+		}
+		return lines
+
+	case ceViewForm:
+		provider := fieldGet(ce.extForm, "provider")
+		if provider == "" {
+			provider = "(new external API)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider), "")
+		lines = append(lines, renderFormFieldsWithDropdown(w, ce.extForm, ce.extFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		return lines
+	}
+	return nil
+}
+
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func (ce ContractsEditor) View(w, h int) string {
@@ -984,6 +1173,8 @@ func (ce ContractsEditor) View(w, h int) string {
 		lines = append(lines, ce.viewEndpoints(w)...)
 	case contractsTabVersioning:
 		lines = append(lines, ce.viewVersioning(w)...)
+	case contractsTabExternal:
+		lines = append(lines, ce.viewExternal(w)...)
 	}
 
 	return fillTildes(lines, h)
