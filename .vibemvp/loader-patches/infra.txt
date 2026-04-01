@@ -1,0 +1,13 @@
+# ALIAS_MAP_ADDITIONS
+"Docker": "docker-patterns",
+"PostgreSQL": "postgres-patterns",
+"Postgres": "postgres-patterns",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Docker/infra tasks → inject docker + deployment patterns
+dag.TaskKindInfraDocker: docker-patterns, deployment-patterns
+dag.TaskKindInfraTerraform: deployment-patterns
+dag.TaskKindInfraCI: deployment-patterns, verification-loop
+// Data tasks → inject migrations guide
+dag.TaskKindDataMigrations: database-migrations, postgres-patterns
+dag.TaskKindDataSchemas: database-migrations

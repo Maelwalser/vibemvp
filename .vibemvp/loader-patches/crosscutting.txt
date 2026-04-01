@@ -1,0 +1,18 @@
+# ALIAS_MAP_ADDITIONS
+"React": "frontend-patterns",
+"Vue": "frontend-patterns",
+"Angular": "frontend-patterns",
+"Svelte": "frontend-patterns",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Contracts → inject API design + coding standards
+dag.TaskKindContracts: api-design, coding-standards
+// Testing tasks → inject tdd-workflow + e2e-testing + coding-standards
+dag.TaskKindCrossCutTesting: tdd-workflow, e2e-testing, coding-standards
+// Docs tasks → inject api-design + coding-standards
+dag.TaskKindCrossCutDocs: api-design, coding-standards
+// Frontend → inject frontend-patterns
+dag.TaskKindFrontend: frontend-patterns, coding-standards
+// All service tasks → inject coding-standards
+dag.TaskKindService: coding-standards
+dag.TaskKindAuth: coding-standards, security-scan

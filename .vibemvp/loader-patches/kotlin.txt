@@ -1,0 +1,11 @@
+# ALIAS_MAP_ADDITIONS
+"Kotlin": "kotlin-patterns",
+"Ktor": "kotlin-ktor",
+"Kotlin Multiplatform": "compose-multiplatform",
+"Android": "android-clean-architecture",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Kotlin service tasks → inject patterns + testing + coroutines
+dag.TaskKindService (language=Kotlin): kotlin-patterns, kotlin-testing, kotlin-coroutines-flows
+// Testing tasks with Kotlin
+dag.TaskKindCrossCutTesting (Kotlin): kotlin-testing, kotlin-coroutines-flows

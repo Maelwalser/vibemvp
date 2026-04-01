@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // GoVerifier runs `go build ./...` and `go vet ./...` on the generated Go code.
@@ -45,6 +46,23 @@ func (g *GoVerifier) Verify(ctx context.Context, outputDir string, files []strin
 		combined.WriteString(fmt.Sprintf("=== go vet in %s ===\n%s\n", dir, vetOut))
 		if err != nil {
 			allPassed = false
+		}
+
+		// Run go test.
+		testOut, testErr := runCmd(ctx, absDir, "go", "test", "./...")
+		combined.WriteString(fmt.Sprintf("=== go test in %s ===\n%s\n", dir, testOut))
+		if testErr != nil {
+			allPassed = false
+		}
+
+		// Check gofmt formatting.
+		fmtOut, fmtErr := runCmd(ctx, absDir, "gofmt", "-l", ".")
+		combined.WriteString(fmt.Sprintf("=== gofmt -l in %s ===\n%s\n", dir, fmtOut))
+		if fmtErr != nil || strings.TrimSpace(fmtOut) != "" {
+			allPassed = false
+			if strings.TrimSpace(fmtOut) != "" {
+				combined.WriteString("files not gofmt-clean (run gofmt -w): " + fmtOut + "\n")
+			}
 		}
 	}
 

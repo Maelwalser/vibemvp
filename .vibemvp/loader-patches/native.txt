@@ -1,0 +1,12 @@
+# ALIAS_MAP_ADDITIONS
+"Perl": "perl-patterns",
+"C++": "cpp-coding-standards",
+"C": "cpp-coding-standards",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Perl service tasks → inject patterns + security + testing
+dag.TaskKindService (language=Perl): perl-patterns, perl-testing, perl-security
+// C++ service tasks → inject coding standards + testing
+dag.TaskKindService (language=C++): cpp-coding-standards, cpp-testing
+dag.TaskKindCrossCutTesting (Perl): perl-testing, perl-security
+dag.TaskKindCrossCutTesting (C++): cpp-testing

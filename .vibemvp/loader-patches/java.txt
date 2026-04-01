@@ -1,0 +1,10 @@
+# ALIAS_MAP_ADDITIONS
+"Java": "java-coding-standards",
+"Spring Boot": "java-spring-boot",
+"JPA": "jpa-patterns",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Java service tasks → inject standards + spring boot patterns
+dag.TaskKindService (language=Java): java-coding-standards, java-spring-boot, java-spring-boot-security
+// Java testing tasks
+dag.TaskKindCrossCutTesting (Java): java-spring-boot-tdd

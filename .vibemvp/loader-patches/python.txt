@@ -1,0 +1,13 @@
+# ALIAS_MAP_ADDITIONS
+"Python": "python-patterns",
+"Django": "python-django",
+"FastAPI": "python-fastapi",
+"Flask": "python-flask",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Python service tasks → inject patterns + testing
+dag.TaskKindService (language=Python): python-patterns, python-testing, security-review
+// Python auth tasks
+dag.TaskKindAuth (language=Python): python-patterns, python-testing, security-review
+// Python testing tasks
+dag.TaskKindCrossCutTesting (Python): python-testing

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/vibe-mvp/internal/realize/agent"
 	"github.com/vibe-mvp/internal/realize/dag"
@@ -45,6 +47,15 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			if attempt == r.maxRetries {
 				return fmt.Errorf("task %s: agent failed after %d attempts: %w", r.task.ID, attempt+1, err)
 			}
+			if isRateLimitError(err) {
+				wait := time.Duration(attempt+1) * 60 * time.Second
+				fmt.Fprintf(os.Stderr, "[%s] rate limited — waiting %s before retry\n", r.task.ID, wait)
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
 			lastVerifyOutput = fmt.Sprintf("Agent error: %v", err)
 			continue
 		}
@@ -80,4 +91,13 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("task %s: exhausted %d retry attempts", r.task.ID, r.maxRetries)
+}
+
+// isRateLimitError reports whether err is an API 429 rate-limit response.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "429") || strings.Contains(msg, "rate_limit_error")
 }

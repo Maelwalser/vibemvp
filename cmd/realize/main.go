@@ -5,9 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
-
-	"github.com/vibe-mvp/internal/realize/orchestrator"
+"github.com/vibe-mvp/internal/realize/orchestrator"
 )
 
 func main() {
@@ -22,7 +20,7 @@ func main() {
 
 	p := *parallelism
 	if p <= 0 {
-		p = runtime.NumCPU()
+		p = 1
 	}
 
 	cfg := orchestrator.Config{

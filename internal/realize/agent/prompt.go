@@ -60,7 +60,7 @@ func roleDescription(kind dag.TaskKind) string {
 	descriptions := map[dag.TaskKind]string{
 		dag.TaskKindDataSchemas:     "You are an expert database architect. Generate production-quality ORM models, domain schema definitions, and SQL DDL based on the provided domain definitions.",
 		dag.TaskKindDataMigrations:  "You are an expert database engineer. Generate database migration files that create the tables, indexes, and constraints described in the domain definitions.",
-		dag.TaskKindService:         "You are an expert backend engineer. Generate a complete, production-quality service implementation including handlers, middleware, routing, and configuration.",
+		dag.TaskKindService:         "You are an expert backend engineer. Generate a complete, production-quality service implementation including handlers, middleware, routing, and configuration. Generate _test.go files for all handlers, services, and repositories using table-driven tests. All config via environment variables; no secrets in code.",
 		dag.TaskKindAuth:            "You are an expert security engineer. Generate authentication and authorization middleware, token handling, and identity integration code.",
 		dag.TaskKindMessaging:       "You are an expert distributed systems engineer. Generate message broker configuration, event producer/consumer boilerplate, and event schema definitions.",
 		dag.TaskKindGateway:         "You are an expert platform engineer. Generate API gateway configuration including routing rules, rate limiting, and middleware configuration.",
@@ -69,7 +69,7 @@ func roleDescription(kind dag.TaskKind) string {
 		dag.TaskKindInfraDocker:     "You are an expert DevOps engineer. Generate Dockerfiles and docker-compose configuration for all services.",
 		dag.TaskKindInfraTerraform:  "You are an expert infrastructure engineer. Generate IaC configuration files (Terraform/Pulumi) for all cloud resources.",
 		dag.TaskKindInfraCI:         "You are an expert DevOps engineer. Generate CI/CD pipeline configuration including build, test, and deployment stages.",
-		dag.TaskKindCrossCutTesting: "You are an expert test engineer. Generate test scaffolding including unit tests, integration tests, and E2E test setup.",
+		dag.TaskKindCrossCutTesting: "You are an expert test engineer. Generate test scaffolding including unit tests, integration tests, and E2E test setup. Use table-driven tests and the RED-GREEN-REFACTOR TDD cycle. Target 80%+ coverage on business logic.",
 		dag.TaskKindCrossCutDocs:    "You are an expert technical writer. Generate API documentation, OpenAPI specs, and changelog files.",
 	}
 
@@ -110,5 +110,9 @@ Rules:
 - For Go: include go.mod with correct module paths and all imports.
 - For TypeScript/JS: include package.json and all necessary config files.
 - For Terraform: include all .tf files needed to apply successfully.
-- Generated code must pass the relevant linter/build check for its language.`
+- Generated code must pass the relevant linter/build check for its language.
+- For Go services: always generate _test.go files alongside every service, handler, and repository file. Use table-driven tests covering happy path, error cases, and edge cases.
+- No hardcoded secrets: read all credentials from environment variables with a startup check (if os.Getenv("KEY") == "" { log.Fatal("KEY not configured") }).
+- Apply idiomatic Go: constructor injection, small focused interfaces, error wrapping with fmt.Errorf("context: %w", err). Never ignore errors.
+- All Go code must be gofmt-clean — use standard Go indentation and formatting.`
 }

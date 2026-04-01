@@ -1,0 +1,9 @@
+# ALIAS_MAP_ADDITIONS
+"Swift": "swiftui",
+"SwiftUI": "swiftui",
+"iOS": "swiftui",
+
+# UNIVERSAL_SKILLS_FOR_KIND
+// Swift frontend tasks → inject SwiftUI patterns + concurrency
+dag.TaskKindFrontend (language=Swift): swiftui, swift-concurrency
+dag.TaskKindService (language=Swift): swift-concurrency, swift-actor-persistence, swift-protocol-di
