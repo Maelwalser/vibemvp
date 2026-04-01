@@ -1,0 +1,114 @@
+package agent
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/vibe-mvp/internal/realize/dag"
+	"github.com/vibe-mvp/internal/realize/skills"
+)
+
+// SystemPrompt builds the stable system prompt for a task kind.
+// The prompt is stable across retries so it benefits from prompt caching.
+func SystemPrompt(kind dag.TaskKind, skillDocs []skills.Doc) string {
+	var b strings.Builder
+
+	b.WriteString(roleDescription(kind))
+	b.WriteString("\n\n")
+	b.WriteString(outputFormatInstructions())
+
+	if len(skillDocs) > 0 {
+		b.WriteString("\n\n## Technology Skill Guides\n\n")
+		for _, doc := range skillDocs {
+			b.WriteString(fmt.Sprintf("### %s\n\n%s\n\n", doc.Technology, doc.Content))
+		}
+	}
+
+	return b.String()
+}
+
+// UserMessage builds the user turn message for an agent invocation.
+func UserMessage(ac *Context) (string, error) {
+	payloadJSON, err := json.MarshalIndent(ac.Task.Payload, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("## Task: %s\n\n", ac.Task.Label))
+	b.WriteString(fmt.Sprintf("Task ID: %s\nKind: %s\n\n", ac.Task.ID, ac.Task.Kind))
+	b.WriteString("## Manifest Payload\n\n```json\n")
+	b.Write(payloadJSON)
+	b.WriteString("\n```\n")
+
+	if ac.PreviousErrors != "" {
+		b.WriteString("\n## Previous Attempt Failed — Verification Errors\n\n")
+		b.WriteString("The previous code generation attempt failed the following verification checks. ")
+		b.WriteString("Analyze the errors, fix the issues, and regenerate all files completely.\n\n")
+		b.WriteString("```\n")
+		b.WriteString(ac.PreviousErrors)
+		b.WriteString("\n```\n")
+	}
+
+	b.WriteString("\nGenerate the complete files for this task now.")
+	return b.String(), nil
+}
+
+// roleDescription returns a role/persona description for the given task kind.
+func roleDescription(kind dag.TaskKind) string {
+	descriptions := map[dag.TaskKind]string{
+		dag.TaskKindDataSchemas:     "You are an expert database architect. Generate production-quality ORM models, domain schema definitions, and SQL DDL based on the provided domain definitions.",
+		dag.TaskKindDataMigrations:  "You are an expert database engineer. Generate database migration files that create the tables, indexes, and constraints described in the domain definitions.",
+		dag.TaskKindService:         "You are an expert backend engineer. Generate a complete, production-quality service implementation including handlers, middleware, routing, and configuration.",
+		dag.TaskKindAuth:            "You are an expert security engineer. Generate authentication and authorization middleware, token handling, and identity integration code.",
+		dag.TaskKindMessaging:       "You are an expert distributed systems engineer. Generate message broker configuration, event producer/consumer boilerplate, and event schema definitions.",
+		dag.TaskKindGateway:         "You are an expert platform engineer. Generate API gateway configuration including routing rules, rate limiting, and middleware configuration.",
+		dag.TaskKindContracts:       "You are an expert API designer. Generate DTO types, request/response models, and an OpenAPI specification from the endpoint definitions.",
+		dag.TaskKindFrontend:        "You are an expert frontend engineer. Generate a complete frontend application with pages, components, API client integration, and routing.",
+		dag.TaskKindInfraDocker:     "You are an expert DevOps engineer. Generate Dockerfiles and docker-compose configuration for all services.",
+		dag.TaskKindInfraTerraform:  "You are an expert infrastructure engineer. Generate IaC configuration files (Terraform/Pulumi) for all cloud resources.",
+		dag.TaskKindInfraCI:         "You are an expert DevOps engineer. Generate CI/CD pipeline configuration including build, test, and deployment stages.",
+		dag.TaskKindCrossCutTesting: "You are an expert test engineer. Generate test scaffolding including unit tests, integration tests, and E2E test setup.",
+		dag.TaskKindCrossCutDocs:    "You are an expert technical writer. Generate API documentation, OpenAPI specs, and changelog files.",
+	}
+
+	desc, ok := descriptions[kind]
+	if !ok {
+		desc = "You are an expert software engineer. Generate production-quality code based on the provided specifications."
+	}
+
+	return "## Role\n\n" + desc
+}
+
+// outputFormatInstructions describes the required response format to the agent.
+func outputFormatInstructions() string {
+	return `## Output Format
+
+You MUST respond with a <files> block containing a JSON array of file objects.
+Each file object has a "path" (relative to the project output directory) and "content" (complete file content).
+
+Example:
+<files>
+[
+  {
+    "path": "services/user-api/main.go",
+    "content": "package main\n\nimport ..."
+  },
+  {
+    "path": "services/user-api/Dockerfile",
+    "content": "FROM golang:1.26-alpine\n..."
+  }
+]
+</files>
+
+Rules:
+- Always use the <files>...</files> XML tags — do NOT use markdown code fences for the file list.
+- Include ALL files needed for the task to be complete and buildable.
+- File paths must use forward slashes and be relative (no leading slash).
+- File content must be complete — no placeholders, no TODO comments for required logic.
+- For Go: include go.mod with correct module paths and all imports.
+- For TypeScript/JS: include package.json and all necessary config files.
+- For Terraform: include all .tf files needed to apply successfully.
+- Generated code must pass the relevant linter/build check for its language.`
+}
