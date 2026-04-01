@@ -24,8 +24,8 @@ The resulting manifest is serialized to `manifest.json` and intended for downstr
 | Styling/layout | `github.com/charmbracelet/lipgloss` v1.1.0 |
 | TUI entry point | `cmd/agent/main.go` |
 | Realize entry point | `cmd/realize/main.go` |
-| Manifest types | `internal/manifest/manifest.go` |
-| UI components | `internal/ui/` (12 files, ~11,700 lines) |
+| Manifest types | `internal/manifest/` (8 files, split by pillar) |
+| UI components | `internal/ui/` (14 files, ~11,700 lines) |
 | Code generation engine | `internal/realize/` (DAG, agent, skills, verifiers, orchestrator) |
 | Claude model | `claude-opus-4-6` (realize default) |
 
@@ -42,12 +42,21 @@ vibeMVP/
 │       └── main.go              # Code-gen entry point — CLI flags, runs orchestrator
 ├── internal/
 │   ├── manifest/
-│   │   └── manifest.go          # All data model types (~745 lines); JSON serialization
+│   │   ├── manifest.go          # Root Manifest struct + Save(); legacy pillar types (~98 lines)
+│   │   ├── manifest_enums.go    # All enum type declarations (~60 lines)
+│   │   ├── manifest_data.go     # DataPillar, DBSourceDef, DomainDef, caching types (~180 lines)
+│   │   ├── manifest_backend.go  # BackendPillar, ServiceDef, CommLink, AuthConfig (~200 lines)
+│   │   ├── manifest_contracts.go # ContractsPillar, DTODef, EndpointDef (~100 lines)
+│   │   ├── manifest_frontend.go  # FrontendPillar, FrontendTech, PageDef (~120 lines)
+│   │   ├── manifest_infra.go     # InfraPillar, NetworkingConfig, CICDConfig (~110 lines)
+│   │   └── manifest_crosscut.go  # CrossCutPillar, TestingConfig, DocsConfig (~60 lines)
 │   ├── ui/
-│   │   ├── model.go             # Root TUI model, vim modes, tab routing (~651 lines)
+│   │   ├── model.go             # Root TUI model, vim modes, tab routing (~758 lines)
+│   │   ├── editor.go            # Editor interface (Mode, HintLine, View) (~28 lines)
+│   │   ├── nav.go               # NavigateTab(), VimNav struct — shared navigation helpers (~100 lines)
 │   │   ├── styles.go            # Tokyo Night palette, all lipgloss styles (~145 lines)
 │   │   ├── sections.go          # Section/field definitions, FieldKind enum (~189 lines)
-│   │   ├── render_helpers.go    # Shared rendering utilities (~449 lines)
+│   │   ├── render_helpers.go    # Shared rendering utilities (~328 lines)
 │   │   ├── backend_editor.go    # Backend tab — env, services, comm, messaging, gateway, auth (~2,418 lines)
 │   │   ├── data_tab_editor.go   # Data tab — databases, domains, caching, file storage (~1,561 lines)
 │   │   ├── data_editor.go       # Entity/column schema editor (~1,179 lines)
@@ -66,13 +75,15 @@ vibeMVP/
 │       │   ├── builder.go       # Manifest → DAG task graph construction (~399 lines)
 │       │   └── payload.go       # Task payload types (~39 lines)
 │       ├── orchestrator/
-│       │   ├── orchestrator.go  # Config, entrypoint, task dispatch (~202 lines)
+│       │   ├── orchestrator.go  # Config, entrypoint, task dispatch (~312 lines)
+│       │   ├── models.go        # Provider model registry, resolveModelID() (~70 lines)
 │       │   └── runner.go        # Per-task runner: agent call + verify + retry (~103 lines)
 │       ├── output/
 │       │   └── writer.go        # File output writer (~74 lines)
 │       ├── skills/
 │       │   ├── registry.go      # In-memory skill registry (~17 lines)
-│       │   └── loader.go        # Load skill markdown files from disk (~239 lines)
+│       │   ├── aliases.go       # Technology alias map + universal skills per task kind (~110 lines)
+│       │   └── loader.go        # Load skill markdown files from disk (~103 lines)
 │       └── verify/
 │           ├── verifier.go      # Verifier interface + factory (~130 lines)
 │           ├── go_verifier.go   # go build + go vet verifier (~113 lines)
@@ -106,18 +117,41 @@ const (
 )
 ```
 
-### 4.2 Section Delegation Pattern
+### 4.2 Editor Interface + Polymorphic Dispatch
 
-Each of the 6 main tabs is a self-contained sub-editor. The root model delegates:
-- `Update(msg)` — event routing
-- `View(w, h)` — rendering
-- `Mode()` — current mode (root uses this for status line)
-- `HintLine()` — bottom keybinding hints
+All sub-editors implement the `Editor` interface defined in `editor.go`:
+
+```go
+type Editor interface {
+    Mode() Mode
+    HintLine() string
+    View(w, h int) string
+}
+```
+
+The root `Model` uses `activeEditor() Editor` — a single canonical switch in `model.go` — to dispatch `Mode()`, `HintLine()`, and `View()` without duplicating switch logic across methods. `Update()` dispatch remains typed (bubbletea's value-receiver pattern prevents a fully polymorphic Update).
+
+Each sub-editor also implements:
 - `ToManifest[X]Pillar()` — serializes editor state to manifest types
 
 The **KindDataModel** sentinel field in `sections.go` signals full delegation to the sub-editor.
 
-### 4.3 List+Form Pattern (used in most sub-editors)
+### 4.3 Shared Navigation Utilities (`nav.go`)
+
+Two reusable helpers replace duplicated navigation code across all sub-editors:
+
+**`NavigateTab(key, active, maxTabs int) int`** — handles `h`/`l`/`left`/`right` tab switching. Used in every editor that has sub-tabs.
+
+**`VimNav` struct** — stateful count-prefix + vim motion handler:
+```go
+type VimNav struct { CountBuf string; GBuf bool }
+// Handle returns (newIdx, consumed). consumed=false for enter/space/i/a (caller handles those).
+func (v *VimNav) Handle(key string, idx, n int) (int, bool)
+func (v *VimNav) Reset()
+```
+Handles: digit accumulation, `j`/`k` with count multiplier, `gg` (top), `G` (bottom). Used by `InfraEditor` and `CrossCutEditor`.
+
+### 4.4 List+Form Pattern (used in most sub-editors)
 
 ```
 SubView: List → user presses Enter → SubView: Form → Esc → SubView: List
@@ -125,11 +159,21 @@ SubView: List → user presses Enter → SubView: Form → Esc → SubView: List
 
 Lists show items with `j/k` navigation. `a` adds, `d` deletes, `Enter`/`i` edits. Forms use unified `renderFormFields()` from `render_helpers.go`.
 
-### 4.4 Manifest Builder Pattern
+### 4.5 Manifest Builder Pattern
 
 Each sub-editor implements `ToManifest[X]Pillar()` converting in-memory form state to the canonical manifest structs. `BuildManifest()` in `model.go` calls all six to assemble the final `manifest.Manifest`.
 
-### 4.5 Rendering Layout
+### 4.6 Model Sub-Structs
+
+The root `Model` struct groups related fields into sub-structs to reduce coupling:
+
+```go
+type cmdState    struct { buffer, status string; isErr bool }
+type modalState  struct { open bool; menu ProviderMenu }
+type realizeState struct { screen RealizationScreen; show, triggered bool }
+```
+
+### 4.7 Rendering Layout
 
 All form fields use a consistent vim-style layout via `renderFormFields()`:
 ```
@@ -317,6 +361,12 @@ Saved to `manifest.json` on `:w` / `Ctrl+S`. Structure:
 - **Style constants:** All colors and styles live in `styles.go`. Do not inline lipgloss colors elsewhere.
 - **Shared rendering:** Add new rendering helpers to `render_helpers.go`, not inline in sub-editors.
 - **Field abstraction:** New form fields use the `Field` struct with `KindText`, `KindSelect`, or `KindTextArea`. Never render raw text inputs directly in sub-editors.
+- **Tab navigation:** Use `NavigateTab()` from `nav.go` for `h`/`l` sub-tab switching — do not duplicate this switch in new editors.
+- **Vim list navigation:** Use `VimNav` from `nav.go` for `j`/`k`/`gg`/`G`/count-prefix in any new editor with a navigable list.
+- **Editor interface:** New sub-editors must implement the `Editor` interface (`Mode()`, `HintLine()`, `View()`). Register them in `activeEditor()` in `model.go`.
+- **Manifest types:** Add new pillar types to the appropriate `manifest_*.go` file, not to `manifest.go`. Only the root `Manifest` struct and `Save()` belong in `manifest.go`.
+- **Model registry:** Add new AI providers or model tiers to `providerModels` in `orchestrator/models.go`. Do not add new switch cases to `resolveAgent()`.
+- **Skill aliases:** Add new technology aliases to `aliasMap` in `skills/aliases.go`. Universal skills for a task kind go in `universalSkillsForKind` in the same file.
 
 ---
 
