@@ -73,6 +73,9 @@ func UserMessage(ac *Context) (string, error) {
 		b.WriteString("```\n")
 		b.WriteString(ac.PreviousErrors)
 		b.WriteString("\n```\n")
+		if hints := errorPatternHints(ac.PreviousErrors); hints != "" {
+			b.WriteString(hints)
+		}
 	}
 
 	b.WriteString("\nGenerate the complete files for this task now.")
@@ -100,6 +103,85 @@ func fenceLanguage(path string) string {
 	default:
 		return ""
 	}
+}
+
+// errorPatternHints inspects the verification error output and returns targeted
+// guidance for common, well-understood failure modes. Returns empty string when
+// no patterns are recognised.
+func errorPatternHints(errors string) string {
+	type pattern struct {
+		needle string
+		hint   string
+	}
+	patterns := []pattern{
+		{
+			"missing go.sum entry",
+			"Go dependency issue: your go.mod `require` block is incomplete or uses wrong module paths. " +
+				"The verifier runs `go mod tidy` automatically, but tidy needs the internet — ensure every " +
+				"imported package appears in go.mod `require`. Double-check module paths (e.g. " +
+				"`github.com/gofiber/fiber/v2`, not `github.com/gofiber/fiber`). " +
+				"Regenerate go.mod with the exact, correct module paths for all imports in your generated files.",
+		},
+		{
+			"cannot find module",
+			"Module resolution failure: a package import path does not match any module in go.mod. " +
+				"Verify the exact import path and version for every dependency, then include a complete go.mod.",
+		},
+		{
+			"undefined:",
+			"Undefined symbol: a referenced identifier is not declared in scope. " +
+				"Check that all struct types, functions, and constants you reference are declared in the same " +
+				"package or properly imported. Ensure all files that need each other are included in the output.",
+		},
+		{
+			"cannot use",
+			"Type mismatch: a value is being passed where an incompatible type is expected. " +
+				"Verify struct field types and function signatures are consistent across files. " +
+				"Pay special attention to pointer vs value types and interface implementations.",
+		},
+		{
+			"declared and not used",
+			"Unused variable: Go forbids declared-but-unused variables. Remove or use every declared variable.",
+		},
+		{
+			"imported and not used",
+			"Unused import: Go forbids imported-but-unused packages. Remove every import that is not referenced.",
+		},
+		{
+			"does not implement",
+			"Interface not satisfied: a concrete type is missing one or more methods required by the interface. " +
+				"Check the interface definition and ensure the concrete type implements every method with " +
+				"the exact signature (including pointer vs value receiver).",
+		},
+		{
+			"syntax error",
+			"Syntax error: the generated Go code is not valid. Check for mismatched braces, missing commas " +
+				"in struct literals, or incomplete function bodies. Regenerate the affected files in full.",
+		},
+		{
+			"gofmt",
+			"Formatting issue: one or more files are not gofmt-clean. Use standard Go indentation (tabs) " +
+				"and ensure the generated source passes `gofmt -l` without listing any files.",
+		},
+	}
+
+	var matched []string
+	for _, p := range patterns {
+		if strings.Contains(errors, p.needle) {
+			matched = append(matched, "- "+p.hint)
+		}
+	}
+	if len(matched) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n## Targeted Fix Guidance\n\n")
+	b.WriteString("Based on the errors above, pay special attention to:\n\n")
+	for _, m := range matched {
+		b.WriteString(m + "\n")
+	}
+	return b.String()
 }
 
 // roleDescription returns a role/persona description for the given task kind.

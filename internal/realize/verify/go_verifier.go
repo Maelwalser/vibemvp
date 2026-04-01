@@ -33,6 +33,13 @@ func (g *GoVerifier) Verify(ctx context.Context, outputDir string, files []strin
 			continue
 		}
 
+		// Run go mod tidy first to resolve missing go.sum entries and
+		// any dependency drift introduced by the generated code.
+		tidyOut, tidyErr := runCmd(ctx, absDir, "go", "mod", "tidy")
+		if tidyErr != nil || strings.TrimSpace(tidyOut) != "" {
+			combined.WriteString(fmt.Sprintf("=== go mod tidy in %s ===\n%s\n", dir, tidyOut))
+		}
+
 		// Run go build.
 		buildOut, err := runCmd(ctx, absDir, "go", "build", "./...")
 		combined.WriteString(fmt.Sprintf("=== go build in %s ===\n%s\n", dir, buildOut))

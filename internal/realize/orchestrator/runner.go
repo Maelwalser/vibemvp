@@ -30,6 +30,23 @@ type TaskRunner struct {
 	verbose    bool
 }
 
+// writeDebugLog appends a structured attempt record to .realize/debug/<task-id>.log.
+// Failures are logged always; successes only when verbose is on.
+func (r *TaskRunner) writeDebugLog(attempt int, passed bool, output string) {
+	dir := filepath.Join(r.writer.BaseDir(), ".realize", "debug")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	logPath := filepath.Join(dir, r.task.ID+".log")
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "=== attempt %d | %s | passed=%v ===\n%s\n",
+		attempt, time.Now().Format(time.RFC3339), passed, output)
+}
+
 // Run executes the task, retrying up to maxRetries times on verification failure.
 // On each retry, the previous verification output is fed back to the agent.
 func (r *TaskRunner) Run(ctx context.Context) error {
@@ -77,8 +94,12 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			return fmt.Errorf("task %s: verifier error: %w", r.task.ID, err)
 		}
 
+		fmt.Fprintf(os.Stderr, "[%s] verify: passed=%v\n", r.task.ID, vResult.Passed)
+		if r.verbose || !vResult.Passed {
+			r.writeDebugLog(attempt, vResult.Passed, vResult.Output)
+		}
 		if r.verbose {
-			fmt.Fprintf(os.Stderr, "[%s] verify: passed=%v\n%s\n", r.task.ID, vResult.Passed, vResult.Output)
+			fmt.Fprintf(os.Stderr, "%s\n", vResult.Output)
 		}
 
 		if vResult.Passed {
