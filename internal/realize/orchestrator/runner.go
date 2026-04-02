@@ -158,7 +158,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		// Before consuming a retry slot, try deterministic fixes (e.g. gofmt,
 		// unused imports). If a fix succeeds and passes verification, we save
 		// the full LLM retry cost.
-		if attempt < r.maxRetries {
+		if attempt <= r.maxRetries {
 			if fixed, fixedFiles := verify.TryFix(result.Files, vResult.Output); fixed {
 				r.log("[%s] applying deterministic fixes before retry", r.task.ID)
 				if err := r.writer.WriteAllTo(tmpDir, fixedFiles); err == nil {

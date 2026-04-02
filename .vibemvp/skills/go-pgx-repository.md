@@ -32,6 +32,14 @@ func NewUserRepository(pool PgxPool) *userRepository {
 ```
 
 ## Test Injection Pattern (pgxmock)
+
+Rules:
+1. Always initialise the mock with `pgxmock.NewPool()`. **Do NOT** declare the variable as
+   `pgxmock.PgxPoolMock` or `pgxmock.PgxMock` — let the compiler infer the type.
+2. Every `.ExpectQuery()` or `.ExpectExec()` call **MUST** be followed by `.WithArgs(...)` whose
+   arguments match exactly the placeholders in the SQL statement. Omitting `.WithArgs()` when
+   the query has parameters causes `unexpected call to Query/Exec: expected 0, but got N arguments`.
+
 ```go
 func TestUserRepository_Create(t *testing.T) {
     pool, err := pgxmock.NewPool()
@@ -39,7 +47,18 @@ func TestUserRepository_Create(t *testing.T) {
         t.Fatal(err)
     }
     repo := NewUserRepository(pool)  // inject via PgxPool interface — no cast
-    pool.ExpectQuery(`INSERT INTO users`).WillReturnRows(...)
+
+    // CRITICAL: .WithArgs() must list every argument the SQL receives, in order.
+    pool.ExpectQuery(`INSERT INTO users`).
+        WithArgs("Alice", "alice@example.com").
+        WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow("123"))
+
+    user, err := repo.Create(ctx, "Alice", "alice@example.com")
+    // assertions ...
+
+    if err := pool.ExpectationsWereMet(); err != nil {
+        t.Errorf("unfulfilled mock expectations: %v", err)
+    }
 }
 ```
 
