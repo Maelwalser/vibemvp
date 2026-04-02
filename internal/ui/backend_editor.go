@@ -505,7 +505,9 @@ func defaultSecurityFields() []Field {
 	}
 }
 
-func defaultJobQueueFormFields() []Field {
+func defaultJobQueueFormFields(services, dtos []string) []Field {
+	workerOpts := append([]string{"(none)"}, services...)
+	payloadOpts := append([]string{"(none)"}, dtos...)
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{
@@ -523,6 +525,14 @@ func defaultJobQueueFormFields() []Field {
 		{
 			Key: "dlq", Label: "dead_letter_q ", Kind: KindSelect,
 			Options: []string{"false", "true"}, Value: "false",
+		},
+		{
+			Key: "worker_service", Label: "worker_service", Kind: KindSelect,
+			Options: workerOpts, Value: "(none)",
+		},
+		{
+			Key: "payload_dto", Label: "payload_dto   ", Kind: KindSelect,
+			Options: payloadOpts, Value: "(none)",
 		},
 	}
 }
@@ -612,7 +622,8 @@ type BackendEditor struct {
 	Events    []manifest.EventDef
 
 	// Cross-tab references (injected from model.go)
-	DomainNames []string
+	DomainNames   []string
+	availableDTOs []string
 
 	// Vim motion state
 	countBuf string
@@ -637,6 +648,11 @@ func newBackendEditor() BackendEditor {
 // SetDomainNames injects domain names from the data tab for event domain dropdowns.
 func (be *BackendEditor) SetDomainNames(names []string) {
 	be.DomainNames = names
+}
+
+// SetDTONames injects DTO names from the contracts tab for job payload dropdowns.
+func (be *BackendEditor) SetDTONames(names []string) {
+	be.availableDTOs = names
 }
 
 // withServiceNames returns a copy of fields where from/to are upgraded to
@@ -2363,7 +2379,7 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "a":
 		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
 		be.jobsIdx = len(be.jobQueues) - 1
-		be.jobsForm = defaultJobQueueFormFields()
+		be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
 		be.jobsFormIdx = 0
 		be.jobsSubView = beViewForm
 		be.activeField = 0
@@ -2377,13 +2393,15 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "enter":
 		if n > 0 {
 			jq := be.jobQueues[be.jobsIdx]
-			be.jobsForm = defaultJobQueueFormFields()
+			be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
 			be.jobsForm = setFieldValue(be.jobsForm, "name", jq.Name)
 			be.jobsForm = setFieldValue(be.jobsForm, "technology", jq.Technology)
 			be.jobsForm = setFieldValue(be.jobsForm, "concurrency", jq.Concurrency)
 			be.jobsForm = setFieldValue(be.jobsForm, "max_retries", jq.MaxRetries)
 			be.jobsForm = setFieldValue(be.jobsForm, "retry_policy", jq.RetryPolicy)
 			be.jobsForm = setFieldValue(be.jobsForm, "dlq", jq.DLQ)
+			be.jobsForm = setFieldValue(be.jobsForm, "worker_service", jq.WorkerService)
+			be.jobsForm = setFieldValue(be.jobsForm, "payload_dto", jq.PayloadDTO)
 			be.jobsFormIdx = 0
 			be.jobsSubView = beViewForm
 			be.activeField = 0
@@ -2470,6 +2488,18 @@ func (be *BackendEditor) saveJobsForm() {
 	jq.MaxRetries = fieldGet(be.jobsForm, "max_retries")
 	jq.RetryPolicy = fieldGet(be.jobsForm, "retry_policy")
 	jq.DLQ = fieldGet(be.jobsForm, "dlq")
+	ws := fieldGet(be.jobsForm, "worker_service")
+	if ws != "(none)" {
+		jq.WorkerService = ws
+	} else {
+		jq.WorkerService = ""
+	}
+	pd := fieldGet(be.jobsForm, "payload_dto")
+	if pd != "(none)" {
+		jq.PayloadDTO = pd
+	} else {
+		jq.PayloadDTO = ""
+	}
 }
 
 // ── Security updates ──────────────────────────────────────────────────────────

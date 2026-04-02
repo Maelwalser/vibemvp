@@ -88,13 +88,15 @@ type CronJobDef struct {
 
 // JobQueueDef describes a worker pool or task queue.
 type JobQueueDef struct {
-	Name        string       `json:"name"`
-	Technology  string       `json:"technology"`
-	Concurrency string       `json:"concurrency,omitempty"`
-	MaxRetries  string       `json:"max_retries,omitempty"`
-	RetryPolicy string       `json:"retry_policy"`
-	DLQ         string       `json:"dlq,omitempty"`
-	CronJobs    []CronJobDef `json:"cron_jobs,omitempty"`
+	Name          string       `json:"name"`
+	Technology    string       `json:"technology"`
+	Concurrency   string       `json:"concurrency,omitempty"`
+	MaxRetries    string       `json:"max_retries,omitempty"`
+	RetryPolicy   string       `json:"retry_policy"`
+	DLQ           string       `json:"dlq,omitempty"`
+	WorkerService string       `json:"worker_service,omitempty"`
+	PayloadDTO    string       `json:"payload_dto,omitempty"`
+	CronJobs      []CronJobDef `json:"cron_jobs,omitempty"`
 }
 
 // EnvConfig describes the deployment environment configuration.
