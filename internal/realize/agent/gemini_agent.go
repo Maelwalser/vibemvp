@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 const geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -58,12 +59,23 @@ func (a *GeminiAgent) Run(ctx context.Context, ac *Context) (*Result, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s:generateContent?key=%s", geminiBaseURL, a.modelID, a.apiKey)
+	// Google OAuth tokens start with "ya29." and must be sent as a Bearer header
+	// rather than as a URL query parameter.
+	isOAuth := strings.HasPrefix(a.apiKey, "ya29.")
+	var url string
+	if isOAuth {
+		url = fmt.Sprintf("%s/%s:generateContent", geminiBaseURL, a.modelID)
+	} else {
+		url = fmt.Sprintf("%s/%s:generateContent?key=%s", geminiBaseURL, a.modelID, a.apiKey)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if isOAuth {
+		req.Header.Set("Authorization", "Bearer "+a.apiKey)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

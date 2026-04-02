@@ -1,10 +1,21 @@
 package ui
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -84,7 +95,10 @@ type ProviderMenu struct {
 	selectedAuth    int     // -1 = none confirmed in current edit
 
 	// Credential input step
-	credInput textinput.Model
+	credInput            textinput.Model
+	oauthStatus          string // non-empty while an OAuth flow is in progress or errored
+	oauthClientID        string // client ID entered or resolved for the active OAuth flow
+	oauthAwaitingClientID bool   // true when credInput is collecting the OAuth client ID
 }
 
 func newProviderMenu() ProviderMenu {
@@ -105,7 +119,7 @@ func newProviderMenu() ProviderMenu {
 					{name: "Sonnet", versions: []string{"4.5", "4.0", "3.5"}},
 					{name: "Opus", versions: []string{"4.0", "3.0"}},
 				},
-				authMethods: []string{"API Key", "OAuth"},
+				authMethods: []string{"API Key"},
 			},
 			{
 				label: "ChatGPT",
@@ -114,7 +128,7 @@ func newProviderMenu() ProviderMenu {
 					{name: "4o", versions: []string{"4o", "4o-2024"}},
 					{name: "o1", versions: []string{"o1", "o1-preview"}},
 				},
-				authMethods: []string{"API Key", "OAuth"},
+				authMethods: []string{"API Key"},
 			},
 			{
 				label: "Gemini",
@@ -315,55 +329,362 @@ func openBrowser(url string) {
 	_ = exec.Command(cmd, args...).Start()
 }
 
+// ── OAuth 2.0 PKCE flow ───────────────────────────────────────────────────────
+
+// oauthTokenMsg is the Bubble Tea message returned when the OAuth flow completes.
+type oauthTokenMsg struct {
+	token string
+	err   error
+}
+
+// oauthProviderConfig holds the OAuth 2.0 endpoints and credentials for one provider.
+type oauthProviderConfig struct {
+	authURL  string
+	tokenURL string
+	scope    string
+	clientID string
+}
+
+// geminiDefaultClientID is the public OAuth client ID bundled with the
+// official Gemini CLI (open-source). Using it avoids requiring users to
+// register their own Google Cloud project.
+const geminiDefaultClientID = "681255809395-oo8t2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+
+// resolveOAuthConfig returns the OAuth 2.0 endpoints for provider.
+// clientIDOverride is used first; if empty the VIBEMVP_*_CLIENT_ID env var is
+// tried; for Gemini the bundled default client ID is used as final fallback.
+// Returns an error only if the provider is unknown.
+func resolveOAuthConfig(provider, clientIDOverride string) (oauthProviderConfig, error) {
+	switch provider {
+	case "Gemini":
+		clientID := clientIDOverride
+		if clientID == "" {
+			clientID = os.Getenv("VIBEMVP_GOOGLE_CLIENT_ID")
+		}
+		if clientID == "" {
+			clientID = geminiDefaultClientID
+		}
+		return oauthProviderConfig{
+			authURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+			tokenURL: "https://oauth2.googleapis.com/token",
+			scope:    "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+			clientID: clientID,
+		}, nil
+	case "ChatGPT":
+		clientID := clientIDOverride
+		if clientID == "" {
+			clientID = os.Getenv("VIBEMVP_OPENAI_CLIENT_ID")
+		}
+		return oauthProviderConfig{
+			authURL:  "https://auth.openai.com/authorize",
+			tokenURL: "https://auth.openai.com/oauth/token",
+			scope:    "openid profile email",
+			clientID: clientID,
+		}, nil
+	default:
+		return oauthProviderConfig{}, fmt.Errorf("OAuth not supported for %s", provider)
+	}
+}
+
+// generateCodeVerifier returns a random PKCE code verifier (RFC 7636).
+func generateCodeVerifier() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// generateCodeChallenge returns the S256 PKCE code challenge for the verifier.
+func generateCodeChallenge(verifier string) string {
+	h := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+// generateState returns a random OAuth state nonce.
+func generateState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// startOAuthCmd wraps startOAuthFlow as a Bubble Tea command.
+// clientID is passed directly so no env var lookup is needed at call time.
+func startOAuthCmd(provider, clientID string) tea.Cmd {
+	return func() tea.Msg {
+		token, err := startOAuthFlow(provider, clientID)
+		return oauthTokenMsg{token: token, err: err}
+	}
+}
+
+// startOAuthFlow runs the PKCE OAuth 2.0 authorization code flow:
+// starts a local HTTP server on :8080, opens the provider's auth URL in the
+// browser, waits for the callback, exchanges the code for an access token,
+// and returns it. Times out after 5 minutes.
+func startOAuthFlow(provider, clientID string) (string, error) {
+	cfg, err := resolveOAuthConfig(provider, clientID)
+	if err != nil {
+		return "", err
+	}
+	if cfg.clientID == "" {
+		return "", fmt.Errorf("no OAuth client ID provided for %s", provider)
+	}
+
+	verifier, err := generateCodeVerifier()
+	if err != nil {
+		return "", fmt.Errorf("generate code verifier: %w", err)
+	}
+	challenge := generateCodeChallenge(verifier)
+
+	state, err := generateState()
+	if err != nil {
+		return "", fmt.Errorf("generate state: %w", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("failed to bind to local port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+
+	codeCh := make(chan string, 1)
+	callbackErrCh := make(chan error, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("state") != state {
+			http.Error(w, "state mismatch", http.StatusBadRequest)
+			callbackErrCh <- fmt.Errorf("OAuth state mismatch — possible CSRF")
+			return
+		}
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "missing authorization code", http.StatusBadRequest)
+			callbackErrCh <- fmt.Errorf("no authorization code in callback")
+			return
+		}
+		fmt.Fprint(w, "<html><body><h2>Authorization successful!</h2><p>You can close this tab.</p></body></html>")
+		codeCh <- code
+	})
+
+	srv := &http.Server{Handler: mux}
+	srvErrCh := make(chan error, 1)
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			srvErrCh <- err
+		}
+	}()
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
+
+	params := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {cfg.clientID},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {cfg.scope},
+		"state":                 {state},
+		"access_type":           {"offline"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+	}
+	openBrowser(cfg.authURL + "?" + params.Encode())
+
+	select {
+	case code := <-codeCh:
+		return exchangeCodeForToken(cfg, code, verifier, redirectURI)
+	case err := <-callbackErrCh:
+		return "", err
+	case err := <-srvErrCh:
+		return "", fmt.Errorf("OAuth callback server error: %w", err)
+	case <-time.After(5 * time.Minute):
+		return "", fmt.Errorf("OAuth timeout: no browser response within 5 minutes")
+	}
+}
+
+// exchangeCodeForToken exchanges an authorization code for an access token
+// using the PKCE verifier.
+func exchangeCodeForToken(cfg oauthProviderConfig, code, verifier, redirectURI string) (string, error) {
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {cfg.clientID},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	}
+
+	resp, err := http.PostForm(cfg.tokenURL, form)
+	if err != nil {
+		return "", fmt.Errorf("token exchange request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read token response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		preview := string(body)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		return "", fmt.Errorf("token exchange failed (HTTP %d): %s", resp.StatusCode, preview)
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+		ErrorDesc   string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parse token response: %w", err)
+	}
+	if tokenResp.Error != "" {
+		return "", fmt.Errorf("token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
+	}
+	if tokenResp.AccessToken == "" {
+		return "", fmt.Errorf("empty access token in response")
+	}
+	return tokenResp.AccessToken, nil
+}
+
 // enterCredentialStep prepares the credential input for the current auth method.
+// For OAuth providers it either auto-starts the browser flow (if a client ID is
+// already known) or prompts the user to enter one first.
 func (p ProviderMenu) enterCredentialStep() (ProviderMenu, tea.Cmd) {
 	p.focus = pmFocusCredential
-	// Pre-fill from existing config if available.
+	p.oauthStatus = ""
+	p.oauthAwaitingClientID = false
+
+	authMethod := ""
+	provLabel := ""
 	if p.selectedProv >= 0 {
-		provLabel := p.providers[p.selectedProv].label
+		provLabel = p.providers[p.selectedProv].label
+		if p.selectedAuth >= 0 {
+			authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
+		}
+	}
+
+	if authMethod == "OAuth" {
+		p.credInput.EchoMode = textinput.EchoNormal
+		// Check for a usable client ID (cached from this session or env var).
+		cfg, _ := resolveOAuthConfig(provLabel, p.oauthClientID)
+		if cfg.clientID != "" {
+			// Client ID already known — launch the browser immediately.
+			p.credInput.SetValue("")
+			p.credInput.Placeholder = "token will appear here after browser authorization"
+			p.oauthStatus = "Opening browser…"
+			return p, tea.Batch(p.credInput.Focus(), startOAuthCmd(provLabel, cfg.clientID))
+		}
+		// No client ID yet — collect it first.
+		p.oauthAwaitingClientID = true
+		p.credInput.SetValue("")
+		p.credInput.Placeholder = oauthClientIDPlaceholder(provLabel)
+		return p, p.credInput.Focus()
+	}
+
+	// API Key path.
+	p.credInput.EchoMode = textinput.EchoPassword
+	p.credInput.EchoCharacter = '•'
+	p.credInput.Placeholder = "sk-…"
+	if p.selectedProv >= 0 {
 		if existing, ok := p.configured[provLabel]; ok && existing.Credential != "" {
 			p.credInput.SetValue(existing.Credential)
 		} else {
 			p.credInput.SetValue("")
 		}
-	} else {
-		p.credInput.SetValue("")
-	}
-
-	authMethod := ""
-	if p.selectedProv >= 0 && p.selectedAuth >= 0 {
-		authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
-	}
-	if authMethod == "API Key" {
-		p.credInput.Placeholder = "sk-…"
-		p.credInput.EchoMode = textinput.EchoPassword
-		p.credInput.EchoCharacter = '•'
-	} else {
-		p.credInput.Placeholder = "paste token here"
-		p.credInput.EchoMode = textinput.EchoNormal
 	}
 	return p, p.credInput.Focus()
 }
 
+// oauthClientIDPlaceholder returns the placeholder text for the client ID input.
+func oauthClientIDPlaceholder(provider string) string {
+	switch provider {
+	case "Gemini":
+		return "Google OAuth Client ID (from console.cloud.google.com)"
+	case "ChatGPT":
+		return "OpenAI OAuth Client ID"
+	default:
+		return "OAuth Client ID"
+	}
+}
+
 // Update handles keyboard input and returns a new ProviderMenu and optional command.
 func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
+	// Handle OAuth flow completion.
+	if omsg, ok := msg.(oauthTokenMsg); ok {
+		if omsg.err != nil {
+			p.oauthStatus = "OAuth error: " + omsg.err.Error()
+		} else {
+			p.credInput.SetValue(omsg.token)
+			p.oauthStatus = ""
+		}
+		return p, nil
+	}
+
 	// Delegate to textinput when credential focus is active.
 	if p.focus == pmFocusCredential {
 		key, ok := msg.(tea.KeyMsg)
 		if ok {
 			switch key.String() {
 			case "enter":
+				if p.oauthAwaitingClientID {
+					// User just typed their OAuth Client ID — save it and start the flow.
+					clientID := strings.TrimSpace(p.credInput.Value())
+					if clientID == "" {
+						return p, nil
+					}
+					p.oauthClientID = clientID
+					p.oauthAwaitingClientID = false
+					p.credInput.SetValue("")
+					if p.selectedProv >= 0 {
+						p.credInput.Placeholder = "token will appear here after browser authorization"
+					}
+					p.oauthStatus = "Opening browser…"
+					prov := ""
+					if p.selectedProv >= 0 {
+						prov = p.providers[p.selectedProv].label
+					}
+					return p, startOAuthCmd(prov, clientID)
+				}
+				// Normal confirm (API key or OAuth token already filled).
 				p = p.confirmCurrentSelection()
 				p.focus = pmFocusProviders
 				p.credInput.Blur()
+				p.oauthAwaitingClientID = false
 				return p, nil
 			case "esc":
 				p.focus = pmFocusAuth
 				p.credInput.Blur()
+				p.oauthAwaitingClientID = false
+				p.oauthStatus = ""
 				return p, nil
 			case "ctrl+o":
 				if p.selectedProv >= 0 {
-					if u := oauthURL(p.providers[p.selectedProv].label); u != "" {
+					prov := p.providers[p.selectedProv].label
+					authMethod := ""
+					if p.selectedAuth >= 0 {
+						authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
+					}
+					if authMethod == "OAuth" && !p.oauthAwaitingClientID {
+						// Re-trigger the OAuth flow with the stored client ID.
+						if p.oauthClientID == "" {
+							p.oauthAwaitingClientID = true
+							p.credInput.SetValue("")
+							p.credInput.Placeholder = oauthClientIDPlaceholder(prov)
+							return p, nil
+						}
+						p.oauthStatus = "Opening browser…"
+						p.credInput.SetValue("")
+						return p, startOAuthCmd(prov, p.oauthClientID)
+					}
+					// API Key mode: open the key management page.
+					if u := oauthURL(prov); u != "" {
 						openBrowser(u)
 					}
 				}
@@ -520,7 +841,8 @@ const (
 	// pmBoxW is the Width() argument for StyleModalBorder.
 	// StyleModalBorder has Padding(0,1) + RoundedBorder, so actual rendered
 	// width = pmBoxW + 2 (padding) + 2 (border) = pmBoxW + 4.
-	pmBoxW = pmCol1W + pmCol2W + pmCol3W // 40 → total box ≈ 44 chars
+	// +2 for the two │ column separators inserted by pmRow.
+	pmBoxW = pmCol1W + 1 + pmCol2W + 1 + pmCol3W // 42 → total box ≈ 46 chars
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -529,7 +851,19 @@ const (
 func (p ProviderMenu) View() string {
 	var rows []string
 
-	rows = append(rows, "") // top padding
+	// ── Cyberpunk title bar ───────────────────────────────────────────────────
+	// Opposing frames on left/right produce the same scanning animation as the
+	// main header bar: light appears to sweep across the title.
+	decoL := StyleHeaderDeco.Render(headerDecoFrames[AnimFrame])
+	decoR := StyleHeaderDeco.Render(headerDecoFrames[1-AnimFrame])
+	titleText := StyleNeonMagenta.Render("◈ AI PROVIDERS ◈")
+	titleLine := lipgloss.NewStyle().
+		Background(lipgloss.Color(clrBg2)).
+		Width(pmBoxW).
+		Align(lipgloss.Center).
+		Render(decoL + " " + titleText + " " + decoR)
+	rows = append(rows, titleLine)
+	rows = append(rows, "") // padding below title
 	rows = append(rows, p.renderHeaders())
 	rows = append(rows, p.renderDividers())
 
@@ -574,9 +908,12 @@ func (p ProviderMenu) View() string {
 		if p.selectedProv >= 0 && p.selectedAuth >= 0 {
 			authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
 		}
-		if authMethod == "OAuth" {
-			hints = hintBar("Enter", "confirm", "Ctrl+O", "open browser", "Esc", "back")
-		} else {
+		switch {
+		case authMethod == "OAuth" && p.oauthAwaitingClientID:
+			hints = hintBar("Enter", "open browser →", "Esc", "back")
+		case authMethod == "OAuth":
+			hints = hintBar("Enter", "confirm token", "Ctrl+O", "re-authorize", "Esc", "back")
+		default:
 			hints = hintBar("Enter", "confirm", "Esc", "back")
 		}
 	case p.dropdownOpen:
@@ -596,8 +933,6 @@ func (p ProviderMenu) renderConfiguredSummary() string {
 	if len(p.configured) == 0 {
 		return ""
 	}
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen))
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 	var lines []string
 	// Iterate in provider order for deterministic output.
 	for _, prov := range p.providers {
@@ -605,16 +940,13 @@ func (p ProviderMenu) renderConfiguredSummary() string {
 		if !ok || !sel.IsSet() {
 			continue
 		}
-		lines = append(lines, dim.Render("  ✓ ")+green.Bold(true).Render(sel.Short()))
+		lines = append(lines, StyleNeonCyan.Render("  ◈ ")+StyleNeonGreen.Render(sel.Short()))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // renderCredentialPanel renders the inline API key / OAuth token input.
 func (p ProviderMenu) renderCredentialPanel() string {
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
-	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true)
-
 	authMethod := ""
 	provLabel := ""
 	if p.selectedProv >= 0 {
@@ -624,30 +956,59 @@ func (p ProviderMenu) renderCredentialPanel() string {
 		}
 	}
 
-	var label string
-	var subText string
+	var lines []string
+
 	if authMethod == "OAuth" {
-		label = active.Render("OAuth Token")
-		if u := oauthURL(provLabel); u != "" {
-			subText = dim.Render(fmt.Sprintf("  Get token: %s", u))
+		if p.oauthAwaitingClientID {
+			// Step 1: collect the OAuth Client ID before we can open the browser.
+			lines = append(lines, StyleNeonViolet.Render("  ◈ Browser Sign-In  ·  Step 1 of 2"))
+			lines = append(lines, StyleFgDimStyle.Render("  Enter your OAuth Client ID below, then press Enter to open the browser."))
+			switch provLabel {
+			case "Gemini":
+				lines = append(lines, StyleFgDimStyle.Render("  Get one at: console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app)"))
+			default:
+				lines = append(lines, StyleFgDimStyle.Render("  Create an OAuth 2.0 Client ID (Desktop app) for your registered application."))
+			}
+			lines = append(lines, "")
+
+			inputBox := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(clrMagenta)).
+				Padding(0, 1).
+				Width(pmBoxW - 4).
+				Render(StyleNeonCyan.Render("Client ID") + "  " + p.credInput.View())
+			lines = append(lines, inputBox)
 		} else {
-			subText = dim.Render("  Paste your OAuth access token below")
+			// Step 2: browser has been / is being opened.
+			lines = append(lines, StyleNeonGreen.Render("  ◈ Browser Sign-In  ·  Step 2 of 2"))
+			if p.oauthStatus != "" {
+				lines = append(lines, StyleFgDimStyle.Render("  Approve access in the browser, then return here."))
+			} else {
+				lines = append(lines, StyleFgDimStyle.Render("  Ctrl+O to re-authorize  ·  Enter to confirm  ·  Esc to go back"))
+			}
+			lines = append(lines, "")
+
+			inputBox := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(clrMagenta)).
+				Padding(0, 1).
+				Width(pmBoxW - 4).
+				Render(StyleNeonViolet.Render("◈ OAuth Token") + "  " + p.credInput.View())
+			lines = append(lines, inputBox)
+			if p.oauthStatus != "" {
+				lines = append(lines, StyleNeonOrange.Render("  "+p.oauthStatus))
+			}
 		}
 	} else {
-		label = active.Render("API Key")
-		subText = dim.Render(fmt.Sprintf("  Enter %s API key", provLabel))
+		lines = append(lines, StyleFgDimStyle.Render(fmt.Sprintf("  Enter %s API key", provLabel)))
+		inputBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(clrMagenta)).
+			Padding(0, 1).
+			Width(pmBoxW - 4).
+			Render(StyleNeonCyan.Render("◈ API Key") + "  " + p.credInput.View())
+		lines = append(lines, inputBox)
 	}
-
-	inputBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(clrCyan)).
-		Padding(0, 1).
-		Width(pmBoxW - 4).
-		Render(label + "  " + p.credInput.View())
-
-	var lines []string
-	lines = append(lines, subText)
-	lines = append(lines, inputBox)
 	return strings.Join(lines, "\n")
 }
 
@@ -656,7 +1017,7 @@ func (p ProviderMenu) renderHeaders() string {
 	bg := lipgloss.Color(clrBg2)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Background(bg)
 	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Underline(true).Background(bg)
-	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(bg)
+	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrOrange)).Bold(true).Background(bg)
 
 	h1, h2, h3 := dim, dim, dim
 	switch p.focus {
@@ -675,12 +1036,13 @@ func (p ProviderMenu) renderHeaders() string {
 }
 
 // renderDividers returns the ─── separator row under the headers.
+// Each segment fills its full column width so the grid lines are flush.
 func (p ProviderMenu) renderDividers() string {
-	s := lipgloss.NewStyle().Foreground(lipgloss.Color(clrComment)).Background(lipgloss.Color(clrBg2))
+	s := lipgloss.NewStyle().Foreground(lipgloss.Color(clrViolet)).Background(lipgloss.Color(clrBg2))
 	return pmRow(
-		s.Render(strings.Repeat("─", 8)),
-		s.Render(strings.Repeat("─", 9)),
-		s.Render(strings.Repeat("─", 8)),
+		s.Render(strings.Repeat("─", pmCol1W)),
+		s.Render(strings.Repeat("─", pmCol2W)),
+		s.Render(strings.Repeat("─", pmCol3W)),
 	)
 }
 
@@ -707,13 +1069,13 @@ func (p ProviderMenu) buildProviderCol() []string {
 		var label string
 		switch {
 		case isConfigured && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + prov.label)
 		case isConfigured && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(rowBg).Render("◈ " + prov.label)
 		case isEditing && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur && p.focus == pmFocusProviders:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(prov.label)
 		default:
@@ -767,11 +1129,11 @@ func (p ProviderMenu) buildModelCol() []string {
 		var label string
 		switch {
 		case isSel && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + displayName)
 		case isSel && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(rowBg).Render(displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(rowBg).Render("◈ " + displayName)
 		case isCur && p.focus == pmFocusModels:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(displayName)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(displayName)
 		default:
@@ -838,9 +1200,9 @@ func (p ProviderMenu) buildAuthCol() []string {
 		var label string
 		switch {
 		case isSel:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + a)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + a)
 		case isCur && p.focus == pmFocusAuth:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(a)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(a)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(a)
 		default:
@@ -858,9 +1220,14 @@ func (p ProviderMenu) buildAuthCol() []string {
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
-// pmRow assembles three column cells into one display line.
+// pmRow assembles three column cells into one display line, with │ separators
+// between each column for a clean grid layout.
 func pmRow(col1, col2, col3 string) string {
-	return pmPad(col1, pmCol1W) + pmPad(col2, pmCol2W) + col3
+	sep := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrViolet)).
+		Background(lipgloss.Color(clrBg2)).
+		Render("│")
+	return pmPad(col1, pmCol1W) + sep + pmPad(col2, pmCol2W) + sep + col3
 }
 
 // pmPad pads s with background-colored spaces until its visible width equals toW.
@@ -871,10 +1238,16 @@ func pmPad(s string, toW int) string {
 	return s
 }
 
-// pmHighlight pads s to colW with highlight-colored spaces and applies the cursor-line background.
+// pmHighlight pads s to colW with highlight-colored spaces and applies the
+// animated cursor-line background (breathing/pulse effect via AnimFrame).
 func pmHighlight(s string, colW int) string {
-	if pad := colW - lipgloss.Width(s); pad > 0 {
-		s = s + lipgloss.NewStyle().Background(lipgloss.Color(clrBgHL)).Render(strings.Repeat(" ", pad))
+	curStyle := activeCurLineStyle()
+	bg := lipgloss.Color(clrBgHL)
+	if AnimFrame == 1 {
+		bg = lipgloss.Color(clrBgHL2)
 	}
-	return StyleCurLine.Render(s)
+	if pad := colW - lipgloss.Width(s); pad > 0 {
+		s = s + lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", pad))
+	}
+	return curStyle.Render(s)
 }
