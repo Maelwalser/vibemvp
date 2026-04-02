@@ -237,6 +237,9 @@ type InfraEditor struct {
 
 	// Vim motion state
 	nav VimNav
+
+	ddOpen   bool
+	ddOptIdx int
 }
 
 func (ie InfraEditor) activeTabEnabled() bool {
@@ -405,10 +408,13 @@ func (ie InfraEditor) HintLine() string {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
+	if ie.ddOpen {
+		return hintBar("j/k", "navigate", "Enter/Space", "select", "Esc", "cancel")
+	}
 	if !ie.activeTabEnabled() {
 		return hintBar("a", "configure", "h/l", "sub-tab")
 	}
-	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Space/Enter", "cycle", "H", "cycle back", "a/i", "edit text", "h/l", "sub-tab")
+	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Enter/Space", "dropdown", "H", "cycle back", "a/i", "edit text", "h/l", "sub-tab")
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -426,6 +432,10 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return ie, nil
+	}
+
+	if ie.ddOpen {
+		return ie.updateInfraDropdown(key)
 	}
 
 	switch key.String() {
@@ -480,7 +490,8 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			if idx < n {
 				f := &fields[idx]
 				if f.Kind == KindSelect {
-					f.CycleNext()
+					ie.ddOpen = true
+					ie.ddOptIdx = f.SelIdx
 				} else {
 					switch ie.activeTab {
 					case infraTabNetworking:
@@ -538,6 +549,51 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 	case infraTabEnvironments:
 		ie.envTopoFields = fields
 		ie.envTopoFormIdx = idx
+	}
+	return ie, nil
+}
+
+func (ie InfraEditor) updateInfraDropdown(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	var f *Field
+	switch ie.activeTab {
+	case infraTabNetworking:
+		if ie.netFormIdx < len(ie.networkingFields) {
+			f = &ie.networkingFields[ie.netFormIdx]
+		}
+	case infraTabCICD:
+		if ie.cicdFormIdx < len(ie.cicdFields) {
+			f = &ie.cicdFields[ie.cicdFormIdx]
+		}
+	case infraTabObservability:
+		if ie.obsFormIdx < len(ie.obsFields) {
+			f = &ie.obsFields[ie.obsFormIdx]
+		}
+	case infraTabEnvironments:
+		if ie.envTopoFormIdx < len(ie.envTopoFields) {
+			f = &ie.envTopoFields[ie.envTopoFormIdx]
+		}
+	}
+	if f == nil {
+		ie.ddOpen = false
+		return ie, nil
+	}
+	switch key.String() {
+	case "j", "down":
+		if ie.ddOptIdx < len(f.Options)-1 {
+			ie.ddOptIdx++
+		}
+	case "k", "up":
+		if ie.ddOptIdx > 0 {
+			ie.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = ie.ddOptIdx
+		if ie.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[ie.ddOptIdx]
+		}
+		ie.ddOpen = false
+	case "esc", "b":
+		ie.ddOpen = false
 	}
 	return ie, nil
 }
@@ -676,25 +732,25 @@ func (ie InfraEditor) View(w, h int) string {
 	switch ie.activeTab {
 	case infraTabNetworking:
 		if ie.netEnabled {
-			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabCICD:
 		if ie.cicdEnabled {
-			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabObservability:
 		if ie.obsEnabled {
-			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabEnvironments:
 		if ie.envEnabled {
-			lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}

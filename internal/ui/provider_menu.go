@@ -779,7 +779,7 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 		}
 
 	// ── Confirm / open dropdown ───────────────────────────────────────────────
-	case "enter":
+	case "enter", " ":
 		switch p.focus {
 		case pmFocusProviders:
 			// Start configuring the hovered provider; load existing config.

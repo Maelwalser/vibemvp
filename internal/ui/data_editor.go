@@ -61,6 +61,9 @@ type DataEditor struct {
 	// colForm holds the mutable field state for the column currently being edited.
 	colForm []Field
 
+	ddOpen   bool
+	ddOptIdx int
+
 	width int
 }
 
@@ -606,6 +609,16 @@ func (de DataEditor) updateNormal(msg tea.Msg) (DataEditor, tea.Cmd) {
 	if !ok {
 		return de, nil
 	}
+	if de.ddOpen {
+		switch de.view {
+		case deViewEntitySettings:
+			return de.updateEntFormDropdown(key)
+		case deViewColForm:
+			return de.updateColFormDropdown(key)
+		default:
+			de.ddOpen = false
+		}
+	}
 	switch de.view {
 	case deViewEntities:
 		return de.updateNormalEntities(key)
@@ -672,7 +685,8 @@ func (de DataEditor) updateNormalEntitySettings(key tea.KeyMsg) (DataEditor, tea
 	case "enter", " ":
 		f := &de.entForm[de.entFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			de.ddOpen = true
+			de.ddOptIdx = f.SelIdx
 		} else {
 			return de.enterEntFormInsert()
 		}
@@ -779,7 +793,8 @@ func (de DataEditor) updateNormalColForm(key tea.KeyMsg) (DataEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &de.colForm[de.colFormIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			de.ddOpen = true
+			de.ddOptIdx = f.SelIdx
 		} else {
 			return de.enterFormInsert()
 		}
@@ -795,6 +810,60 @@ func (de DataEditor) updateNormalColForm(key tea.KeyMsg) (DataEditor, tea.Cmd) {
 	case "b", "esc":
 		de.saveColFormBack()
 		de.view = deViewColumns
+	}
+	return de, nil
+}
+
+func (de DataEditor) updateEntFormDropdown(key tea.KeyMsg) (DataEditor, tea.Cmd) {
+	if de.entFormIdx >= len(de.entForm) {
+		de.ddOpen = false
+		return de, nil
+	}
+	f := &de.entForm[de.entFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if de.ddOptIdx < len(f.Options)-1 {
+			de.ddOptIdx++
+		}
+	case "k", "up":
+		if de.ddOptIdx > 0 {
+			de.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = de.ddOptIdx
+		if de.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[de.ddOptIdx]
+		}
+		de.ddOpen = false
+	case "esc", "b":
+		de.ddOpen = false
+	}
+	return de, nil
+}
+
+func (de DataEditor) updateColFormDropdown(key tea.KeyMsg) (DataEditor, tea.Cmd) {
+	if de.colFormIdx >= len(de.colForm) {
+		de.ddOpen = false
+		return de, nil
+	}
+	f := &de.colForm[de.colFormIdx]
+	switch key.String() {
+	case "j", "down":
+		if de.ddOptIdx < len(f.Options)-1 {
+			de.ddOptIdx++
+		}
+	case "k", "up":
+		if de.ddOptIdx > 0 {
+			de.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = de.ddOptIdx
+		if de.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[de.ddOptIdx]
+		}
+		de.ddOpen = false
+	case "esc", "b":
+		de.ddOpen = false
 	}
 	return de, nil
 }
@@ -967,7 +1036,11 @@ func (de DataEditor) viewEntitySettings(w, h int) string {
 			} else {
 				val = StyleFieldVal.Render(val)
 			}
-			valStr = val + StyleSelectArrow.Render(" ▾")
+			if isCur && de.ddOpen {
+				valStr = val + StyleSelectArrow.Render(" ▴")
+			} else {
+				valStr = val + StyleSelectArrow.Render(" ▾")
+			}
 		default:
 			dv := f.DisplayValue()
 			if len(dv) > valW {
@@ -991,6 +1064,27 @@ func (de DataEditor) viewEntitySettings(w, h int) string {
 			row = activeCurLineStyle().Render(row)
 		}
 		lines = append(lines, row)
+
+		// Inject dropdown options below the active KindSelect field
+		if isCur && de.ddOpen && !disabled && f.Kind == KindSelect {
+			const ddIndent = 4 + 14 + 3 // lineNumW + labelW + eqW
+			indent := strings.Repeat(" ", ddIndent)
+			for j, opt := range f.Options {
+				isHL := j == de.ddOptIdx
+				var optRow string
+				if isHL {
+					optRow = indent + StyleFieldValActive.Render("► "+opt)
+					rw := lipgloss.Width(optRow)
+					if rw < w {
+						optRow += strings.Repeat(" ", w-rw)
+					}
+					optRow = activeCurLineStyle().Render(optRow)
+				} else {
+					optRow = indent + StyleFieldVal.Render("  "+opt)
+				}
+				lines = append(lines, optRow)
+			}
+		}
 	}
 
 	return fillTildes(lines, h)
@@ -1148,7 +1242,11 @@ func (de DataEditor) viewColForm(w, h int) string {
 			} else {
 				val = StyleFieldVal.Render(val)
 			}
-			valStr = val + StyleSelectArrow.Render(" ▾")
+			if isCur && de.ddOpen {
+				valStr = val + StyleSelectArrow.Render(" ▴")
+			} else {
+				valStr = val + StyleSelectArrow.Render(" ▾")
+			}
 		default:
 			dv := f.DisplayValue()
 			if len(dv) > valW {
@@ -1172,6 +1270,27 @@ func (de DataEditor) viewColForm(w, h int) string {
 			row = activeCurLineStyle().Render(row)
 		}
 		lines = append(lines, row)
+
+		// Inject dropdown options below the active KindSelect field
+		if isCur && de.ddOpen && !disabled && f.Kind == KindSelect {
+			const ddIndent = 4 + 14 + 3 // lineNumW + labelW + eqW
+			indent := strings.Repeat(" ", ddIndent)
+			for j, opt := range f.Options {
+				isHL := j == de.ddOptIdx
+				var optRow string
+				if isHL {
+					optRow = indent + StyleFieldValActive.Render("► "+opt)
+					rw := lipgloss.Width(optRow)
+					if rw < w {
+						optRow += strings.Repeat(" ", w-rw)
+					}
+					optRow = activeCurLineStyle().Render(optRow)
+				} else {
+					optRow = indent + StyleFieldVal.Render("  "+opt)
+				}
+				lines = append(lines, optRow)
+			}
+		}
 	}
 
 	return fillTildes(lines, h)
