@@ -29,6 +29,9 @@ type TaskRunner struct {
 	maxRetries int
 	verbose    bool
 	logFn      func(string) // optional; nil falls back to os.Stderr
+	// baseModel is the tier-selected model for this task (empty = use agent as-is).
+	// When set, each retry attempt escalates through Haiku → Sonnet → Opus.
+	baseModel string
 }
 
 func (r *TaskRunner) log(format string, args ...interface{}) {
@@ -58,7 +61,9 @@ func (r *TaskRunner) writeDebugLog(attempt int, passed bool, output string) {
 }
 
 // Run executes the task, retrying up to maxRetries times on verification failure.
-// On each retry, the previous verification output is fed back to the agent.
+// On each retry the previous verification output is fed back to the agent.
+// When baseModel is set, each attempt escalates through Haiku → Sonnet → Opus.
+// Before any LLM retry, a deterministic pre-fix pass is attempted on the failed files.
 func (r *TaskRunner) Run(ctx context.Context) error {
 	var lastVerifyOutput string
 
@@ -67,14 +72,20 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			r.log("[%s] retry %d/%d", r.task.ID, attempt, r.maxRetries)
 		}
 
+		// Resolve agent for this attempt: escalate model tier on retries when
+		// a baseModel is set (i.e. when using the default Claude agent, not a
+		// per-section manifest override which may be a different provider).
+		a := r.agentForAttempt(attempt)
+
 		ac := &agent.Context{
 			Task:              r.task,
 			SkillDocs:         r.skillDocs,
 			PreviousErrors:    lastVerifyOutput,
 			DependencyOutputs: r.memory.DepsOf(r.task),
+			AttemptNumber:     attempt,
 		}
 
-		result, err := r.agent.Run(ctx, ac)
+		result, err := a.Run(ctx, ac)
 		if err != nil {
 			if attempt == r.maxRetries {
 				return fmt.Errorf("task %s: agent failed after %d attempts: %w", r.task.ID, attempt+1, err)
@@ -131,10 +142,56 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			return nil
 		}
 
+		// Before consuming a retry slot, try deterministic fixes (e.g. gofmt,
+		// unused imports). If a fix succeeds and passes verification, we save
+		// the full LLM retry cost.
+		if attempt < r.maxRetries {
+			if fixed, fixedFiles := verify.TryFix(result.Files, vResult.Output); fixed {
+				r.log("[%s] applying deterministic fixes before retry", r.task.ID)
+				if err := r.writer.WriteAllTo(tmpDir, fixedFiles); err == nil {
+					fixResult, ferr := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(fixedFiles))
+					if ferr == nil && fixResult.Passed {
+						r.log("[%s] deterministic fix resolved verification — skipping LLM retry", r.task.ID)
+						if err := r.writer.Commit(tmpDir, fixedFiles); err != nil {
+							return fmt.Errorf("task %s: commit fixed files: %w", r.task.ID, err)
+						}
+						_ = os.RemoveAll(tmpDir)
+						r.memory.Record(r.task, fixedFiles)
+						if err := r.state.MarkCompleted(r.task.ID); err != nil {
+							r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
+						}
+						r.log("[%s] done (%d files, deterministic fix)", r.task.ID, len(fixedFiles))
+						return nil
+					}
+					// Fix applied but still failing — use the post-fix errors for the LLM retry.
+					if ferr == nil {
+						vResult = fixResult
+					}
+				}
+			}
+		}
+
 		lastVerifyOutput = vResult.Output
 	}
 
 	return fmt.Errorf("task %s: exhausted %d retry attempts", r.task.ID, r.maxRetries)
+}
+
+// agentForAttempt returns the agent to use for a given attempt number.
+// When baseModel is set (default Claude agent path), the model escalates on
+// retry: Haiku → Sonnet → Opus. Per-section manifest overrides are not escalated.
+func (r *TaskRunner) agentForAttempt(attempt int) agent.Agent {
+	if r.baseModel == "" {
+		return r.agent
+	}
+	model := escalateModel(r.baseModel, attempt)
+	if model == r.baseModel && attempt == 0 {
+		return r.agent
+	}
+	if r.verbose && attempt > 0 && model != r.baseModel {
+		r.log("[%s] escalating model to %s for attempt %d", r.task.ID, model, attempt)
+	}
+	return agent.NewClaudeAgent(model, defaultMaxTokens, r.verbose)
 }
 
 // isRateLimitError reports whether err is an API 429 rate-limit response.

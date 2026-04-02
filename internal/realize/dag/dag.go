@@ -6,12 +6,21 @@ import "fmt"
 type TaskKind string
 
 const (
-	TaskKindDataSchemas     TaskKind = "data.schemas"
-	TaskKindDataMigrations  TaskKind = "data.migrations"
-	TaskKindService         TaskKind = "backend.service"
-	TaskKindAuth            TaskKind = "backend.auth"
-	TaskKindMessaging       TaskKind = "backend.messaging"
-	TaskKindGateway         TaskKind = "backend.gateway"
+	TaskKindDataSchemas    TaskKind = "data.schemas"
+	TaskKindDataMigrations TaskKind = "data.migrations"
+
+	// Service tasks are split into four focused layers so each agent call
+	// produces a small, independently-verifiable unit of code rather than
+	// an entire multi-thousand-line codebase in one shot.
+	TaskKindServiceRepository TaskKind = "backend.service.repository" // data-access layer
+	TaskKindServiceLogic      TaskKind = "backend.service.logic"      // business logic layer
+	TaskKindServiceHandler    TaskKind = "backend.service.handler"    // HTTP handlers + routing
+	TaskKindServiceBootstrap  TaskKind = "backend.service.bootstrap"  // main.go, go.mod, config
+
+	TaskKindAuth     TaskKind = "backend.auth"
+	TaskKindMessaging TaskKind = "backend.messaging"
+	TaskKindGateway  TaskKind = "backend.gateway"
+
 	TaskKindContracts       TaskKind = "contracts"
 	TaskKindFrontend        TaskKind = "frontend"
 	TaskKindInfraDocker     TaskKind = "infra.docker"

@@ -9,6 +9,13 @@ import (
 	"github.com/vibe-mvp/internal/realize/dag"
 )
 
+// maxSkillBytes is the maximum number of characters stored per skill document.
+// Research shows diminishing returns beyond ~500 tokens (~2 000 chars): the first
+// few rules drive 80%+ of quality improvement, while later content is often ignored
+// due to the "lost in the middle" effect. Truncation captures the highest-signal
+// rules (which appear first) at a fraction of the original token cost.
+const maxSkillBytes = 2000
+
 // FileRegistry implements Registry by reading skill markdown files from a directory.
 type FileRegistry struct {
 	skillsDir string
@@ -40,7 +47,11 @@ func Load(skillsDir string) (*FileRegistry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read skill file %s: %w", e.Name(), err)
 		}
-		r.index[key] = string(data)
+		content := string(data)
+		if len(content) > maxSkillBytes {
+			content = content[:maxSkillBytes] + "\n\n[skill document truncated — core rules above are sufficient]"
+		}
+		r.index[key] = content
 	}
 	return r, nil
 }

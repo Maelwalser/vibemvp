@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	defaultModel     = "claude-opus-4-6"
-	defaultMaxTokens = int64(32000)
+	defaultModel     = "claude-sonnet-4-6"
+	defaultMaxTokens = int64(64000)
 )
 
 // Config holds all runtime configuration for the orchestrator.
@@ -169,6 +169,16 @@ func (o *Orchestrator) runWave(
 			// Resolve per-section agent if a provider assignment exists.
 			a := resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
 
+			// When using the default Claude agent, select a model tier based on
+			// task kind (Haiku/Sonnet/Opus) and enable escalation on retries.
+			// Per-section manifest overrides bypass tiering entirely.
+			var baseModel string
+			if a == defaultAgent {
+				baseModel = tierForKind(task.Kind)
+				// Rebuild the default agent with the tier-appropriate model.
+				a = agent.NewClaudeAgent(baseModel, defaultMaxTokens, o.cfg.Verbose)
+			}
+
 			runner := &TaskRunner{
 				task:       task,
 				agent:      a,
@@ -180,6 +190,7 @@ func (o *Orchestrator) runWave(
 				maxRetries: o.cfg.MaxRetries,
 				verbose:    o.cfg.Verbose,
 				logFn:      o.cfg.LogFunc,
+				baseModel:  baseModel,
 			}
 			return runner.Run(gctx)
 		})
@@ -226,13 +237,13 @@ func providerFor(taskID string, providers manifest.ProviderAssignments) (manifes
 	return pa, ok
 }
 
-// describeProvider returns a human-readable model label for dry-run output,
-// e.g. "Claude Opus 4.6" or "Gemini Flash 2.0". Falls back to "default" when
-// the section has no configured provider.
-func describeProvider(taskID string, providers manifest.ProviderAssignments) string {
+// describeProvider returns a human-readable model label for dry-run output.
+// For manifest-configured providers it shows the provider name/tier; for
+// default-agent tasks it shows the tier-selected model.
+func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind) string {
 	pa, ok := providerFor(taskID, providers)
 	if !ok || pa.Credential == "" {
-		return "default (" + defaultModel + ")"
+		return tierForKind(kind)
 	}
 	s := pa.Provider
 	if pa.Model != "" {
@@ -253,7 +264,7 @@ func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignme
 		fmt.Printf("Wave %d:\n", i)
 		for _, id := range wave {
 			task := d.Tasks[id]
-			model := describeProvider(id, providers)
+			model := describeProvider(id, providers, task.Kind)
 			fmt.Printf("  [%s] %s  →  %s\n", task.Kind, task.Label, model)
 			if len(task.Dependencies) > 0 {
 				fmt.Printf("    deps: %v\n", task.Dependencies)
@@ -324,7 +335,7 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 func technologiesFor(task *dag.Task) []string {
 	techs := make([]string, 0, 8)
 
-	// Service language + framework.
+	// Service layer tasks and legacy service tasks: use Service or AllServices.
 	if task.Payload.Service != nil {
 		techs = append(techs, task.Payload.Service.Language, task.Payload.Service.Framework)
 	} else if len(task.Payload.AllServices) > 0 {

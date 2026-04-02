@@ -84,7 +84,7 @@ func TestSharedMemory_RecordAndDepsOf(t *testing.T) {
 	}
 	taskB := &dag.Task{
 		ID:           "backend.service.api",
-		Kind:         dag.TaskKindService,
+		Kind:         dag.TaskKindServiceHandler,
 		Label:        "API service",
 		Dependencies: []string{"data.schemas"},
 	}
@@ -111,7 +111,7 @@ func TestSharedMemory_MissingDepIsSkipped(t *testing.T) {
 
 	task := &dag.Task{
 		ID:           "backend.service.api",
-		Kind:         dag.TaskKindService,
+		Kind:         dag.TaskKindServiceLogic,
 		Label:        "API service",
 		Dependencies: []string{"data.schemas", "nonexistent"},
 	}

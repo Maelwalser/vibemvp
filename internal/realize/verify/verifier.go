@@ -65,16 +65,18 @@ func (r *Registry) ForTask(task *dag.Task) Verifier {
 // taskLanguage extracts the primary language from a task payload.
 func taskLanguage(task *dag.Task) string {
 	switch task.Kind {
-	case dag.TaskKindService:
+	case dag.TaskKindServiceRepository,
+		dag.TaskKindServiceLogic,
+		dag.TaskKindServiceHandler,
+		dag.TaskKindServiceBootstrap:
 		if task.Payload.Service != nil {
 			return normalizeLanguage(task.Payload.Service.Language)
 		}
-		// Monolith: check all services, use first one.
 		if len(task.Payload.AllServices) > 0 {
 			return normalizeLanguage(task.Payload.AllServices[0].Language)
 		}
 	case dag.TaskKindDataSchemas, dag.TaskKindDataMigrations:
-		// Data tasks: language determined by primary service stack; use null.
+		// Data tasks: language determined by primary service stack; use null verifier.
 		return ""
 	case dag.TaskKindFrontend:
 		if task.Payload.Frontend != nil {

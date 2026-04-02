@@ -72,7 +72,10 @@ func (a *ClaudeAgent) Run(ctx context.Context, ac *Context) (*Result, error) {
 		Model:     anthropic.Model(a.model),
 		MaxTokens: a.maxTokens,
 		System: []anthropic.TextBlockParam{
-			{Text: systemPrompt},
+			// cache_control marks this block for Anthropic prompt caching.
+			// The system prompt is stable per task kind across all invocations,
+			// so cached tokens cost 10% of base input price (breakeven at 2 requests).
+			{Text: systemPrompt, CacheControl: anthropic.NewCacheControlEphemeralParam()},
 		},
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(userMsg)),
@@ -96,10 +99,21 @@ func (a *ClaudeAgent) Run(ctx context.Context, ac *Context) (*Result, error) {
 		OutputTokens: msg.Usage.OutputTokens,
 	}
 
+	// Log token usage immediately — before any early-return — so failures are
+	// always visible in verbose mode (truncation used to hide the output count).
+	if a.verbose {
+		cacheRead := msg.Usage.CacheReadInputTokens
+		cacheCreate := msg.Usage.CacheCreationInputTokens
+		if cacheRead > 0 || cacheCreate > 0 {
+			fmt.Printf("[%s] cache: read=%d create=%d\n", ac.Task.ID, cacheRead, cacheCreate)
+		}
+		fmt.Printf("[%s] tokens: in=%d out=%d\n", ac.Task.ID, result.PromptTokens, result.OutputTokens)
+	}
+
 	// Detect truncation before trying to parse — a max_tokens stop means the
 	// </files> closing tag was never written and parsing will always fail.
 	if msg.StopReason == anthropic.StopReasonMaxTokens {
-		return nil, fmt.Errorf("response truncated (max_tokens reached at %d output tokens); increase maxTokens or split the task", msg.Usage.OutputTokens)
+		return nil, fmt.Errorf("response truncated (max_tokens=%d reached; out=%d tokens); task may be too large to fit in one generation", a.maxTokens, msg.Usage.OutputTokens)
 	}
 
 	// Extract text and thinking content.
@@ -117,9 +131,6 @@ func (a *ClaudeAgent) Run(ctx context.Context, ac *Context) (*Result, error) {
 
 	if a.verbose && result.ThinkingLog != "" {
 		fmt.Printf("[%s] thinking: %s\n", ac.Task.ID, result.ThinkingLog)
-	}
-	if a.verbose {
-		fmt.Printf("[%s] tokens: in=%d out=%d\n", ac.Task.ID, result.PromptTokens, result.OutputTokens)
 	}
 
 	files, err := parseFilesBlock(fullText.String())

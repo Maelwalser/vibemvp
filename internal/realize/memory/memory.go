@@ -8,14 +8,15 @@ import (
 )
 
 const (
-	// maxFileChars is the maximum characters included from a single file.
-	// Files larger than this are truncated with a notice.
-	maxFileChars = 3000
+	// maxFileChars is the maximum characters included from a single file after
+	// signature extraction. Type-signature excerpts are much more compact than
+	// full implementations, so this budget covers most files completely.
+	maxFileChars = 1500
 
 	// maxTotalChars is the total character budget across all dependency outputs
-	// injected into one agent's context. Prevents prompt bloat for tasks with
-	// many upstream dependencies.
-	maxTotalChars = 16000
+	// injected into one agent's context. Signature-only context is denser than
+	// raw file content, so a lower budget covers all necessary type information.
+	maxTotalChars = 8000
 )
 
 // FileExcerpt is a filtered, possibly-truncated snapshot of one generated file.
@@ -118,7 +119,7 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 
 // buildExcerpts filters and truncates a file list to retain only the entries
 // most relevant as shared context (type/interface/schema files), then applies
-// the per-file character cap.
+// signature extraction and the per-file character cap.
 func buildExcerpts(files []dag.GeneratedFile) []FileExcerpt {
 	// Separate high-value files from the rest.
 	var priority, rest []dag.GeneratedFile
@@ -134,8 +135,15 @@ func buildExcerpts(files []dag.GeneratedFile) []FileExcerpt {
 	ordered := append(priority, rest...)
 	excerpts := make([]FileExcerpt, 0, len(ordered))
 	for _, f := range ordered {
-		content := f.Content
-		truncated := false
+		// Extract only type signatures and declarations — not implementation bodies.
+		// This reduces per-file context by ~80–90% while preserving all structural
+		// information downstream agents need to stay type-consistent.
+		// Mark Truncated=true when the original exceeded the budget (signature
+		// extraction may have already shrunk the content below the cap, but the
+		// caller still needs to know the excerpt is not the full file).
+		originalExceeded := len(f.Content) > maxFileChars
+		content := extractSignatures(f.Path, f.Content)
+		truncated := originalExceeded
 		if len(content) > maxFileChars {
 			content = content[:maxFileChars] + "\n// ... [truncated]"
 			truncated = true

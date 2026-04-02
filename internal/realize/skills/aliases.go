@@ -86,9 +86,18 @@ var aliasMap = map[string]string{
 // regardless of which specific technologies appear in the manifest payload.
 // Add new task kinds or universal skills here without touching loader.go.
 var universalSkillsForKind = map[dag.TaskKind][]string{
-	// Backend service: quality patterns + security
-	dag.TaskKindService: {
-		"backend-patterns", "security-review", "coding-standards",
+	// Service layers: each has a focused skill set matching its responsibility.
+	dag.TaskKindServiceRepository: {
+		"backend-patterns", "coding-standards",
+	},
+	dag.TaskKindServiceLogic: {
+		"backend-patterns", "coding-standards",
+	},
+	dag.TaskKindServiceHandler: {
+		"backend-patterns", "security-review", "api-design", "coding-standards",
+	},
+	dag.TaskKindServiceBootstrap: {
+		"backend-patterns", "coding-standards",
 	},
 	// Auth: always security-first
 	dag.TaskKindAuth: {
