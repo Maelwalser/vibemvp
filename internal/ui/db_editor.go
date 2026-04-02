@@ -219,6 +219,11 @@ func (db DBEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (db DBEditor) Update(msg tea.Msg) (DBEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		db.width = wsz.Width
+		db.formInput.Width = wsz.Width - 22
+		return db, nil
+	}
 	switch db.internalMode {
 	case dbeInsert:
 		return db.updateInsert(msg)
@@ -384,6 +389,7 @@ func (db *DBEditor) saveFormBack() {
 
 func (db DBEditor) View(w, h int) string {
 	db.width = w
+	db.formInput.Width = w - 22
 	switch db.view {
 	case dbeViewList:
 		return db.viewList(w, h)
@@ -400,8 +406,10 @@ func (db DBEditor) viewList(w, h int) string {
 		"",
 	)
 
+	const dbListHeaderH = 2
+	var itemLines []string
 	if len(db.Sources) == 0 {
-		lines = append(lines, StyleSectionDesc.Render("  (no databases yet — press 'a' to add one)"))
+		itemLines = append(itemLines, StyleSectionDesc.Render("  (no databases yet — press 'a' to add one)"))
 	} else {
 		for i, src := range db.Sources {
 			isCur := i == db.srcIdx
@@ -445,10 +453,12 @@ func (db DBEditor) viewList(w, h int) string {
 				}
 				row = activeCurLineStyle().Render(row)
 			}
-			lines = append(lines, row)
+			itemLines = append(itemLines, row)
 		}
 	}
 
+	itemLines = viewportSlice(itemLines, db.srcIdx, h-dbListHeaderH)
+	lines = append(lines, itemLines...)
 	return fillTildes(lines, h)
 }
 

@@ -551,6 +551,11 @@ func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.C
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		ce.width = wsz.Width
+		ce.formInput.Width = wsz.Width - 22
+		return ce, nil
+	}
 	if ce.internalMode == ceInsert {
 		return ce.updateInsert(msg)
 	}
@@ -1345,23 +1350,37 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 
 func (ce ContractsEditor) View(w, h int) string {
 	ce.width = w
+	ce.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Contracts — DTOs, endpoints, and API versioning"),
 		"",
-		renderSubTabBar(contractsTabLabels, int(ce.activeTab)),
+		renderSubTabBar(contractsTabLabels, int(ce.activeTab), w),
 		"",
 	)
+	const ceHeaderH = 4
 
 	switch ce.activeTab {
 	case contractsTabDTOs:
-		lines = append(lines, ce.viewDTOs(w)...)
+		dtoLines := ce.viewDTOs(w)
+		if ce.dtoSubView == ceViewList {
+			dtoLines = appendViewport(dtoLines, 2, ce.dtoIdx, h-ceHeaderH)
+		}
+		lines = append(lines, dtoLines...)
 	case contractsTabEndpoints:
-		lines = append(lines, ce.viewEndpoints(w)...)
+		epLines := ce.viewEndpoints(w)
+		if ce.epSubView == ceViewList {
+			epLines = appendViewport(epLines, 2, ce.epIdx, h-ceHeaderH)
+		}
+		lines = append(lines, epLines...)
 	case contractsTabVersioning:
 		lines = append(lines, ce.viewVersioning(w)...)
 	case contractsTabExternal:
-		lines = append(lines, ce.viewExternal(w)...)
+		extLines := ce.viewExternal(w)
+		if ce.extSubView == ceViewList {
+			extLines = appendViewport(extLines, 2, ce.extIdx, h-ceHeaderH)
+		}
+		lines = append(lines, extLines...)
 	}
 
 	return fillTildes(lines, h)

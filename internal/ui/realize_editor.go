@@ -23,6 +23,26 @@ const (
 
 // ── field definitions ─────────────────────────────────────────────────────────
 
+// providerTierOrder lists the tiers for each provider in display order.
+// Used to build per-section model option lists from the configured providers.
+var providerTierOrder = map[string][]string{
+	"Claude":  {"Haiku", "Sonnet", "Opus"},
+	"ChatGPT": {"Mini", "4o", "o1"},
+	"Gemini":  {"Flash", "Pro", "Ultra"},
+	"Mistral": {"Nemo", "Small", "Large"},
+	"Llama":   {"8B", "70B", "405B"},
+	"Custom":  {"Custom"},
+}
+
+// providerOrder is the canonical display order for providers.
+var providerOrder = []string{"Claude", "ChatGPT", "Gemini", "Mistral", "Llama", "Custom"}
+
+// sectionModelKeys are the field keys for the per-section model overrides.
+var sectionModelKeys = []string{
+	"backend_model", "data_model", "contracts_model",
+	"frontend_model", "infra_model", "crosscut_model",
+}
+
 func defaultRealizeFields() []Field {
 	return []Field{
 		{
@@ -57,6 +77,31 @@ func defaultRealizeFields() []Field {
 			Options: []string{"false", "true"},
 			Value:   "false",
 		},
+		// Per-section model overrides (options populated dynamically via UpdateProviderOptions)
+		{
+			Key: "backend_model", Label: "backend_model ", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
+		{
+			Key: "data_model", Label: "data_model    ", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
+		{
+			Key: "contracts_model", Label: "contracts_mdl ", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
+		{
+			Key: "frontend_model", Label: "frontend_model", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
+		{
+			Key: "infra_model", Label: "infra_model   ", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
+		{
+			Key: "crosscut_model", Label: "crosscut_model", Kind: KindSelect,
+			Options: []string{"default"}, Value: "default",
+		},
 	}
 }
 
@@ -80,6 +125,57 @@ func newRealizeEditor() RealizeEditor {
 	}
 }
 
+// ── Provider options sync ─────────────────────────────────────────────────────
+
+// UpdateProviderOptions rebuilds the per-section model field options from the
+// currently configured providers. Options are formatted as "Provider · Tier"
+// (e.g. "Claude · Sonnet", "Gemini · Flash"). Any section field whose current
+// value is no longer in the new option list is reset to "default".
+func (r RealizeEditor) UpdateProviderOptions(configured map[string]ProviderSelection) RealizeEditor {
+	options := []string{"default"}
+	for _, provLabel := range providerOrder {
+		sel, ok := configured[provLabel]
+		if !ok || !sel.IsSet() {
+			continue
+		}
+		for _, tier := range providerTierOrder[provLabel] {
+			options = append(options, provLabel+" · "+tier)
+		}
+	}
+
+	for i := range r.fields {
+		f := &r.fields[i]
+		if !isSectionModelKey(f.Key) {
+			continue
+		}
+		f.Options = options
+		// Keep value if still valid, else reset to default.
+		valid := false
+		for j, o := range options {
+			if o == f.Value {
+				f.SelIdx = j
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			f.Value = "default"
+			f.SelIdx = 0
+		}
+	}
+	return r
+}
+
+// isSectionModelKey reports whether key is one of the per-section model fields.
+func isSectionModelKey(key string) bool {
+	for _, k := range sectionModelKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
 // ── ToManifest ────────────────────────────────────────────────────────────────
 
 func (r RealizeEditor) ToManifestRealizeOptions() manifest.RealizeOptions {
@@ -94,13 +190,29 @@ func (r RealizeEditor) ToManifestRealizeOptions() manifest.RealizeOptions {
 	case "8":
 		concurrency = 8
 	}
+
+	// Collect non-default section model overrides.
+	sectionKeys := []string{"backend_model", "data_model", "contracts_model", "frontend_model", "infra_model", "crosscut_model"}
+	sectionIDs := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
+	var sectionModels map[string]string
+	for i, key := range sectionKeys {
+		val := fieldGet(r.fields, key)
+		if val != "" && val != "default" {
+			if sectionModels == nil {
+				sectionModels = make(map[string]string)
+			}
+			sectionModels[sectionIDs[i]] = val
+		}
+	}
+
 	return manifest.RealizeOptions{
-		AppName:     fieldGet(r.fields, "app_name"),
-		OutputDir:   fieldGet(r.fields, "output_dir"),
-		Model:       fieldGet(r.fields, "model"),
-		Concurrency: concurrency,
-		Verify:      fieldGet(r.fields, "verify") == "true",
-		DryRun:      fieldGet(r.fields, "dry_run") == "true",
+		AppName:       fieldGet(r.fields, "app_name"),
+		OutputDir:     fieldGet(r.fields, "output_dir"),
+		Model:         fieldGet(r.fields, "model"),
+		Concurrency:   concurrency,
+		Verify:        fieldGet(r.fields, "verify") == "true",
+		DryRun:        fieldGet(r.fields, "dry_run") == "true",
+		SectionModels: sectionModels,
 	}
 }
 
@@ -124,6 +236,11 @@ func (r RealizeEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		r.width = wsz.Width
+		r.formInput.Width = wsz.Width - 22
+		return r, nil
+	}
 	if r.mode == realizeInsert {
 		return r.updateInsert(msg)
 	}
@@ -259,13 +376,31 @@ var (
 
 func (r RealizeEditor) View(w, h int) string {
 	r.width = w
+	r.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Realization — configure output directory, app name, and agent options"),
 		"",
 	)
-	lines = append(lines, renderFormFields(w, r.fields, r.activeIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
+
+	// Split fields into two groups: base options (first 6) and section models (rest).
+	baseFields := r.fields
+	var sectionFields []Field
+	if len(r.fields) > 6 {
+		baseFields = r.fields[:6]
+		sectionFields = r.fields[6:]
+	}
+
+	lines = append(lines, renderFormFields(w, baseFields, r.activeIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
 	lines = append(lines, "")
+
+	if len(sectionFields) > 0 {
+		lines = append(lines, StyleSectionDesc.Render("  # Section model overrides — set per-pillar model (default = use global model above)"))
+		lines = append(lines, "")
+		adjIdx := r.activeIdx - 6 // adjust active index for the section fields group
+		lines = append(lines, renderFormFields(w, sectionFields, adjIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
+		lines = append(lines, "")
+	}
 
 	// Start button row
 	btn := styleRealizeBtn.Render(" R  Start Realization ")

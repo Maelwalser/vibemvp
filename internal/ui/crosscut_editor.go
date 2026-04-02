@@ -298,6 +298,11 @@ func (cc CrossCutEditor) updateCCDropdown(key tea.KeyMsg) (CrossCutEditor, tea.C
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (cc CrossCutEditor) Update(msg tea.Msg) (CrossCutEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		cc.width = wsz.Width
+		cc.formInput.Width = wsz.Width - 22
+		return cc, nil
+	}
 	if cc.internalMode == ccInsert {
 		return cc.updateInsert(msg)
 	}
@@ -487,11 +492,12 @@ func (cc CrossCutEditor) tryEnterInsert() (CrossCutEditor, tea.Cmd) {
 
 func (cc CrossCutEditor) View(w, h int) string {
 	cc.width = w
+	cc.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Cross-Cutting Concerns — testing strategy and documentation"),
 		"",
-		renderSubTabBar(ccTabLabels, int(cc.activeTab)),
+		renderSubTabBar(ccTabLabels, int(cc.activeTab), w),
 		"",
 	)
 

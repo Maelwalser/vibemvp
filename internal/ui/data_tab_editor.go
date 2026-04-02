@@ -597,6 +597,12 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		dt.width = wsz.Width
+		dt.formInput.Width = wsz.Width - 22
+		return dt, nil
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 
 	// Insert mode is handled globally for all sub-tabs except db
@@ -1383,13 +1389,14 @@ func (dt DataTabEditor) updateFSForm(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 
 func (dt DataTabEditor) View(w, h int) string {
 	dt.width = w
+	dt.formInput.Width = w - 22
 	var lines []string
 
 	// Header + sub-tab bar
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Data — databases, domains, caching, and file storage"),
 		"",
-		renderSubTabBar(dataTabLabels, int(dt.activeTab)),
+		renderSubTabBar(dataTabLabels, int(dt.activeTab), w),
 		"",
 	)
 
@@ -1407,6 +1414,9 @@ func (dt DataTabEditor) View(w, h int) string {
 		return strings.Join(lines, "\n") + "\n" + raw
 	case dataTabDomains:
 		contentLines = dt.viewDomains(w)
+		if dt.domainSubView == domainViewList {
+			contentLines = appendViewport(contentLines, 2, dt.domainIdx, contentH)
+		}
 	case dataTabCaching:
 		contentLines = dt.viewCaching(w)
 	case dataTabFileStorage:

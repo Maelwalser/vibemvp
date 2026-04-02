@@ -143,18 +143,54 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 	return lines
 }
 
-// renderSubTabBar renders a horizontal sub-tab bar and returns the string.
-func renderSubTabBar(labels []string, active int) string {
+// renderSubTabBar renders a horizontal sub-tab bar scaled to fit within w columns.
+// Three levels of fidelity:
+//  1. Full labels — all tabs with their text labels.
+//  2. Compact — active tab keeps its label; others shrink to their 1-based index.
+//  3. Minimal — "[N/total] LABEL" single-item indicator.
+func renderSubTabBar(labels []string, active, w int) string {
 	sep := StyleTabSep.Render("│")
-	var parts []string
-	for i, lbl := range labels {
+
+	build := func(lbls []string) string {
+		var parts []string
+		for i, lbl := range lbls {
+			if i == active {
+				parts = append(parts, StyleTabActive.Render(" "+lbl+" "))
+			} else {
+				parts = append(parts, StyleTabInactive.Render(" "+lbl+" "))
+			}
+		}
+		return "  " + strings.Join(parts, sep)
+	}
+
+	// Level 1: full labels.
+	result := build(labels)
+	if w <= 0 || lipgloss.Width(result) <= w {
+		return result
+	}
+
+	// Level 2: active tab shows label, others collapse to index number.
+	compact := make([]string, len(labels))
+	for i := range labels {
 		if i == active {
-			parts = append(parts, StyleTabActive.Render(" "+lbl+" "))
+			compact[i] = labels[i]
 		} else {
-			parts = append(parts, StyleTabInactive.Render(" "+lbl+" "))
+			compact[i] = fmt.Sprintf("%d", i+1)
 		}
 	}
-	return "  " + strings.Join(parts, sep)
+	result = build(compact)
+	if lipgloss.Width(result) <= w {
+		return result
+	}
+
+	// Level 3: single "[N/total] LABEL" indicator — always fits.
+	pos := fmt.Sprintf("[%d/%d]", active+1, len(labels))
+	lbl := labels[active]
+	maxLblW := w - lipgloss.Width("  "+pos+" ") - 4
+	if maxLblW > 0 && len([]rune(lbl)) > maxLblW {
+		lbl = string([]rune(lbl)[:maxLblW-1]) + "…"
+	}
+	return "  " + StyleTabInactive.Render(" "+pos+" ") + StyleTabActive.Render(" "+lbl+" ")
 }
 
 // renderListItem renders one row in a list view.
@@ -169,7 +205,13 @@ func renderListItem(w int, isCur bool, arrow, name, extra string) string {
 	}
 	row := arrowStr + nameStr
 	if extra != "" {
-		row += StyleSectionDesc.Render("  "+extra)
+		row += StyleSectionDesc.Render("  " + extra)
+	}
+	// Truncate row to terminal width to prevent horizontal overflow.
+	if w > 0 {
+		if rw := lipgloss.Width(row); rw > w {
+			row = lipgloss.NewStyle().MaxWidth(w).Render(row)
+		}
 	}
 	if isCur {
 		raw := lipgloss.Width(row)
@@ -309,6 +351,54 @@ func placeOverlay(bg, fg string, x, y int) string {
 	}
 
 	return strings.Join(bgLines, "\n")
+}
+
+// appendViewport applies a scrolling viewport to a list-with-header layout.
+// It preserves the first headerH lines unchanged and applies viewportSlice to
+// the remaining item lines, keeping the item at itemIdx visible within the
+// available height. Returns the combined fixed+scrolled slice.
+func appendViewport(lines []string, headerH, itemIdx, available int) []string {
+	if available <= 0 || len(lines) <= available {
+		return lines
+	}
+	if headerH > len(lines) {
+		headerH = len(lines)
+	}
+	header := lines[:headerH]
+	items := viewportSlice(lines[headerH:], itemIdx, available-headerH)
+	result := make([]string, 0, len(header)+len(items))
+	result = append(result, header...)
+	result = append(result, items...)
+	return result
+}
+
+// viewportSlice returns a height-bounded window of lines keeping activeLine visible.
+// The active line is kept roughly centered. Returns lines unchanged if height <= 0
+// or len(lines) <= height.
+func viewportSlice(lines []string, activeLine, height int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	if activeLine < 0 {
+		activeLine = 0
+	}
+	if activeLine >= len(lines) {
+		activeLine = len(lines) - 1
+	}
+	half := height / 2
+	start := activeLine - half
+	if start < 0 {
+		start = 0
+	}
+	end := start + height
+	if end > len(lines) {
+		end = len(lines)
+		start = end - height
+		if start < 0 {
+			start = 0
+		}
+	}
+	return lines[start:end]
 }
 
 // stripANSI removes ANSI CSI escape sequences from s, returning plain text.

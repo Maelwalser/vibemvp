@@ -16,19 +16,11 @@ import (
 type pmFocus int
 
 const (
-	pmFocusSections pmFocus = iota
-	pmFocusProviders
+	pmFocusProviders pmFocus = iota
 	pmFocusModels
 	pmFocusAuth
 	pmFocusCredential // API key / OAuth token input step
 )
-
-// sectionEntry is a tab section that can be assigned a provider.
-type sectionEntry struct {
-	id    string
-	label string
-	badge string // 1-char abbreviation shown in tab bar
-}
 
 // ProviderSelection holds a confirmed provider/model/auth/credential quad.
 type ProviderSelection struct {
@@ -44,7 +36,7 @@ func (p ProviderSelection) IsSet() bool {
 	return p.Provider != "" && p.Model != "" && p.Auth != "" && p.Credential != ""
 }
 
-// Short returns a compact display string like "Claude Sonnet 4.5 / API Key".
+// Short returns a compact display string like "Claude · Sonnet 4.5".
 func (p ProviderSelection) Short() string {
 	if !p.IsSet() {
 		return ""
@@ -70,13 +62,13 @@ type providerEntry struct {
 	authMethods []string
 }
 
-// ProviderMenu is the centered modal for picking section → provider → model version → auth → credential.
-// It carries no integration logic — UI only.
+// ProviderMenu is the centered modal for configuring multiple providers.
+// Each provider (Claude, Gemini, etc.) can be independently configured with
+// its own model tier, auth method, and credential. The resulting registry is
+// used by the realize tab for per-section model assignment.
 type ProviderMenu struct {
-	// Section column
-	sectionList   []sectionEntry
-	sectionCursor int
-	assignments   map[int]ProviderSelection // sectionList index → confirmed selection
+	// Confirmed provider configurations, keyed by provider label.
+	configured map[string]ProviderSelection
 
 	// Provider/model/auth columns
 	providers       []providerEntry
@@ -86,10 +78,10 @@ type ProviderMenu struct {
 	focus           pmFocus // column that owns input
 	dropdownOpen    bool    // version dropdown visible
 	versionCursor   int     // hovered row inside the dropdown
-	selectedProv    int     // -1 = none confirmed (for current section)
-	selectedModel   int     // -1 = none confirmed (index in models slice)
-	selectedVersion int     // -1 = none confirmed (index in tier.versions)
-	selectedAuth    int     // -1 = none confirmed
+	selectedProv    int     // provider currently being edited (-1 = none)
+	selectedModel   int     // -1 = none confirmed in current edit
+	selectedVersion int     // -1 = none confirmed in current edit
+	selectedAuth    int     // -1 = none confirmed in current edit
 
 	// Credential input step
 	credInput textinput.Model
@@ -103,17 +95,8 @@ func newProviderMenu() ProviderMenu {
 	ci.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 
 	pm := ProviderMenu{
-		credInput:   ci,
-		sectionList: []sectionEntry{
-			{id: "backend", label: "Backend", badge: "B"},
-			{id: "data", label: "Data", badge: "D"},
-			{id: "contracts", label: "Contracts", badge: "C"},
-			{id: "frontend", label: "Frontend", badge: "F"},
-			{id: "infrastructure", label: "Infra", badge: "I"},
-			{id: "crosscut", label: "CrossCut", badge: "X"},
-			{id: "realize", label: "Realize", badge: "R"},
-		},
-		assignments: make(map[int]ProviderSelection),
+		configured: make(map[string]ProviderSelection),
+		credInput:  ci,
 		providers: []providerEntry{
 			{
 				label: "Claude",
@@ -176,32 +159,26 @@ func newProviderMenu() ProviderMenu {
 	return pm
 }
 
-// SectionAssignment returns the confirmed ProviderSelection for the given section ID,
-// and whether one exists.
-func (p ProviderMenu) SectionAssignment(sectionID string) (ProviderSelection, bool) {
-	for i, s := range p.sectionList {
-		if s.id == sectionID {
-			sel, ok := p.assignments[i]
-			return sel, ok && sel.IsSet()
-		}
-	}
-	return ProviderSelection{}, false
+// GetConfiguredProviders returns all confirmed provider selections.
+func (p ProviderMenu) GetConfiguredProviders() map[string]ProviderSelection {
+	return p.configured
 }
 
-// ToManifestProviderAssignments converts all confirmed assignments to manifest types.
-func (p ProviderMenu) ToManifestProviderAssignments() manifest.ProviderAssignments {
-	result := make(manifest.ProviderAssignments)
-	for i, s := range p.sectionList {
-		sel, ok := p.assignments[i]
-		if !ok || !sel.IsSet() {
-			continue
-		}
-		result[s.id] = manifest.ProviderAssignment{
-			Provider:   sel.Provider,
-			Model:      sel.Model,
-			Version:    sel.Version,
-			Auth:       sel.Auth,
-			Credential: sel.Credential,
+// ToManifestConfiguredProviders converts all confirmed configurations to manifest types.
+func (p ProviderMenu) ToManifestConfiguredProviders() manifest.ProviderAssignments {
+	if len(p.configured) == 0 {
+		return nil
+	}
+	result := make(manifest.ProviderAssignments, len(p.configured))
+	for label, sel := range p.configured {
+		if sel.IsSet() {
+			result[label] = manifest.ProviderAssignment{
+				Provider:   sel.Provider,
+				Model:      sel.Model,
+				Version:    sel.Version,
+				Auth:       sel.Auth,
+				Credential: sel.Credential,
+			}
 		}
 	}
 	if len(result) == 0 {
@@ -210,28 +187,18 @@ func (p ProviderMenu) ToManifestProviderAssignments() manifest.ProviderAssignmen
 	return result
 }
 
-// loadSectionState restores the provider/model/auth cursor positions from the
-// assignment saved for the currently selected section.
-func (p ProviderMenu) loadSectionState() ProviderMenu {
-	sel, ok := p.assignments[p.sectionCursor]
+// loadStateForProvider restores model/auth/version cursor positions from the
+// existing configuration for the given provider label (if any).
+func (p ProviderMenu) loadStateForProvider(label string) ProviderMenu {
+	sel, ok := p.configured[label]
 	if !ok || !sel.IsSet() {
-		p.selectedProv = -1
 		p.selectedModel = -1
 		p.selectedVersion = -1
 		p.selectedAuth = -1
-		p.cursor = 0
 		p.modelCursor = 0
 		p.authCursor = 0
+		p.credInput.SetValue("")
 		return p
-	}
-
-	// Restore provider cursor.
-	for i, prov := range p.providers {
-		if prov.label == sel.Provider {
-			p.cursor = i
-			p.selectedProv = i
-			break
-		}
 	}
 
 	// Restore model + version cursors.
@@ -243,6 +210,7 @@ func (p ProviderMenu) loadSectionState() ProviderMenu {
 				p.selectedModel = i
 				for j, v := range tier.versions {
 					if v == sel.Version {
+						p.versionCursor = j
 						p.selectedVersion = j
 						break
 					}
@@ -264,14 +232,11 @@ func (p ProviderMenu) loadSectionState() ProviderMenu {
 		}
 	}
 
-	// Restore credential input.
 	p.credInput.SetValue(sel.Credential)
-
 	return p
 }
 
-// confirmCurrentSelection saves the current provider/model/auth/credential choices as the
-// assignment for the active section, if all are confirmed.
+// confirmCurrentSelection saves the current editing state for the active provider.
 func (p ProviderMenu) confirmCurrentSelection() ProviderMenu {
 	if p.selectedProv < 0 || p.selectedModel < 0 || p.selectedVersion < 0 || p.selectedAuth < 0 {
 		return p
@@ -289,29 +254,30 @@ func (p ProviderMenu) confirmCurrentSelection() ProviderMenu {
 	}
 
 	// Copy map (immutable pattern).
-	newAssignments := make(map[int]ProviderSelection, len(p.assignments)+1)
-	for k, v := range p.assignments {
-		newAssignments[k] = v
+	newConfigured := make(map[string]ProviderSelection, len(p.configured)+1)
+	for k, v := range p.configured {
+		newConfigured[k] = v
 	}
-	newAssignments[p.sectionCursor] = sel
-	p.assignments = newAssignments
+	newConfigured[prov.label] = sel
+	p.configured = newConfigured
 	return p
 }
 
-// clearCurrentSection removes the assignment for the active section.
-func (p ProviderMenu) clearCurrentSection() ProviderMenu {
-	newAssignments := make(map[int]ProviderSelection, len(p.assignments))
-	for k, v := range p.assignments {
-		if k != p.sectionCursor {
-			newAssignments[k] = v
+// clearCurrentProvider removes the configuration for the currently hovered provider.
+func (p ProviderMenu) clearCurrentProvider() ProviderMenu {
+	provLabel := p.providers[p.cursor].label
+	newConfigured := make(map[string]ProviderSelection, len(p.configured))
+	for k, v := range p.configured {
+		if k != provLabel {
+			newConfigured[k] = v
 		}
 	}
-	p.assignments = newAssignments
+	p.configured = newConfigured
+	// Reset edit state
 	p.selectedProv = -1
 	p.selectedModel = -1
 	p.selectedVersion = -1
 	p.selectedAuth = -1
-	p.cursor = 0
 	p.modelCursor = 0
 	p.authCursor = 0
 	p.credInput.SetValue("")
@@ -352,7 +318,18 @@ func openBrowser(url string) {
 // enterCredentialStep prepares the credential input for the current auth method.
 func (p ProviderMenu) enterCredentialStep() (ProviderMenu, tea.Cmd) {
 	p.focus = pmFocusCredential
-	p.credInput.SetValue("")
+	// Pre-fill from existing config if available.
+	if p.selectedProv >= 0 {
+		provLabel := p.providers[p.selectedProv].label
+		if existing, ok := p.configured[provLabel]; ok && existing.Credential != "" {
+			p.credInput.SetValue(existing.Credential)
+		} else {
+			p.credInput.SetValue("")
+		}
+	} else {
+		p.credInput.SetValue("")
+	}
+
 	authMethod := ""
 	if p.selectedProv >= 0 && p.selectedAuth >= 0 {
 		authMethod = p.providers[p.selectedProv].authMethods[p.selectedAuth]
@@ -362,7 +339,6 @@ func (p ProviderMenu) enterCredentialStep() (ProviderMenu, tea.Cmd) {
 		p.credInput.EchoMode = textinput.EchoPassword
 		p.credInput.EchoCharacter = '•'
 	} else {
-		// OAuth: show instructions, treat as plain text token input
 		p.credInput.Placeholder = "paste token here"
 		p.credInput.EchoMode = textinput.EchoNormal
 	}
@@ -377,18 +353,15 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 		if ok {
 			switch key.String() {
 			case "enter":
-				// Confirm credential, save assignment, return to sections.
 				p = p.confirmCurrentSelection()
-				p.focus = pmFocusSections
+				p.focus = pmFocusProviders
 				p.credInput.Blur()
 				return p, nil
 			case "esc":
-				// Go back to auth column.
 				p.focus = pmFocusAuth
 				p.credInput.Blur()
 				return p, nil
 			case "ctrl+o":
-				// Open browser for the current provider.
 				if p.selectedProv >= 0 {
 					if u := oauthURL(p.providers[p.selectedProv].label); u != "" {
 						openBrowser(u)
@@ -417,11 +390,6 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 			if p.versionCursor < len(vers)-1 {
 				p.versionCursor++
 			}
-		case p.focus == pmFocusSections:
-			if p.sectionCursor < len(p.sectionList)-1 {
-				p.sectionCursor++
-				p = p.loadSectionState()
-			}
 		case p.focus == pmFocusProviders:
 			if p.cursor < len(p.providers)-1 {
 				p.cursor++
@@ -446,11 +414,6 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 			if p.versionCursor > 0 {
 				p.versionCursor--
 			}
-		case p.focus == pmFocusSections:
-			if p.sectionCursor > 0 {
-				p.sectionCursor--
-				p = p.loadSectionState()
-			}
 		case p.focus == pmFocusProviders:
 			if p.cursor > 0 {
 				p.cursor--
@@ -471,8 +434,6 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 	case "l", "tab":
 		if !p.dropdownOpen {
 			switch p.focus {
-			case pmFocusSections:
-				p.focus = pmFocusProviders
 			case pmFocusProviders:
 				p.focus = pmFocusModels
 			case pmFocusModels:
@@ -483,8 +444,6 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 	case "h", "shift+tab":
 		if !p.dropdownOpen {
 			switch p.focus {
-			case pmFocusProviders:
-				p.focus = pmFocusSections
 			case pmFocusModels:
 				p.focus = pmFocusProviders
 			case pmFocusAuth:
@@ -492,29 +451,28 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 			}
 		}
 
-	// ── Clear current section assignment ─────────────────────────────────────
+	// ── Clear current provider's configuration ────────────────────────────────
 	case "x":
-		if p.focus == pmFocusSections {
-			p = p.clearCurrentSection()
+		if p.focus == pmFocusProviders {
+			p = p.clearCurrentProvider()
 		}
 
 	// ── Confirm / open dropdown ───────────────────────────────────────────────
 	case "enter":
 		switch p.focus {
-		case pmFocusSections:
-			// Move focus to providers, loading existing state.
-			p = p.loadSectionState()
-			p.focus = pmFocusProviders
-
 		case pmFocusProviders:
+			// Start configuring the hovered provider; load existing config.
 			p.selectedProv = p.cursor
-			p.selectedModel, p.selectedVersion, p.selectedAuth = -1, -1, -1
-			p.focus = pmFocusModels
+			p.selectedModel = -1
+			p.selectedVersion = -1
+			p.selectedAuth = -1
 			p.modelCursor = 0
+			p.authCursor = 0
+			p = p.loadStateForProvider(p.providers[p.cursor].label)
+			p.focus = pmFocusModels
 
 		case pmFocusModels:
 			if p.dropdownOpen {
-				// Confirm version selection, advance to auth.
 				p.selectedModel = p.modelCursor
 				p.selectedVersion = p.versionCursor
 				p.selectedAuth = -1
@@ -522,10 +480,8 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 				p.focus = pmFocusAuth
 				p.authCursor = 0
 			} else {
-				// Open the version dropdown for the current tier.
 				p.dropdownOpen = true
 				p.versionCursor = 0
-				// Pre-select the previously confirmed version if on same tier.
 				if p.selectedProv == p.cursor && p.selectedModel == p.modelCursor && p.selectedVersion >= 0 {
 					p.versionCursor = p.selectedVersion
 				}
@@ -533,24 +489,21 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 
 		case pmFocusAuth:
 			p.selectedAuth = p.authCursor
-			// Advance to the credential input step.
 			return p.enterCredentialStep()
 		}
 
-	// ── Cancel dropdown (handled here; modal-level Esc is in model.go) ────────
+	// ── Cancel dropdown / step back ───────────────────────────────────────────
 	case "esc":
 		if p.dropdownOpen {
 			p.dropdownOpen = false
 			p.versionCursor = 0
-		} else if p.focus != pmFocusSections {
-			// Step back one column.
+		} else if p.focus != pmFocusProviders {
 			switch p.focus {
 			case pmFocusAuth:
 				p.focus = pmFocusModels
 			case pmFocusModels:
 				p.focus = pmFocusProviders
-			case pmFocusProviders:
-				p.focus = pmFocusSections
+				p.selectedProv = -1
 			}
 		}
 	}
@@ -561,14 +514,13 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 // ── Layout constants ──────────────────────────────────────────────────────────
 
 const (
-	pmCol0W = 12 // section column visible width
 	pmCol1W = 12 // provider column visible width
 	pmCol2W = 16 // model column visible width
 	pmCol3W = 12 // auth column visible width (last, not padded by pmRow)
 	// pmBoxW is the Width() argument for StyleModalBorder.
 	// StyleModalBorder has Padding(0,1) + RoundedBorder, so actual rendered
 	// width = pmBoxW + 2 (padding) + 2 (border) = pmBoxW + 4.
-	pmBoxW = pmCol0W + pmCol1W + pmCol2W + pmCol3W // 52 → total box ≈ 56 chars
+	pmBoxW = pmCol1W + pmCol2W + pmCol3W // 40 → total box ≈ 44 chars
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -581,17 +533,11 @@ func (p ProviderMenu) View() string {
 	rows = append(rows, p.renderHeaders())
 	rows = append(rows, p.renderDividers())
 
-	// Build each column independently so the model dropdown can expand freely.
-	col0 := p.buildSectionCol()
 	col1 := p.buildProviderCol()
 	col2 := p.buildModelCol()
 	col3 := p.buildAuthCol()
 
-	// Pad shorter columns to the same height.
-	h := max(max(len(col0), len(col1)), max(len(col2), len(col3)))
-	for len(col0) < h {
-		col0 = append(col0, "")
-	}
+	h := max(max(len(col1), len(col2)), len(col3))
 	for len(col1) < h {
 		col1 = append(col1, "")
 	}
@@ -603,14 +549,20 @@ func (p ProviderMenu) View() string {
 	}
 
 	for i := 0; i < h; i++ {
-		rows = append(rows, pmRow(col0[i], col1[i], col2[i], col3[i]))
+		rows = append(rows, pmRow(col1[i], col2[i], col3[i]))
 	}
 
-	rows = append(rows, "") // spacer before hints/credential
+	rows = append(rows, "")
 
-	// Credential input step: show an inline input panel.
+	// Credential input step.
 	if p.focus == pmFocusCredential {
 		rows = append(rows, p.renderCredentialPanel())
+		rows = append(rows, "")
+	}
+
+	// Show configured providers summary.
+	if summary := p.renderConfiguredSummary(); summary != "" {
+		rows = append(rows, summary)
 		rows = append(rows, "")
 	}
 
@@ -629,14 +581,33 @@ func (p ProviderMenu) View() string {
 		}
 	case p.dropdownOpen:
 		hints = hintBar("j/k", "version", "Enter", "confirm", "Esc", "cancel")
-	case p.focus == pmFocusSections:
-		hints = hintBar("j/k", "section", "Enter/l", "configure", "x", "clear", "M", "close")
+	case p.focus == pmFocusProviders:
+		hints = hintBar("j/k", "navigate", "Enter", "configure", "x", "clear", "M", "close")
 	default:
 		hints = hintBar("j/k", "nav", "h/l", "col", "Enter", "pick", "Esc", "back")
 	}
 	rows = append(rows, hints)
 
 	return StyleModalBorder.Width(pmBoxW).Render(strings.Join(rows, "\n"))
+}
+
+// renderConfiguredSummary shows all currently configured providers.
+func (p ProviderMenu) renderConfiguredSummary() string {
+	if len(p.configured) == 0 {
+		return ""
+	}
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen))
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
+	var lines []string
+	// Iterate in provider order for deterministic output.
+	for _, prov := range p.providers {
+		sel, ok := p.configured[prov.label]
+		if !ok || !sel.IsSet() {
+			continue
+		}
+		lines = append(lines, dim.Render("  ✓ ")+green.Bold(true).Render(sel.Short()))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderCredentialPanel renders the inline API key / OAuth token input.
@@ -687,10 +658,8 @@ func (p ProviderMenu) renderHeaders() string {
 	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Underline(true).Background(bg)
 	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(bg)
 
-	h0, h1, h2, h3 := dim, dim, dim, dim
+	h1, h2, h3 := dim, dim, dim
 	switch p.focus {
-	case pmFocusSections:
-		h0 = active
 	case pmFocusProviders:
 		h1 = active
 	case pmFocusModels:
@@ -702,7 +671,7 @@ func (p ProviderMenu) renderHeaders() string {
 	case pmFocusAuth:
 		h3 = active
 	}
-	return pmRow(h0.Render("SECTION"), h1.Render("PROVIDER"), h2.Render("MODEL"), h3.Render("AUTH"))
+	return pmRow(h1.Render("PROVIDER"), h2.Render("MODEL"), h3.Render("AUTH"))
 }
 
 // renderDividers returns the ─── separator row under the headers.
@@ -710,54 +679,19 @@ func (p ProviderMenu) renderDividers() string {
 	s := lipgloss.NewStyle().Foreground(lipgloss.Color(clrComment)).Background(lipgloss.Color(clrBg2))
 	return pmRow(
 		s.Render(strings.Repeat("─", 8)),
-		s.Render(strings.Repeat("─", 8)),
 		s.Render(strings.Repeat("─", 9)),
 		s.Render(strings.Repeat("─", 8)),
 	)
 }
 
-// buildSectionCol returns one string per row for the section column.
-func (p ProviderMenu) buildSectionCol() []string {
-	lines := make([]string, 0, len(p.sectionList))
-	for i, sec := range p.sectionList {
-		isCur := i == p.sectionCursor
-		_, hasAssignment := p.assignments[i]
-		isAssigned := hasAssignment && p.assignments[i].IsSet()
-
-		arrow := "  "
-		if isCur {
-			arrow = lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Render("▶ ")
-		}
-
-		var label string
-		switch {
-		case isAssigned && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Render("✓ " + sec.label)
-		case isAssigned && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Render(sec.label)
-		case isCur && p.focus == pmFocusSections:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Render(sec.label)
-		case isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Render(sec.label)
-		default:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Render(sec.label)
-		}
-
-		cell := arrow + label
-		if isCur && p.focus == pmFocusSections {
-			cell = pmHighlight(cell, pmCol0W)
-		}
-		lines = append(lines, cell)
-	}
-	return lines
-}
-
 // buildProviderCol returns one string per row for the provider column.
+// ✓ is shown for any provider that is already configured.
 func (p ProviderMenu) buildProviderCol() []string {
 	lines := make([]string, 0, len(p.providers))
 	for i, prov := range p.providers {
 		isCur := i == p.cursor
-		isSel := i == p.selectedProv
+		isConfigured := p.configured[prov.label].IsSet()
+		isEditing := i == p.selectedProv
 		isHL := isCur && p.focus == pmFocusProviders
 
 		rowBg := lipgloss.Color(clrBg2)
@@ -772,10 +706,12 @@ func (p ProviderMenu) buildProviderCol() []string {
 
 		var label string
 		switch {
-		case isSel && !isCur:
+		case isConfigured && !isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + prov.label)
-		case isSel && isCur:
+		case isConfigured && isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(rowBg).Render(prov.label)
+		case isEditing && isCur:
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur && p.focus == pmFocusProviders:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur:
@@ -809,13 +745,11 @@ func (p ProviderMenu) buildModelCol() []string {
 			rowBg = lipgloss.Color(clrBgHL)
 		}
 
-		// Choose display name: show "Tier Ver" when a version is confirmed.
 		displayName := tier.name
 		if isSel && p.selectedVersion >= 0 && p.selectedVersion < len(tier.versions) {
 			displayName = tier.name + " " + tier.versions[p.selectedVersion]
 		}
 
-		// Dropdown open/close indicator (only on the focused tier).
 		var indicator string
 		if isCur && p.focus == pmFocusModels {
 			if p.dropdownOpen {
@@ -924,9 +858,9 @@ func (p ProviderMenu) buildAuthCol() []string {
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
-// pmRow assembles four column cells into one display line.
-func pmRow(col0, col1, col2, col3 string) string {
-	return pmPad(col0, pmCol0W) + pmPad(col1, pmCol1W) + pmPad(col2, pmCol2W) + col3
+// pmRow assembles three column cells into one display line.
+func pmRow(col1, col2, col3 string) string {
+	return pmPad(col1, pmCol1W) + pmPad(col2, pmCol2W) + col3
 }
 
 // pmPad pads s with background-colored spaces until its visible width equals toW.

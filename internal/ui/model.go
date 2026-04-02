@@ -174,6 +174,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = wsz.Height
 		m.textArea.SetWidth(m.width - 4)
 		m.textArea.SetHeight(m.contentHeight() - 4)
+		// Propagate to all sub-editors so insert-mode inputs resize immediately.
+		m.backendEditor, _ = m.backendEditor.Update(wsz)
+		m.dataTabEditor, _ = m.dataTabEditor.Update(wsz)
+		m.contractsEditor, _ = m.contractsEditor.Update(wsz)
+		m.frontendEditor, _ = m.frontendEditor.Update(wsz)
+		m.infraEditor, _ = m.infraEditor.Update(wsz)
+		m.crossCutEditor, _ = m.crossCutEditor.Update(wsz)
+		m.realizeEditor, _ = m.realizeEditor.Update(wsz)
 		return m, nil
 	}
 	if _, ok := msg.(uiTickMsg); ok {
@@ -232,13 +240,15 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			// Esc closes the version dropdown first; a second Esc closes the modal.
 			// But if in credential step, let the menu handle it (steps back to auth).
-			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusSections {
+			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusProviders {
 				m.modal.open = false
 				return m, nil
 			}
 		}
 		var cmd tea.Cmd
 		m.modal.menu, cmd = m.modal.menu.Update(msg)
+		// Sync configured providers to realize editor whenever modal state changes.
+		m.realizeEditor = m.realizeEditor.UpdateProviderOptions(m.modal.menu.GetConfiguredProviders())
 		return m, cmd
 	}
 
@@ -475,8 +485,8 @@ func (m Model) BuildManifest() *manifest.Manifest {
 		Frontend:  m.frontendEditor.ToManifestFrontendPillar(),
 		Infra:     m.infraEditor.ToManifestInfraPillar(),
 		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
-		Realize:   m.realizeEditor.ToManifestRealizeOptions(),
-		Providers: m.modal.menu.ToManifestProviderAssignments(),
+		Realize:             m.realizeEditor.ToManifestRealizeOptions(),
+		ConfiguredProviders: m.modal.menu.ToManifestConfiguredProviders(),
 
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,
@@ -498,9 +508,19 @@ func (m Model) contentHeight() int {
 	return h
 }
 
+const minTermWidth = 60
+const minTermHeight = 12
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading…"
+	}
+	if m.width < minTermWidth || m.height < minTermHeight {
+		msg := fmt.Sprintf(" Terminal too small (%d×%d). Resize to at least %d×%d. ",
+			m.width, m.height, minTermWidth, minTermHeight)
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			StyleMsgErr.Render(msg))
 	}
 
 	base := m.renderBaseView()
@@ -654,49 +674,54 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 
 func (m Model) renderTabBar(w int) string {
 	sep := StyleTabSep.Render("│")
-	var parts []string
+
+	buildTabs := func(labels []string) string {
+		var parts []string
+		for i, lbl := range labels {
+			if i == m.activeSection {
+				parts = append(parts, StyleTabActive.Render(" "+lbl+" "))
+			} else {
+				parts = append(parts, StyleTabInactive.Render(" "+lbl+" "))
+			}
+		}
+		tabs := strings.Join(parts, sep)
+		if rw := lipgloss.Width(tabs); rw < w {
+			tabs += StyleTabBar.Render(strings.Repeat(" ", w-rw))
+		}
+		return tabs
+	}
+
+	// Level 1: full Abbr.
+	fullLabels := make([]string, len(m.sections))
 	for i, s := range m.sections {
-		badge := m.providerBadge(s.ID)
-		label := s.Abbr
-		if badge != "" {
-			label = s.Abbr + " " + badge
-		}
-		if i == m.activeSection {
-			parts = append(parts, StyleTabActive.Render(" "+label+" "))
+		fullLabels[i] = s.Abbr
+	}
+	if tabs := buildTabs(fullLabels); lipgloss.Width(tabs) <= w {
+		return tabs
+	}
+
+	// Level 2: icon only (first field of Abbr, e.g. "⚡").
+	iconLabels := make([]string, len(m.sections))
+	for i, s := range m.sections {
+		parts := strings.Fields(s.Abbr)
+		if len(parts) > 0 {
+			iconLabels[i] = parts[0]
 		} else {
-			parts = append(parts, StyleTabInactive.Render(" "+label+" "))
+			iconLabels[i] = fmt.Sprintf("%d", i+1)
 		}
 	}
-	tabs := strings.Join(parts, sep)
-	rawW := lipgloss.Width(tabs)
-	if rawW < w {
-		tabs += StyleTabBar.Render(strings.Repeat(" ", w-rawW))
+	if tabs := buildTabs(iconLabels); lipgloss.Width(tabs) <= w {
+		return tabs
 	}
-	return tabs
+
+	// Level 3: bare index numbers.
+	numLabels := make([]string, len(m.sections))
+	for i := range m.sections {
+		numLabels[i] = fmt.Sprintf("%d", i+1)
+	}
+	return buildTabs(numLabels)
 }
 
-// providerBadge returns a short colored indicator for the provider assigned to
-// the given section ID, or an empty string if none is assigned.
-func (m Model) providerBadge(sectionID string) string {
-	sel, ok := m.modal.menu.SectionAssignment(sectionID)
-	if !ok {
-		return ""
-	}
-	// One-letter abbreviations per provider.
-	abbrs := map[string]string{
-		"Claude":  "C",
-		"ChatGPT": "G",
-		"Gemini":  "Ge",
-		"Mistral": "Mi",
-		"Llama":   "L",
-		"Custom":  "?",
-	}
-	letter, ok := abbrs[sel.Provider]
-	if !ok {
-		letter = sel.Provider[:1]
-	}
-	return StyleNeonGreen.Render("◆" + letter + "◆")
-}
 
 func (m Model) renderStatusLine(w int) string {
 	spin := modeSpinFrames[AnimFrame]

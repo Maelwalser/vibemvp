@@ -449,6 +449,11 @@ func prevEntFormIdx(form []Field, cur int) int {
 
 // Update handles all keyboard input and returns the new state plus any tea.Cmd.
 func (de DataEditor) Update(msg tea.Msg) (DataEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		de.width = wsz.Width
+		de.formInput.Width = wsz.Width - 22
+		return de, nil
+	}
 	switch de.internalMode {
 	case deNaming:
 		return de.updateNaming(msg)
@@ -823,6 +828,7 @@ func (de DataEditor) enterFormInsert() (DataEditor, tea.Cmd) {
 // View renders the editor into a w×h content block.
 func (de DataEditor) View(w, h int) string {
 	de.width = w
+	de.formInput.Width = w - 22
 	switch de.view {
 	case deViewEntities:
 		return de.viewEntities(w, h)
@@ -837,11 +843,13 @@ func (de DataEditor) View(w, h int) string {
 }
 
 func (de DataEditor) viewEntities(w, h int) string {
-	var lines []string
-	lines = append(lines,
+	const entListHeaderH = 2
+	var header []string
+	header = append(header,
 		StyleSectionDesc.Render("  # Entities — a: add  d: delete  Enter: settings & columns"),
 		"",
 	)
+	var lines []string
 
 	if len(de.Entities) == 0 {
 		lines = append(lines, StyleSectionDesc.Render("  (no entities yet — press 'a' to add one)"))
@@ -897,12 +905,14 @@ func (de DataEditor) viewEntities(w, h int) string {
 		}
 	}
 
+	lines = viewportSlice(lines, de.entityIdx, h-entListHeaderH)
+	all := append(header, lines...)
 	if de.internalMode == deNaming && de.nameTarget == "entity" {
-		lines = append(lines, "")
-		lines = append(lines, StyleTextAreaLabel.Render("  New entity: ")+de.nameInput.View())
+		all = append(all, "")
+		all = append(all, StyleTextAreaLabel.Render("  New entity: ")+de.nameInput.View())
 	}
 
-	return fillTildes(lines, h)
+	return fillTildes(all, h)
 }
 
 func (de DataEditor) viewEntitySettings(w, h int) string {

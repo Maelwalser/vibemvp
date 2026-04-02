@@ -892,6 +892,11 @@ func (be BackendEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (be BackendEditor) Update(msg tea.Msg) (BackendEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		be.width = wsz.Width
+		be.formInput.Width = wsz.Width - 22
+		return be, nil
+	}
 	if !be.ArchConfirmed {
 		return be.updateArchSelect(msg)
 	}
@@ -1894,6 +1899,7 @@ func (be *BackendEditor) saveInput() {
 
 func (be BackendEditor) View(w, h int) string {
 	be.width = w
+	be.formInput.Width = w - 22
 	if !be.ArchConfirmed {
 		return be.viewArchSelect(w, h)
 	}
@@ -1959,7 +1965,7 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Backend · ")+archStr+hint,
 		"",
-		renderSubTabBar(be.tabLabels(), be.activeTabIdx),
+		renderSubTabBar(be.tabLabels(), be.activeTabIdx, w),
 		"",
 	)
 
@@ -1973,11 +1979,24 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case beTabServices:
-		lines = append(lines, be.viewServiceEditor(w)...)
+		const beListHeaderH = 2
+		svcLines := be.viewServiceEditor(w)
+		if be.serviceEditor.itemView == beListViewList {
+			svcLines = appendViewport(svcLines, beListHeaderH, be.serviceEditor.itemIdx, h-4)
+		}
+		lines = append(lines, svcLines...)
 	case beTabComm:
-		lines = append(lines, be.viewCommEditor(w)...)
+		commLines := be.viewCommEditor(w)
+		if be.commEditor.itemView == beListViewList {
+			commLines = appendViewport(commLines, 2, be.commEditor.itemIdx, h-4)
+		}
+		lines = append(lines, commLines...)
 	case beTabMessaging:
-		lines = append(lines, be.viewMessaging(w)...)
+		msgLines := be.viewMessaging(w)
+		if be.eventEditor.itemView == beListViewList {
+			msgLines = appendViewport(msgLines, 2, be.eventEditor.itemIdx, h-4)
+		}
+		lines = append(lines, msgLines...)
 	case beTabAPIGW:
 		if be.apiGWEnabled {
 			lines = append(lines, renderFormFields(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
@@ -1985,7 +2004,11 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case beTabJobs:
-		lines = append(lines, be.viewJobs(w)...)
+		jobLines := be.viewJobs(w)
+		if be.jobsSubView == beViewList {
+			jobLines = appendViewport(jobLines, 2, be.jobsIdx, h-4)
+		}
+		lines = append(lines, jobLines...)
 	case beTabSecurity:
 		if be.secEnabled {
 			lines = append(lines, renderFormFields(w, be.securityFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)

@@ -354,6 +354,11 @@ func (ie InfraEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		ie.width = wsz.Width
+		ie.formInput.Width = wsz.Width - 22
+		return ie, nil
+	}
 	if ie.internalMode == infraInsert {
 		return ie.updateInsert(msg)
 	}
@@ -582,11 +587,12 @@ func (ie InfraEditor) tryEnterInsert() (InfraEditor, tea.Cmd) {
 
 func (ie InfraEditor) View(w, h int) string {
 	ie.width = w
+	ie.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Infrastructure — networking, CI/CD, and observability"),
 		"",
-		renderSubTabBar(infraTabLabels, int(ie.activeTab)),
+		renderSubTabBar(infraTabLabels, int(ie.activeTab), w),
 		"",
 	)
 

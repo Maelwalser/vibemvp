@@ -520,6 +520,11 @@ func (fe FrontendEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		fe.width = wsz.Width
+		fe.formInput.Width = wsz.Width - 22
+		return fe, nil
+	}
 	if fe.internalMode == feInsert {
 		return fe.updateInsert(msg)
 	}
@@ -1128,13 +1133,15 @@ func (fe FrontendEditor) updateNavDropdown(key tea.KeyMsg) (FrontendEditor, tea.
 
 func (fe FrontendEditor) View(w, h int) string {
 	fe.width = w
+	fe.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Frontend — technologies, theming, pages, and navigation"),
 		"",
-		renderSubTabBar(feTabLabels, int(fe.activeTab)),
+		renderSubTabBar(feTabLabels, int(fe.activeTab), w),
 		"",
 	)
+	const feHeaderH = 4
 
 	switch fe.activeTab {
 	case feTabTech:
@@ -1150,7 +1157,11 @@ func (fe FrontendEditor) View(w, h int) string {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabPages:
-		lines = append(lines, fe.viewPages(w)...)
+		pageLines := fe.viewPages(w)
+		if fe.pageSubView == ceViewList {
+			pageLines = appendViewport(pageLines, 2, fe.pageIdx, h-feHeaderH)
+		}
+		lines = append(lines, pageLines...)
 	case feTabNav:
 		if fe.navEnabled {
 			lines = append(lines, renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)

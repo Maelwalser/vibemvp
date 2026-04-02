@@ -71,9 +71,12 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		return fmt.Errorf("build dag: %w", err)
 	}
 
+	// Build provider assignments from the new manifest structure.
+	providers := buildProviderAssignments(m)
+
 	// Print plan in dry-run mode.
 	if o.cfg.DryRun {
-		return o.printPlan(d, m.Providers)
+		return o.printPlan(d, providers)
 	}
 
 	// Load skill registry.
@@ -105,7 +108,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	defaultAgent := agent.NewClaudeAgent(defaultModel, defaultMaxTokens, o.cfg.Verbose)
 
 	// Log configured per-section model assignments.
-	for sectionID, pa := range m.Providers {
+	for sectionID, pa := range providers {
 		if pa.Credential != "" {
 			fmt.Fprintf(os.Stderr, "realize: section %q → %s %s %s\n",
 				sectionID, pa.Provider, pa.Model, pa.Version)
@@ -119,7 +122,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for waveIdx, wave := range d.Levels() {
 		o.log("realize: wave %d (%d tasks): %v", waveIdx, len(wave), wave)
 
-		if err := o.runWave(ctx, wave, d, m.Providers, reg, defaultAgent, verifiers, writer, st, mem); err != nil {
+		if err := o.runWave(ctx, wave, d, providers, reg, defaultAgent, verifiers, writer, st, mem); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
@@ -258,6 +261,50 @@ func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignme
 		}
 	}
 	return nil
+}
+
+// buildProviderAssignments constructs a per-section ProviderAssignments map from the
+// manifest's ConfiguredProviders registry and per-section SectionModels overrides.
+//
+// SectionModels values are formatted as "Provider · Tier" (e.g. "Claude · Sonnet").
+// Sections with no override or "default" are omitted; the orchestrator falls back to
+// its default agent for those.
+func buildProviderAssignments(m *manifest.Manifest) manifest.ProviderAssignments {
+	if len(m.ConfiguredProviders) == 0 {
+		return nil
+	}
+
+	sections := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
+	result := make(manifest.ProviderAssignments)
+
+	for _, section := range sections {
+		sectionModel, ok := m.Realize.SectionModels[section]
+		if !ok || sectionModel == "" || sectionModel == "default" {
+			continue
+		}
+
+		// Parse "Provider · Tier" format.
+		parts := strings.SplitN(sectionModel, " · ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		provLabel, tier := parts[0], parts[1]
+
+		pa, exists := m.ConfiguredProviders[provLabel]
+		if !exists || pa.Credential == "" {
+			continue
+		}
+
+		// Use the configured provider's credentials with the specified tier.
+		pa.Model = tier
+		pa.Version = "" // use the fallback version for that tier
+		result[section] = pa
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // loadManifest reads and parses a manifest.json file.
