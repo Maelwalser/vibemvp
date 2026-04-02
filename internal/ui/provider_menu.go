@@ -841,7 +841,8 @@ const (
 	// pmBoxW is the Width() argument for StyleModalBorder.
 	// StyleModalBorder has Padding(0,1) + RoundedBorder, so actual rendered
 	// width = pmBoxW + 2 (padding) + 2 (border) = pmBoxW + 4.
-	pmBoxW = pmCol1W + pmCol2W + pmCol3W // 40 → total box ≈ 44 chars
+	// +2 for the two │ column separators inserted by pmRow.
+	pmBoxW = pmCol1W + 1 + pmCol2W + 1 + pmCol3W // 42 → total box ≈ 46 chars
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -850,7 +851,19 @@ const (
 func (p ProviderMenu) View() string {
 	var rows []string
 
-	rows = append(rows, "") // top padding
+	// ── Cyberpunk title bar ───────────────────────────────────────────────────
+	// Opposing frames on left/right produce the same scanning animation as the
+	// main header bar: light appears to sweep across the title.
+	decoL := StyleHeaderDeco.Render(headerDecoFrames[AnimFrame])
+	decoR := StyleHeaderDeco.Render(headerDecoFrames[1-AnimFrame])
+	titleText := StyleNeonMagenta.Render("◈ AI PROVIDERS ◈")
+	titleLine := lipgloss.NewStyle().
+		Background(lipgloss.Color(clrBg2)).
+		Width(pmBoxW).
+		Align(lipgloss.Center).
+		Render(decoL + " " + titleText + " " + decoR)
+	rows = append(rows, titleLine)
+	rows = append(rows, "") // padding below title
 	rows = append(rows, p.renderHeaders())
 	rows = append(rows, p.renderDividers())
 
@@ -920,8 +933,6 @@ func (p ProviderMenu) renderConfiguredSummary() string {
 	if len(p.configured) == 0 {
 		return ""
 	}
-	green := lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen))
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 	var lines []string
 	// Iterate in provider order for deterministic output.
 	for _, prov := range p.providers {
@@ -929,16 +940,13 @@ func (p ProviderMenu) renderConfiguredSummary() string {
 		if !ok || !sel.IsSet() {
 			continue
 		}
-		lines = append(lines, dim.Render("  ✓ ")+green.Bold(true).Render(sel.Short()))
+		lines = append(lines, StyleNeonCyan.Render("  ◈ ")+StyleNeonGreen.Render(sel.Short()))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // renderCredentialPanel renders the inline API key / OAuth token input.
 func (p ProviderMenu) renderCredentialPanel() string {
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
-	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true)
-
 	authMethod := ""
 	provLabel := ""
 	if p.selectedProv >= 0 {
@@ -953,55 +961,52 @@ func (p ProviderMenu) renderCredentialPanel() string {
 	if authMethod == "OAuth" {
 		if p.oauthAwaitingClientID {
 			// Step 1: collect the OAuth Client ID before we can open the browser.
-			step1Style := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true)
-			lines = append(lines, step1Style.Render("  Browser Sign-In  ·  Step 1 of 2"))
-			lines = append(lines, dim.Render("  Enter your OAuth Client ID below, then press Enter to open the browser."))
+			lines = append(lines, StyleNeonViolet.Render("  ◈ Browser Sign-In  ·  Step 1 of 2"))
+			lines = append(lines, StyleFgDimStyle.Render("  Enter your OAuth Client ID below, then press Enter to open the browser."))
 			switch provLabel {
 			case "Gemini":
-				lines = append(lines, dim.Render("  Get one at: console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app)"))
+				lines = append(lines, StyleFgDimStyle.Render("  Get one at: console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app)"))
 			default:
-				lines = append(lines, dim.Render("  Create an OAuth 2.0 Client ID (Desktop app) for your registered application."))
+				lines = append(lines, StyleFgDimStyle.Render("  Create an OAuth 2.0 Client ID (Desktop app) for your registered application."))
 			}
 			lines = append(lines, "")
 
 			inputBox := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color(clrYellow)).
+				BorderForeground(lipgloss.Color(clrMagenta)).
 				Padding(0, 1).
 				Width(pmBoxW - 4).
-				Render(active.Render("Client ID") + "  " + p.credInput.View())
+				Render(StyleNeonCyan.Render("Client ID") + "  " + p.credInput.View())
 			lines = append(lines, inputBox)
 		} else {
 			// Step 2: browser has been / is being opened.
-			step2Style := lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true)
-			lines = append(lines, step2Style.Render("  Browser Sign-In  ·  Step 2 of 2"))
+			lines = append(lines, StyleNeonGreen.Render("  ◈ Browser Sign-In  ·  Step 2 of 2"))
 			if p.oauthStatus != "" {
-				lines = append(lines, dim.Render("  Approve access in the browser, then return here."))
+				lines = append(lines, StyleFgDimStyle.Render("  Approve access in the browser, then return here."))
 			} else {
-				lines = append(lines, dim.Render("  Ctrl+O to re-authorize  ·  Enter to confirm  ·  Esc to go back"))
+				lines = append(lines, StyleFgDimStyle.Render("  Ctrl+O to re-authorize  ·  Enter to confirm  ·  Esc to go back"))
 			}
 			lines = append(lines, "")
 
 			inputBox := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color(clrGreen)).
+				BorderForeground(lipgloss.Color(clrMagenta)).
 				Padding(0, 1).
 				Width(pmBoxW - 4).
-				Render(active.Render("OAuth Token") + "  " + p.credInput.View())
+				Render(StyleNeonViolet.Render("◈ OAuth Token") + "  " + p.credInput.View())
 			lines = append(lines, inputBox)
 			if p.oauthStatus != "" {
-				statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow))
-				lines = append(lines, statusStyle.Render("  "+p.oauthStatus))
+				lines = append(lines, StyleNeonOrange.Render("  "+p.oauthStatus))
 			}
 		}
 	} else {
-		lines = append(lines, dim.Render(fmt.Sprintf("  Enter %s API key", provLabel)))
+		lines = append(lines, StyleFgDimStyle.Render(fmt.Sprintf("  Enter %s API key", provLabel)))
 		inputBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(clrCyan)).
+			BorderForeground(lipgloss.Color(clrMagenta)).
 			Padding(0, 1).
 			Width(pmBoxW - 4).
-			Render(active.Render("API Key") + "  " + p.credInput.View())
+			Render(StyleNeonCyan.Render("◈ API Key") + "  " + p.credInput.View())
 		lines = append(lines, inputBox)
 	}
 	return strings.Join(lines, "\n")
@@ -1012,7 +1017,7 @@ func (p ProviderMenu) renderHeaders() string {
 	bg := lipgloss.Color(clrBg2)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Background(bg)
 	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Underline(true).Background(bg)
-	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(bg)
+	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrOrange)).Bold(true).Background(bg)
 
 	h1, h2, h3 := dim, dim, dim
 	switch p.focus {
@@ -1031,12 +1036,13 @@ func (p ProviderMenu) renderHeaders() string {
 }
 
 // renderDividers returns the ─── separator row under the headers.
+// Each segment fills its full column width so the grid lines are flush.
 func (p ProviderMenu) renderDividers() string {
-	s := lipgloss.NewStyle().Foreground(lipgloss.Color(clrComment)).Background(lipgloss.Color(clrBg2))
+	s := lipgloss.NewStyle().Foreground(lipgloss.Color(clrViolet)).Background(lipgloss.Color(clrBg2))
 	return pmRow(
-		s.Render(strings.Repeat("─", 8)),
-		s.Render(strings.Repeat("─", 9)),
-		s.Render(strings.Repeat("─", 8)),
+		s.Render(strings.Repeat("─", pmCol1W)),
+		s.Render(strings.Repeat("─", pmCol2W)),
+		s.Render(strings.Repeat("─", pmCol3W)),
 	)
 }
 
@@ -1063,13 +1069,13 @@ func (p ProviderMenu) buildProviderCol() []string {
 		var label string
 		switch {
 		case isConfigured && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + prov.label)
 		case isConfigured && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(rowBg).Render("◈ " + prov.label)
 		case isEditing && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur && p.focus == pmFocusProviders:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(prov.label)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(prov.label)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(prov.label)
 		default:
@@ -1123,11 +1129,11 @@ func (p ProviderMenu) buildModelCol() []string {
 		var label string
 		switch {
 		case isSel && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + displayName)
 		case isSel && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(rowBg).Render(displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(rowBg).Render("◈ " + displayName)
 		case isCur && p.focus == pmFocusModels:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(displayName)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(displayName)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(displayName)
 		default:
@@ -1194,9 +1200,9 @@ func (p ProviderMenu) buildAuthCol() []string {
 		var label string
 		switch {
 		case isSel:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Background(lipgloss.Color(clrBg2)).Render("✓ " + a)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + a)
 		case isCur && p.focus == pmFocusAuth:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(rowBg).Render(a)
+			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(a)
 		case isCur:
 			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(a)
 		default:
@@ -1214,9 +1220,14 @@ func (p ProviderMenu) buildAuthCol() []string {
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
-// pmRow assembles three column cells into one display line.
+// pmRow assembles three column cells into one display line, with │ separators
+// between each column for a clean grid layout.
 func pmRow(col1, col2, col3 string) string {
-	return pmPad(col1, pmCol1W) + pmPad(col2, pmCol2W) + col3
+	sep := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrViolet)).
+		Background(lipgloss.Color(clrBg2)).
+		Render("│")
+	return pmPad(col1, pmCol1W) + sep + pmPad(col2, pmCol2W) + sep + col3
 }
 
 // pmPad pads s with background-colored spaces until its visible width equals toW.
@@ -1227,10 +1238,16 @@ func pmPad(s string, toW int) string {
 	return s
 }
 
-// pmHighlight pads s to colW with highlight-colored spaces and applies the cursor-line background.
+// pmHighlight pads s to colW with highlight-colored spaces and applies the
+// animated cursor-line background (breathing/pulse effect via AnimFrame).
 func pmHighlight(s string, colW int) string {
-	if pad := colW - lipgloss.Width(s); pad > 0 {
-		s = s + lipgloss.NewStyle().Background(lipgloss.Color(clrBgHL)).Render(strings.Repeat(" ", pad))
+	curStyle := activeCurLineStyle()
+	bg := lipgloss.Color(clrBgHL)
+	if AnimFrame == 1 {
+		bg = lipgloss.Color(clrBgHL2)
 	}
-	return StyleCurLine.Render(s)
+	if pad := colW - lipgloss.Width(s); pad > 0 {
+		s = s + lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", pad))
+	}
+	return curStyle.Render(s)
 }
