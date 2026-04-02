@@ -240,13 +240,15 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			// Esc closes the version dropdown first; a second Esc closes the modal.
 			// But if in credential step, let the menu handle it (steps back to auth).
-			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusSections {
+			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusProviders {
 				m.modal.open = false
 				return m, nil
 			}
 		}
 		var cmd tea.Cmd
 		m.modal.menu, cmd = m.modal.menu.Update(msg)
+		// Sync configured providers to realize editor whenever modal state changes.
+		m.realizeEditor = m.realizeEditor.UpdateProviderOptions(m.modal.menu.GetConfiguredProviders())
 		return m, cmd
 	}
 
@@ -483,8 +485,8 @@ func (m Model) BuildManifest() *manifest.Manifest {
 		Frontend:  m.frontendEditor.ToManifestFrontendPillar(),
 		Infra:     m.infraEditor.ToManifestInfraPillar(),
 		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
-		Realize:   m.realizeEditor.ToManifestRealizeOptions(),
-		Providers: m.modal.menu.ToManifestProviderAssignments(),
+		Realize:             m.realizeEditor.ToManifestRealizeOptions(),
+		ConfiguredProviders: m.modal.menu.ToManifestConfiguredProviders(),
 
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,
@@ -689,15 +691,10 @@ func (m Model) renderTabBar(w int) string {
 		return tabs
 	}
 
-	// Level 1: full Abbr + provider badge.
+	// Level 1: full Abbr.
 	fullLabels := make([]string, len(m.sections))
 	for i, s := range m.sections {
-		badge := m.providerBadge(s.ID)
-		if badge != "" {
-			fullLabels[i] = s.Abbr + " " + badge
-		} else {
-			fullLabels[i] = s.Abbr
-		}
+		fullLabels[i] = s.Abbr
 	}
 	if tabs := buildTabs(fullLabels); lipgloss.Width(tabs) <= w {
 		return tabs
@@ -725,28 +722,6 @@ func (m Model) renderTabBar(w int) string {
 	return buildTabs(numLabels)
 }
 
-// providerBadge returns a short colored indicator for the provider assigned to
-// the given section ID, or an empty string if none is assigned.
-func (m Model) providerBadge(sectionID string) string {
-	sel, ok := m.modal.menu.SectionAssignment(sectionID)
-	if !ok {
-		return ""
-	}
-	// One-letter abbreviations per provider.
-	abbrs := map[string]string{
-		"Claude":  "C",
-		"ChatGPT": "G",
-		"Gemini":  "Ge",
-		"Mistral": "Mi",
-		"Llama":   "L",
-		"Custom":  "?",
-	}
-	letter, ok := abbrs[sel.Provider]
-	if !ok {
-		letter = sel.Provider[:1]
-	}
-	return StyleNeonGreen.Render("◆" + letter + "◆")
-}
 
 func (m Model) renderStatusLine(w int) string {
 	spin := modeSpinFrames[AnimFrame]

@@ -11,12 +11,13 @@ import (
 
 // RealizeOptions holds configuration for the code-generation agent run.
 type RealizeOptions struct {
-	AppName     string `json:"app_name"`
-	OutputDir   string `json:"output_dir"`
-	Model       string `json:"model"`
-	Concurrency int    `json:"concurrency"`
-	Verify      bool   `json:"verify"`
-	DryRun      bool   `json:"dry_run"`
+	AppName      string            `json:"app_name"`
+	OutputDir    string            `json:"output_dir"`
+	Model        string            `json:"model"`
+	Concurrency  int               `json:"concurrency"`
+	Verify       bool              `json:"verify"`
+	DryRun       bool              `json:"dry_run"`
+	SectionModels map[string]string `json:"section_models,omitempty"` // per-pillar model override
 }
 
 // ── Provider assignments ──────────────────────────────────────────────────────
@@ -73,8 +74,8 @@ type Manifest struct {
 	CrossCut  CrossCutPillar  `json:"cross_cutting"`
 	Realize   RealizeOptions  `json:"realize,omitempty"`
 
-	// Provider assignments per section (API keys / OAuth tokens stored here).
-	Providers ProviderAssignments `json:"providers,omitempty"`
+	// Configured providers (from the Shift+M provider menu), keyed by provider label.
+	ConfiguredProviders ProviderAssignments `json:"configured_providers,omitempty"`
 
 	// Legacy fields kept for backward compatibility during transition.
 	Databases []DBSourceDef   `json:"databases,omitempty"`
