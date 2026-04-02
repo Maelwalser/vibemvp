@@ -164,6 +164,9 @@ type DBEditor struct {
 	formIdx   int
 	formInput textinput.Model
 
+	ddOpen   bool
+	ddOptIdx int
+
 	width int
 }
 
@@ -205,10 +208,18 @@ func (db DBEditor) HintLine() string {
 		}
 		return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
 	case dbeViewForm:
+		if db.ddOpen {
+			hints := []string{
+				StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
+				StyleHelpKey.Render("Enter/Space") + StyleHelpDesc.Render(" select"),
+				StyleHelpKey.Render("Esc") + StyleHelpDesc.Render(" cancel"),
+			}
+			return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
+		}
 		hints := []string{
 			StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
 			StyleHelpKey.Render("i") + StyleHelpDesc.Render(" edit text"),
-			StyleHelpKey.Render("Space") + StyleHelpDesc.Render(" cycle option"),
+			StyleHelpKey.Render("Enter/Space") + StyleHelpDesc.Render(" dropdown"),
 			StyleHelpKey.Render("b/Esc") + StyleHelpDesc.Render(" save & back"),
 		}
 		return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
@@ -285,6 +296,9 @@ func (db DBEditor) updateNormal(msg tea.Msg) (DBEditor, tea.Cmd) {
 	if !ok {
 		return db, nil
 	}
+	if db.ddOpen && db.view == dbeViewForm {
+		return db.updateDBDropdown(key)
+	}
 	switch db.view {
 	case dbeViewList:
 		return db.updateNormalList(key)
@@ -352,7 +366,8 @@ func (db DBEditor) updateNormalForm(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &db.dbForm[db.formIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			db.ddOpen = true
+			db.ddOptIdx = f.SelIdx
 		} else {
 			return db.enterDBFormInsert()
 		}
@@ -368,6 +383,33 @@ func (db DBEditor) updateNormalForm(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 	case "b", "esc":
 		db.saveFormBack()
 		db.view = dbeViewList
+	}
+	return db, nil
+}
+
+func (db DBEditor) updateDBDropdown(key tea.KeyMsg) (DBEditor, tea.Cmd) {
+	if db.formIdx >= len(db.dbForm) {
+		db.ddOpen = false
+		return db, nil
+	}
+	f := &db.dbForm[db.formIdx]
+	switch key.String() {
+	case "j", "down":
+		if db.ddOptIdx < len(f.Options)-1 {
+			db.ddOptIdx++
+		}
+	case "k", "up":
+		if db.ddOptIdx > 0 {
+			db.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = db.ddOptIdx
+		if db.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[db.ddOptIdx]
+		}
+		db.ddOpen = false
+	case "esc", "b":
+		db.ddOpen = false
 	}
 	return db, nil
 }
@@ -519,7 +561,11 @@ func (db DBEditor) viewForm(w, h int) string {
 			} else {
 				val = StyleFieldVal.Render(val)
 			}
-			valStr = val + StyleSelectArrow.Render(" ▾")
+			if isCur && db.ddOpen {
+				valStr = val + StyleSelectArrow.Render(" ▴")
+			} else {
+				valStr = val + StyleSelectArrow.Render(" ▾")
+			}
 		default:
 			dv := f.DisplayValue()
 			if len(dv) > valW {
@@ -543,6 +589,27 @@ func (db DBEditor) viewForm(w, h int) string {
 			row = activeCurLineStyle().Render(row)
 		}
 		lines = append(lines, row)
+
+		// Inject dropdown options below the active KindSelect field
+		if isCur && db.ddOpen && !disabled && f.Kind == KindSelect {
+			const ddIndent = 4 + 14 + 3 // lineNumW + labelW + eqW
+			indent := strings.Repeat(" ", ddIndent)
+			for j, opt := range f.Options {
+				isHL := j == db.ddOptIdx
+				var optRow string
+				if isHL {
+					optRow = indent + StyleFieldValActive.Render("► "+opt)
+					rw := lipgloss.Width(optRow)
+					if rw < w {
+						optRow += strings.Repeat(" ", w-rw)
+					}
+					optRow = activeCurLineStyle().Render(optRow)
+				} else {
+					optRow = indent + StyleFieldVal.Render("  "+opt)
+				}
+				lines = append(lines, optRow)
+			}
+		}
 	}
 
 	return fillTildes(lines, h)

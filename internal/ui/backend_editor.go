@@ -931,12 +931,12 @@ func (be BackendEditor) Mode() Mode {
 func (be BackendEditor) HintLine() string {
 	if !be.ArchConfirmed {
 		if be.dropdownOpen {
-			return hintBar("j/k", "navigate", "Enter", "confirm", "Esc", "close")
+			return hintBar("j/k", "navigate", "Enter/Space", "confirm", "Esc", "close")
 		}
-		return hintBar("Enter", "open arch selector")
+		return hintBar("Enter/Space", "open arch selector")
 	}
 	if be.ddOpen {
-		return hintBar("j/k", "navigate", "Enter", "select", "Esc", "cancel")
+		return hintBar("j/k", "navigate", "Enter/Space", "select", "Esc", "cancel")
 	}
 	if be.internalMode == beInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
