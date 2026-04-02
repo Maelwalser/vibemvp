@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -127,7 +128,7 @@ func newProviderMenu() ProviderMenu {
 					{name: "4o", versions: []string{"4o", "4o-2024"}},
 					{name: "o1", versions: []string{"o1", "o1-preview"}},
 				},
-				authMethods: []string{"API Key", "OAuth"},
+				authMethods: []string{"API Key"},
 			},
 			{
 				label: "Gemini",
@@ -344,10 +345,15 @@ type oauthProviderConfig struct {
 	clientID string
 }
 
+// geminiDefaultClientID is the public OAuth client ID bundled with the
+// official Gemini CLI (open-source). Using it avoids requiring users to
+// register their own Google Cloud project.
+const geminiDefaultClientID = "681255809395-oo8t2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+
 // resolveOAuthConfig returns the OAuth 2.0 endpoints for provider.
 // clientIDOverride is used first; if empty the VIBEMVP_*_CLIENT_ID env var is
-// tried. Returns an error only if the provider is unknown (not if client ID is
-// absent — that is handled by the caller prompting the user).
+// tried; for Gemini the bundled default client ID is used as final fallback.
+// Returns an error only if the provider is unknown.
 func resolveOAuthConfig(provider, clientIDOverride string) (oauthProviderConfig, error) {
 	switch provider {
 	case "Gemini":
@@ -355,10 +361,13 @@ func resolveOAuthConfig(provider, clientIDOverride string) (oauthProviderConfig,
 		if clientID == "" {
 			clientID = os.Getenv("VIBEMVP_GOOGLE_CLIENT_ID")
 		}
+		if clientID == "" {
+			clientID = geminiDefaultClientID
+		}
 		return oauthProviderConfig{
 			authURL:  "https://accounts.google.com/o/oauth2/v2/auth",
 			tokenURL: "https://oauth2.googleapis.com/token",
-			scope:    "https://www.googleapis.com/auth/generative-language",
+			scope:    "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
 			clientID: clientID,
 		}, nil
 	case "ChatGPT":
@@ -434,6 +443,13 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 		return "", fmt.Errorf("generate state: %w", err)
 	}
 
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("failed to bind to local port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+
 	codeCh := make(chan string, 1)
 	callbackErrCh := make(chan error, 1)
 
@@ -454,10 +470,10 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 		codeCh <- code
 	})
 
-	srv := &http.Server{Addr: ":8080", Handler: mux}
+	srv := &http.Server{Handler: mux}
 	srvErrCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			srvErrCh <- err
 		}
 	}()
@@ -470,9 +486,10 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 	params := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {cfg.clientID},
-		"redirect_uri":          {"http://localhost:8080/callback"},
+		"redirect_uri":          {redirectURI},
 		"scope":                 {cfg.scope},
 		"state":                 {state},
+		"access_type":           {"offline"},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 	}
@@ -480,7 +497,7 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 
 	select {
 	case code := <-codeCh:
-		return exchangeCodeForToken(cfg, code, verifier)
+		return exchangeCodeForToken(cfg, code, verifier, redirectURI)
 	case err := <-callbackErrCh:
 		return "", err
 	case err := <-srvErrCh:
@@ -492,12 +509,12 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 
 // exchangeCodeForToken exchanges an authorization code for an access token
 // using the PKCE verifier.
-func exchangeCodeForToken(cfg oauthProviderConfig, code, verifier string) (string, error) {
+func exchangeCodeForToken(cfg oauthProviderConfig, code, verifier, redirectURI string) (string, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"client_id":     {cfg.clientID},
 		"code":          {code},
-		"redirect_uri":  {"http://localhost:8080/callback"},
+		"redirect_uri":  {redirectURI},
 		"code_verifier": {verifier},
 	}
 
@@ -880,7 +897,7 @@ func (p ProviderMenu) View() string {
 		}
 		switch {
 		case authMethod == "OAuth" && p.oauthAwaitingClientID:
-			hints = hintBar("Enter", "open browser", "Esc", "back")
+			hints = hintBar("Enter", "open browser →", "Esc", "back")
 		case authMethod == "OAuth":
 			hints = hintBar("Enter", "confirm token", "Ctrl+O", "re-authorize", "Esc", "back")
 		default:
@@ -931,46 +948,62 @@ func (p ProviderMenu) renderCredentialPanel() string {
 		}
 	}
 
-	var label string
-	var subText string
+	var lines []string
+
 	if authMethod == "OAuth" {
 		if p.oauthAwaitingClientID {
-			label = active.Render("OAuth Client ID")
+			// Step 1: collect the OAuth Client ID before we can open the browser.
+			step1Style := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true)
+			lines = append(lines, step1Style.Render("  Browser Sign-In  ·  Step 1 of 2"))
+			lines = append(lines, dim.Render("  Enter your OAuth Client ID below, then press Enter to open the browser."))
 			switch provLabel {
 			case "Gemini":
-				subText = dim.Render("  console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app)")
-			case "ChatGPT":
-				subText = dim.Render("  Create an OAuth 2.0 Client ID in the OpenAI developer portal")
+				lines = append(lines, dim.Render("  Get one at: console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app)"))
 			default:
-				subText = dim.Render("  Enter the OAuth Client ID for your registered application")
+				lines = append(lines, dim.Render("  Create an OAuth 2.0 Client ID (Desktop app) for your registered application."))
 			}
+			lines = append(lines, "")
+
+			inputBox := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(clrYellow)).
+				Padding(0, 1).
+				Width(pmBoxW - 4).
+				Render(active.Render("Client ID") + "  " + p.credInput.View())
+			lines = append(lines, inputBox)
 		} else {
-			label = active.Render("OAuth Token")
+			// Step 2: browser has been / is being opened.
+			step2Style := lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true)
+			lines = append(lines, step2Style.Render("  Browser Sign-In  ·  Step 2 of 2"))
 			if p.oauthStatus != "" {
-				subText = dim.Render("  Browser opened — approve access then return here")
+				lines = append(lines, dim.Render("  Approve access in the browser, then return here."))
 			} else {
-				subText = dim.Render("  Ctrl+O to re-authorize · Enter to confirm · Esc to go back")
+				lines = append(lines, dim.Render("  Ctrl+O to re-authorize  ·  Enter to confirm  ·  Esc to go back"))
+			}
+			lines = append(lines, "")
+
+			inputBox := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(clrGreen)).
+				Padding(0, 1).
+				Width(pmBoxW - 4).
+				Render(active.Render("OAuth Token") + "  " + p.credInput.View())
+			lines = append(lines, inputBox)
+			if p.oauthStatus != "" {
+				statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow))
+				lines = append(lines, statusStyle.Render("  "+p.oauthStatus))
 			}
 		}
 	} else {
-		label = active.Render("API Key")
-		subText = dim.Render(fmt.Sprintf("  Enter %s API key", provLabel))
+		lines = append(lines, dim.Render(fmt.Sprintf("  Enter %s API key", provLabel)))
+		inputBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(clrCyan)).
+			Padding(0, 1).
+			Width(pmBoxW - 4).
+			Render(active.Render("API Key") + "  " + p.credInput.View())
+		lines = append(lines, inputBox)
 	}
-
-	inputBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(clrCyan)).
-		Padding(0, 1).
-		Width(pmBoxW - 4).
-		Render(label + "  " + p.credInput.View())
-
-	var lines []string
-	lines = append(lines, subText)
-	if p.oauthStatus != "" {
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow))
-		lines = append(lines, statusStyle.Render("  "+p.oauthStatus))
-	}
-	lines = append(lines, inputBox)
 	return strings.Join(lines, "\n")
 }
 
