@@ -81,13 +81,36 @@ type APIVersioning struct {
 // ExternalAPIDef describes a third-party API that the system consumes.
 type ExternalAPIDef struct {
 	Provider        string `json:"provider"`
+	Protocol        string `json:"protocol,omitempty"`
 	AuthMechanism   string `json:"auth_mechanism"`
-	RateLimit       string `json:"rate_limit,omitempty"`
-	WebhookEndpoint string `json:"webhook_endpoint,omitempty"`
 	FailureStrategy string `json:"failure_strategy"`
-	BaseURL         string `json:"base_url,omitempty"`
 	RequestDTO      string `json:"request_dto,omitempty"`
 	ResponseDTO     string `json:"response_dto,omitempty"`
+
+	// REST / general HTTP
+	BaseURL         string `json:"base_url,omitempty"`
+	HTTPMethod      string `json:"http_method,omitempty"`
+	ContentType     string `json:"content_type,omitempty"`
+	RateLimit       string `json:"rate_limit,omitempty"`
+	WebhookEndpoint string `json:"webhook_endpoint,omitempty"`
+
+	// GraphQL
+	GQLOperation string `json:"gql_operation,omitempty"`
+
+	// gRPC
+	GRPCStreamType string `json:"grpc_stream_type,omitempty"`
+	TLSMode        string `json:"tls_mode,omitempty"`
+
+	// WebSocket
+	WSSubprotocol string `json:"ws_subprotocol,omitempty"`
+	MessageFormat string `json:"message_format,omitempty"`
+
+	// Webhook (inbound)
+	HMACHeader  string `json:"hmac_header,omitempty"`
+	RetryPolicy string `json:"retry_policy,omitempty"`
+
+	// SOAP
+	SOAPVersion string `json:"soap_version,omitempty"`
 }
 
 // ContractsPillar groups all contract-related configuration.
