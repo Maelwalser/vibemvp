@@ -177,6 +177,8 @@ func (be *BackendEditor) applyDropdown() bool {
 			custom := applyTo(f)
 			if f.Key == "language" {
 				be.updateServiceFrameworkOptions(ed)
+			} else if f.Key == "language_version" || f.Key == "framework" {
+				be.updateServiceVersionOptions(ed)
 			}
 			return custom
 		}
@@ -220,6 +222,8 @@ func (be *BackendEditor) applyDropdown() bool {
 			switch f.Key {
 			case "monolith_lang":
 				be.updateEnvMonolithOptions()
+			case "monolith_lang_ver", "monolith_fw":
+				be.updateEnvMonolithVersionOptions()
 			case "compute_env":
 				be.updateEnvOrchestratorOptions()
 			}
@@ -508,6 +512,8 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 				switch f.Key {
 				case "monolith_lang":
 					be.updateEnvMonolithOptions()
+				case "monolith_lang_ver", "monolith_fw":
+					be.updateEnvMonolithVersionOptions()
 				case "compute_env":
 					be.updateEnvOrchestratorOptions()
 				}
