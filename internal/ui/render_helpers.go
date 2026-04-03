@@ -114,8 +114,29 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 		// Inject scrollable dropdown options below the active select/multiselect field.
 		// Skip dropdown when in insert mode for a custom-option field (text input is active).
 		if isCur && ddOpen && (f.Kind == KindSelect || f.Kind == KindMultiSelect) && !(insertMode && f.CanEditAsText()) {
+			const ddMaxVisible = 8
 			indent := strings.Repeat(" ", ddIndent)
-			for j, opt := range f.Options {
+			total := len(f.Options)
+
+			// Compute scroll window centered around the highlighted option.
+			start := ddOptIdx - ddMaxVisible/2
+			if start+ddMaxVisible > total {
+				start = total - ddMaxVisible
+			}
+			if start < 0 {
+				start = 0
+			}
+			end := start + ddMaxVisible
+			if end > total {
+				end = total
+			}
+
+			if start > 0 {
+				lines = append(lines, StyleSectionDesc.Render(fmt.Sprintf("%s↑ %d more", indent, start)))
+			}
+
+			for j := start; j < end; j++ {
+				opt := f.Options[j]
 				isHL := j == ddOptIdx
 				var optRow string
 				if f.Kind == KindMultiSelect {
@@ -146,6 +167,10 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 					}
 				}
 				lines = append(lines, optRow)
+			}
+
+			if end < total {
+				lines = append(lines, StyleSectionDesc.Render(fmt.Sprintf("%s↓ %d more", indent, total-end)))
 			}
 		}
 	}
