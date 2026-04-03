@@ -380,6 +380,23 @@ func parseVimCount(buf string) int {
 }
 
 // newFormInput creates a standard textinput for use in form editors.
+// uniqueName returns base if not present in existing, otherwise appends an
+// incrementing suffix (base1, base2, …) until a free name is found.
+func uniqueName(base string, existing []string) string {
+	taken := make(map[string]bool, len(existing))
+	for _, n := range existing {
+		taken[n] = true
+	}
+	if !taken[base] {
+		return base
+	}
+	for i := 1; ; i++ {
+		if candidate := fmt.Sprintf("%s%d", base, i); !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
 func newFormInput() textinput.Model {
 	fi := textinput.New()
 	fi.Prompt = ""

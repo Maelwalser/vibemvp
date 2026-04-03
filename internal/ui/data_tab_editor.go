@@ -1197,6 +1197,13 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		dt.domains = append(dt.domains, manifest.DomainDef{})
 		dt.domainIdx = len(dt.domains) - 1
 		dt.domainForm = defaultDomainFormFields(dt.dbNames())
+		existing := make([]string, 0, len(dt.domains)-1)
+		for i, d := range dt.domains {
+			if i != dt.domainIdx {
+				existing = append(existing, d.Name)
+			}
+		}
+		dt.domainForm = setFieldValue(dt.domainForm, "name", uniqueName("domain", existing))
 		dt.domainFormIdx = 0
 		dt.attrItems = nil
 		dt.relItems = nil
@@ -1439,6 +1446,13 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		dt.saveDomainAttrItemsOnly()
 		dt.attrIdx = len(dt.attrItems) - 1
 		dt.attrForm = copyFields(dt.attrItems[dt.attrIdx])
+		existing := make([]string, 0, len(dt.attrItems)-1)
+		for i, item := range dt.attrItems {
+			if i != dt.attrIdx {
+				existing = append(existing, fieldGet(item, "name"))
+			}
+		}
+		dt.attrForm = setFieldValue(dt.attrForm, "name", uniqueName("attribute", existing))
 		dt.attrFormIdx = 0
 		dt.domainSubView = domainViewAttrForm
 		return dt.tryEnterInsert()
@@ -1608,6 +1622,13 @@ func (dt DataTabEditor) updateCachingList(key tea.KeyMsg) (DataTabEditor, tea.Cm
 		dt.cachings = append(dt.cachings, manifest.CachingConfig{})
 		dt.cachingIdx = len(dt.cachings) - 1
 		dt.cachingForm = defaultCachingFields()
+		existing := make([]string, 0, len(dt.cachings)-1)
+		for i, c := range dt.cachings {
+			if i != dt.cachingIdx {
+				existing = append(existing, c.Name)
+			}
+		}
+		dt.cachingForm = setFieldValue(dt.cachingForm, "name", uniqueName("caching", existing))
 		dt.cachingFormIdx = 0
 		dt.cachingSubView = cachingViewForm
 	case "d":
@@ -1741,6 +1762,13 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		dt.fileStorages = append(dt.fileStorages, manifest.FileStorageDef{})
 		dt.fsIdx = len(dt.fileStorages) - 1
 		dt.fsForm = defaultFSFormFields(dt.domainNames())
+		existing := make([]string, 0, len(dt.fileStorages)-1)
+		for i, fs := range dt.fileStorages {
+			if i != dt.fsIdx {
+				existing = append(existing, fs.Purpose)
+			}
+		}
+		dt.fsForm = setFieldValue(dt.fsForm, "purpose", uniqueName("storage", existing))
 		dt.fsFormIdx = 0
 		dt.fsSubView = fsViewForm
 	case "d":

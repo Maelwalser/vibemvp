@@ -1063,6 +1063,13 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		ce.dtos = append(ce.dtos, manifest.DTODef{})
 		ce.dtoIdx = len(ce.dtos) - 1
 		ce.dtoForm = defaultDTOFormFields(ce.availableDomains)
+		existing := make([]string, 0, len(ce.dtos)-1)
+		for i, d := range ce.dtos {
+			if i != ce.dtoIdx {
+				existing = append(existing, d.Name)
+			}
+		}
+		ce.dtoForm = setFieldValue(ce.dtoForm, "name", uniqueName("dto", existing))
 		ce.dtoFormIdx = 0
 		ce.dtoFieldItems = nil
 		ce.dtoSubView = ceViewForm
@@ -1331,6 +1338,13 @@ func (ce ContractsEditor) updateDTOFieldList(key tea.KeyMsg) (ContractsEditor, t
 		ce.dtoFieldItems = append(ce.dtoFieldItems, defaultDTOFieldForm(ce.currentDTOProtocol()))
 		ce.dtoFieldIdx = len(ce.dtoFieldItems) - 1
 		ce.dtoFieldForm = copyFields(ce.dtoFieldItems[ce.dtoFieldIdx])
+		existing := make([]string, 0, len(ce.dtoFieldItems)-1)
+		for i, f := range ce.dtoFieldItems {
+			if i != ce.dtoFieldIdx {
+				existing = append(existing, fieldGet(f, "name"))
+			}
+		}
+		ce.dtoFieldForm = setFieldValue(ce.dtoFieldForm, "name", uniqueName("field", existing))
 		ce.dtoFieldFormIdx = 0
 		ce.dtoSubView = ceViewSubForm
 		return ce.tryEnterInsert()
@@ -1426,6 +1440,13 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 		ce.endpoints = append(ce.endpoints, manifest.EndpointDef{})
 		ce.epIdx = len(ce.endpoints) - 1
 		ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames())
+		existing := make([]string, 0, len(ce.endpoints)-1)
+		for i, ep := range ce.endpoints {
+			if i != ce.epIdx {
+				existing = append(existing, ep.NamePath)
+			}
+		}
+		ce.epForm = setFieldValue(ce.epForm, "name_path", uniqueName("endpoint", existing))
 		ce.epFormIdx = 0
 		ce.epSubView = ceViewForm
 		return ce.tryEnterInsert()
@@ -1609,6 +1630,13 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
 		ce.extIdx = len(ce.externalAPIs) - 1
 		ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
+		existing := make([]string, 0, len(ce.externalAPIs)-1)
+		for i, api := range ce.externalAPIs {
+			if i != ce.extIdx {
+				existing = append(existing, api.Provider)
+			}
+		}
+		ce.extForm = setFieldValue(ce.extForm, "provider", uniqueName("api", existing))
 		ce.extFormIdx = 0
 		ce.extSubView = ceViewForm
 		return ce.tryEnterInsert()

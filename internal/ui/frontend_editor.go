@@ -1298,6 +1298,15 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
 		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes())
+		existing := make([]string, 0, len(fe.pages)-1)
+		for i, p := range fe.pages {
+			if i != fe.pageIdx {
+				existing = append(existing, p.Name)
+			}
+		}
+		name := uniqueName("page", existing)
+		fe.pageForm = setFieldValue(fe.pageForm, "name", name)
+		fe.pageForm = setFieldValue(fe.pageForm, "route", "/"+name)
 		fe.pageFormIdx = 0
 		fe.pageSubView = ceViewForm
 		return fe.tryEnterInsert()

@@ -1641,6 +1641,13 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 		ed.items = append(ed.items, defaultServiceFields())
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
+		existing := make([]string, 0, len(be.Services)-1)
+		for i, s := range be.Services {
+			if i != ed.itemIdx {
+				existing = append(existing, s.Name)
+			}
+		}
+		ed.form = setFieldValue(ed.form, "name", uniqueName("service", existing))
 		ed.formIdx = 0
 		ed.itemView = beListViewForm
 		be.activeField = 0
@@ -1975,6 +1982,13 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 		ed.items = append(ed.items, be.withDomainNames(defaultEventFields()))
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
+		existing := make([]string, 0, len(be.Events)-1)
+		for i, ev := range be.Events {
+			if i != ed.itemIdx {
+				existing = append(existing, ev.Name)
+			}
+		}
+		ed.form = setFieldValue(ed.form, "name", uniqueName("event", existing))
 		ed.formIdx = 0
 		ed.itemView = beListViewForm
 		be.activeField = brokerCount + ed.itemIdx
@@ -2551,6 +2565,13 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
 		be.jobsIdx = len(be.jobQueues) - 1
 		be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
+		existing := make([]string, 0, len(be.jobQueues)-1)
+		for i, jq := range be.jobQueues {
+			if i != be.jobsIdx {
+				existing = append(existing, jq.Name)
+			}
+		}
+		be.jobsForm = setFieldValue(be.jobsForm, "name", uniqueName("queue", existing))
 		be.jobsFormIdx = 0
 		be.jobsSubView = beViewForm
 		be.activeField = 0
@@ -2854,6 +2875,13 @@ func (be BackendEditor) updateAuthRoleList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.authRoles = append(be.authRoles, manifest.RoleDef{})
 		be.authRolesIdx = len(be.authRoles) - 1
 		be.authRoleForm = defaultRoleFormFields(be.permissionNames(), be.roleNamesExcept(be.authRolesIdx))
+		existing := make([]string, 0, len(be.authRoles)-1)
+		for i, r := range be.authRoles {
+			if i != be.authRolesIdx {
+				existing = append(existing, r.Name)
+			}
+		}
+		be.authRoleForm = setFieldValue(be.authRoleForm, "name", uniqueName("role", existing))
 		be.authRoleFormIdx = 0
 		be.authSubView = beAuthViewRoleForm
 		be.activeField = 0
@@ -2968,6 +2996,13 @@ func (be BackendEditor) updateAuthPermList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.authPerms = append(be.authPerms, manifest.PermissionDef{})
 		be.authPermsIdx = len(be.authPerms) - 1
 		be.authPermForm = defaultPermFormFields()
+		existing := make([]string, 0, len(be.authPerms)-1)
+		for i, p := range be.authPerms {
+			if i != be.authPermsIdx {
+				existing = append(existing, p.Name)
+			}
+		}
+		be.authPermForm = setFieldValue(be.authPermForm, "name", uniqueName("permission", existing))
 		be.authPermFormIdx = 0
 		be.authSubView = beAuthViewPermForm
 		be.activeField = 0
