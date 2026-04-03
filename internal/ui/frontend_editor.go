@@ -159,7 +159,7 @@ func (fe FrontendEditor) componentNames() []string {
 	return names
 }
 
-// pageRoutes returns routes of all existing pages (for linked_pages options).
+// pageRoutes returns routes of all existing pages.
 func (fe FrontendEditor) pageRoutes() []string {
 	routes := make([]string, 0, len(fe.pages))
 	for _, p := range fe.pages {
