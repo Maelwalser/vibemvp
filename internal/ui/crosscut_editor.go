@@ -107,9 +107,6 @@ func newCrossCutEditor() CrossCutEditor {
 	}
 }
 
-// SetTestingContext updates the backend languages, protocols, and frontend tech
-// context used to filter testing framework options. If the testing tab is already
-// enabled, the field options are recomputed immediately (preserving current selections).
 // ── ToManifest ────────────────────────────────────────────────────────────────
 
 func (cc CrossCutEditor) ToManifestCrossCutPillar() manifest.CrossCutPillar {
