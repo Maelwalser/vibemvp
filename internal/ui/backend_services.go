@@ -72,7 +72,7 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 // isServiceFieldHidden returns true when a service form field should be hidden for the current arch.
 func (be BackendEditor) isServiceFieldHidden(key string) bool {
 	arch := be.currentArch()
-	if arch == "monolith" && (key == "language" || key == "language_version" || key == "framework" || key == "framework_version" || key == "service_discovery") {
+	if arch == "monolith" && (key == "language" || key == "language_version" || key == "framework" || key == "framework_version" || key == "service_discovery" || key == "environment") {
 		return true
 	}
 	if arch != "hybrid" && key == "pattern_tag" {
@@ -394,14 +394,39 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	return be, nil
 }
 
+// isCommFieldHidden returns true when a comm form field should be hidden.
+// response_dto is only shown when direction is "Bidirectional (↔)".
+func (be BackendEditor) isCommFieldHidden(key string) bool {
+	if key == "response_dto" {
+		direction := fieldGet(be.commEditor.form, "direction")
+		return direction != "Bidirectional (↔)"
+	}
+	return false
+}
+
+// nextCommFormIdx advances formIdx by delta, skipping hidden comm form fields.
+func (be BackendEditor) nextCommFormIdx(ed *beListEditor, delta int) int {
+	n := len(ed.form)
+	if n == 0 {
+		return 0
+	}
+	idx := ed.formIdx
+	for i := 0; i < n; i++ {
+		idx = (idx + delta + n) % n
+		if !be.isCommFieldHidden(ed.form[idx].Key) {
+			return idx
+		}
+	}
+	return ed.formIdx
+}
+
 func (be BackendEditor) updateCommForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
 	ed := &be.commEditor
 	switch key.String() {
 	case "j", "down":
-		ed.formIdx = (ed.formIdx + 1) % len(ed.form)
+		ed.formIdx = be.nextCommFormIdx(ed, 1)
 	case "k", "up":
-		n := len(ed.form)
-		ed.formIdx = (ed.formIdx - 1 + n) % n
+		ed.formIdx = be.nextCommFormIdx(ed, -1)
 	case "enter", " ":
 		f := &ed.form[ed.formIdx]
 		if f.Kind == KindSelect || f.Kind == KindMultiSelect {

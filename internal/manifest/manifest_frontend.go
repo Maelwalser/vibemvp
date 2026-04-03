@@ -70,6 +70,7 @@ type PageDef struct {
 	ErrorHandling string `json:"error_handling"`
 	AuthRoles     string `json:"auth_roles,omitempty"`
 	LinkedPages   string `json:"linked_pages,omitempty"`
+	Assets        string `json:"assets,omitempty"`         // comma-separated asset names used on this page
 	ComponentRefs string `json:"component_refs,omitempty"` // comma-sep names from the component library
 }
 

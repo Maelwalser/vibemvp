@@ -85,6 +85,14 @@ func defaultEnvFields() []Field {
 			Options: backendLintersByLang["Go"],
 			Value:   "None", SelIdx: len(backendLintersByLang["Go"]) - 1,
 		},
+		// Monolith-only: shared environment for all services.
+		{
+			Key:     "environment",
+			Label:   "environment   ",
+			Kind:    KindSelect,
+			Options: []string{"(no environments configured)"},
+			Value:   "(no environments configured)",
+		},
 	}
 }
 
@@ -271,17 +279,18 @@ func defaultCommFields() []Field {
 			Key: "resilience", Label: "resilience    ", Kind: KindMultiSelect,
 			Options: []string{"Circuit breaker", "Retry with backoff", "Timeout", "Bulkhead", "None"},
 		},
-		{
-			// Options populated dynamically via withDTONames(); Value stores
-			// comma-sep names for lazy restoration before options are injected.
-			Key: "dto", Label: "dto           ", Kind: KindMultiSelect,
-		},
+		// Options populated dynamically via withDTONames(); Value stores
+		// comma-sep names for lazy restoration before options are injected.
+		{Key: "payload_dto", Label: "payload_dto   ", Kind: KindMultiSelect},
+		// Only shown when direction is "Bidirectional (↔)".
+		{Key: "response_dto", Label: "response_dto  ", Kind: KindMultiSelect},
 	}
 }
 
 func commLinkFromFields(fields []Field) manifest.CommLink {
 	var resilience []string
-	var dtos []string
+	var payloadDTOs []string
+	var responseDTOs []string
 	for _, f := range fields {
 		switch f.Key {
 		case "resilience":
@@ -290,10 +299,16 @@ func commLinkFromFields(fields []Field) manifest.CommLink {
 					resilience = append(resilience, f.Options[idx])
 				}
 			}
-		case "dto":
+		case "payload_dto":
 			for _, idx := range f.SelectedIdxs {
 				if idx < len(f.Options) {
-					dtos = append(dtos, f.Options[idx])
+					payloadDTOs = append(payloadDTOs, f.Options[idx])
+				}
+			}
+		case "response_dto":
+			for _, idx := range f.SelectedIdxs {
+				if idx < len(f.Options) {
+					responseDTOs = append(responseDTOs, f.Options[idx])
 				}
 			}
 		}
@@ -306,7 +321,8 @@ func commLinkFromFields(fields []Field) manifest.CommLink {
 		Trigger:            fieldGet(fields, "trigger"),
 		SyncAsync:          fieldGet(fields, "sync_async"),
 		ResiliencePatterns: resilience,
-		DTOs:               dtos,
+		DTOs:               payloadDTOs,
+		ResponseDTOs:       responseDTOs,
 	}
 }
 
@@ -327,8 +343,16 @@ func commFieldsFromLink(l manifest.CommLink) []Field {
 	// Store selected DTO names in Value for lazy restoration via withDTONames().
 	if len(l.DTOs) > 0 {
 		for i := range f {
-			if f[i].Key == "dto" {
+			if f[i].Key == "payload_dto" {
 				f[i].Value = strings.Join(l.DTOs, ", ")
+				break
+			}
+		}
+	}
+	if len(l.ResponseDTOs) > 0 {
+		for i := range f {
+			if f[i].Key == "response_dto" {
+				f[i].Value = strings.Join(l.ResponseDTOs, ", ")
 				break
 			}
 		}
@@ -634,13 +658,13 @@ func (be BackendEditor) withServiceNames(fields []Field) []Field {
 	return out
 }
 
-// withDTONames returns a copy of fields where the dto field's options are
-// populated with the currently available DTO names, restoring any prior
-// selections by matching option names.
+// withDTONames returns a copy of fields where payload_dto and response_dto
+// options are populated with the currently available DTO names, restoring any
+// prior selections by matching option names.
 func (be BackendEditor) withDTONames(fields []Field) []Field {
 	out := copyFields(fields)
 	for i := range out {
-		if out[i].Key != "dto" {
+		if out[i].Key != "payload_dto" && out[i].Key != "response_dto" {
 			continue
 		}
 		// Collect previously selected DTO names before replacing options.
@@ -665,7 +689,6 @@ func (be BackendEditor) withDTONames(fields []Field) []Field {
 				}
 			}
 		}
-		break
 	}
 	return out
 }

@@ -90,7 +90,7 @@ func (be BackendEditor) visibleEnvFields() []Field {
 	corsStrategy := fieldGet(be.EnvFields, "cors_strategy")
 	var out []Field
 	for _, f := range be.EnvFields {
-		if (f.Key == "monolith_lang" || f.Key == "monolith_lang_ver" || f.Key == "monolith_fw" || f.Key == "monolith_fw_ver") && arch != "monolith" {
+		if (f.Key == "monolith_lang" || f.Key == "monolith_lang_ver" || f.Key == "monolith_fw" || f.Key == "monolith_fw_ver" || f.Key == "environment") && arch != "monolith" {
 			continue
 		}
 		if f.Key == "cors_origins" && corsStrategy != "Strict allowlist" {
@@ -434,8 +434,8 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 	filteredActiveIdx := ed.formIdx
 	skippedBefore := 0
 	for i, f := range ed.form {
-		// For monolith: language, framework, and service_discovery are defined at top level (ENV tab)
-		if arch == "monolith" && (f.Key == "language" || f.Key == "framework" || f.Key == "service_discovery") {
+		// For monolith: language, framework, service_discovery and environment are defined at top level (ENV tab)
+		if arch == "monolith" && (f.Key == "language" || f.Key == "framework" || f.Key == "service_discovery" || f.Key == "environment") {
 			if i < ed.formIdx {
 				skippedBefore++
 			}
@@ -491,9 +491,27 @@ func (be BackendEditor) viewCommEditor(w int) []string {
 	if from == "" && to == "" {
 		title = "(new link)"
 	}
+
+	// Filter fields based on direction; response_dto only shown when bidirectional.
+	var visibleFields []Field
+	skippedBefore := 0
+	for i, f := range ed.form {
+		if be.isCommFieldHidden(f.Key) {
+			if i < ed.formIdx {
+				skippedBefore++
+			}
+			continue
+		}
+		visibleFields = append(visibleFields, f)
+	}
+	filteredIdx := ed.formIdx - skippedBefore
+	if filteredIdx < 0 {
+		filteredIdx = 0
+	}
+
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
-	lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == ModeInsert, be.formInput, be.dd.Open, be.dd.OptIdx)...)
+	lines = append(lines, renderFormFields(w, visibleFields, filteredIdx, be.internalMode == ModeInsert, be.formInput, be.dd.Open, be.dd.OptIdx)...)
 	return lines
 }
 

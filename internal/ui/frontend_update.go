@@ -191,7 +191,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	case "a":
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
-		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes(), fe.componentNames())
+		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames(), fe.componentNames())
 		existing := make([]string, 0, len(fe.pages)-1)
 		for i, p := range fe.pages {
 			if i != fe.pageIdx {
@@ -221,7 +221,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 					otherRoutes = append(otherRoutes, pg.Route)
 				}
 			}
-			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes, fe.componentNames())
+			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes, fe.assetNames(), fe.componentNames())
 			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
 			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
 			if p.Purpose != "" {
@@ -259,6 +259,21 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 				for i := range fe.pageForm {
 					if fe.pageForm[i].Key == "linked_pages" {
 						for _, sel := range strings.Split(p.LinkedPages, ", ") {
+							for j, opt := range fe.pageForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
+			// Restore multiselect for assets
+			if p.Assets != "" {
+				for i := range fe.pageForm {
+					if fe.pageForm[i].Key == "assets" {
+						for _, sel := range strings.Split(p.Assets, ", ") {
 							for j, opt := range fe.pageForm[i].Options {
 								if opt == strings.TrimSpace(sel) {
 									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
@@ -393,6 +408,7 @@ func (fe *FrontendEditor) savePageForm() {
 	p.ErrorHandling = fieldGet(fe.pageForm, "error_handling")
 	p.AuthRoles = fieldGetMulti(fe.pageForm, "auth_roles")
 	p.LinkedPages = fieldGetMulti(fe.pageForm, "linked_pages")
+	p.Assets = fieldGetMulti(fe.pageForm, "assets")
 	p.ComponentRefs = fieldGetMulti(fe.pageForm, "component_refs")
 }
 

@@ -189,7 +189,7 @@ func defaultFEThemeFields() []Field {
 	}
 }
 
-func defaultPageFormFields(authRoleOptions, pageRouteOptions, componentNameOptions []string) []Field {
+func defaultPageFormFields(authRoleOptions, pageRouteOptions, assetNameOptions, componentNameOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "route", Label: "route         ", Kind: KindText},
@@ -232,6 +232,11 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions, componentNameOptio
 			Key: "linked_pages", Label: "linked_pages  ", Kind: KindMultiSelect,
 			Options: pageRouteOptions,
 			Value:   placeholderFor(pageRouteOptions, "(no pages configured)"),
+		},
+		{
+			Key: "assets", Label: "assets        ", Kind: KindMultiSelect,
+			Options: assetNameOptions,
+			Value:   placeholderFor(assetNameOptions, "(no assets configured)"),
 		},
 		{
 			Key: "component_refs", Label: "components    ", Kind: KindMultiSelect,

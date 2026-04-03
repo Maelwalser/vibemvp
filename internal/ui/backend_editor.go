@@ -267,9 +267,11 @@ func (be *BackendEditor) SetEndpointNames(names []string) {
 }
 
 // SetEnvironmentNames injects environment names from the infra tab so that
-// service forms can show an environment selector dropdown.
+// the monolith env tab and service forms can show an environment selector dropdown.
 func (be *BackendEditor) SetEnvironmentNames(names []string) {
 	be.environmentNames = names
+	// Refresh the monolith shared environment dropdown in the env tab.
+	be.applyEnvNamesToServiceFields(be.EnvFields)
 	// Refresh environment dropdowns in the active form and all stored items.
 	be.applyEnvNamesToServiceFields(be.serviceEditor.form)
 	for _, item := range be.serviceEditor.items {
@@ -425,6 +427,10 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		bp.LanguageVersion = fieldGet(be.EnvFields, "monolith_lang_ver")
 		bp.Framework = fieldGet(be.EnvFields, "monolith_fw")
 		bp.FrameworkVersion = fieldGet(be.EnvFields, "monolith_fw_ver")
+		env := fieldGet(be.EnvFields, "environment")
+		if env != "(no environments configured)" {
+			bp.MonolithEnvironment = env
+		}
 	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
 		bp.LanguageVersion = be.Services[0].LanguageVersion
@@ -467,6 +473,9 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
 			be.updateEnvMonolithVersionOptions()
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw_ver", bp.FrameworkVersion)
+			if bp.MonolithEnvironment != "" {
+				be.EnvFields = setFieldValue(be.EnvFields, "environment", bp.MonolithEnvironment)
+			}
 		}
 	}
 
