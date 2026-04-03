@@ -58,6 +58,21 @@ func runtimeOptionsForLangs(langs []string) []string {
 	return out
 }
 
+// deployStrategiesByOrchestrator maps orchestrator → valid deploy strategies.
+var deployStrategiesByOrchestrator = map[string][]string{
+	"Docker Compose": {"Recreate"},
+	"K3s":            {"Rolling", "Blue-green", "Canary", "Recreate"},
+	"K8s (managed)":  {"Rolling", "Blue-green", "Canary", "Recreate"},
+	"ECS":            {"Rolling", "Blue-green", "Canary"},
+	"Cloud Run":      {"Rolling", "Canary"},
+	"Nomad":          {"Rolling", "Blue-green", "Canary"},
+	"None":           {"Recreate"},
+}
+
+// deployStrategyAllOptions is the union of all orchestrator-specific strategies,
+// shown before any orchestrator is configured.
+var deployStrategyAllOptions = []string{"Rolling", "Blue-green", "Canary", "Recreate"}
+
 // infraAllOptions is the full (provider-agnostic) option set for each
 // cloud-provider-aware field. Used when no provider is selected.
 var infraAllOptions = map[string][]string{
@@ -409,6 +424,42 @@ type InfraEditor struct {
 	// backendLanguages mirrors the languages from the backend services/monolith
 	// so that container_runtime options reflect what is actually being built.
 	backendLanguages string // joined with "," for cheap equality checks
+
+	// orchestrator mirrors the backend Env orchestrator so that deploy_strategy
+	// options stay consistent with what the chosen orchestrator supports.
+	orchestrator string
+}
+
+// SetOrchestrator narrows the deploy_strategy options to those supported by
+// the given orchestrator. A no-op when the orchestrator has not changed.
+func (ie *InfraEditor) SetOrchestrator(orch string) {
+	if ie.orchestrator == orch {
+		return
+	}
+	ie.orchestrator = orch
+	opts, ok := deployStrategiesByOrchestrator[orch]
+	if !ok {
+		opts = deployStrategyAllOptions
+	}
+	for i := range ie.cicdFields {
+		if ie.cicdFields[i].Key != "deploy_strategy" {
+			continue
+		}
+		ie.cicdFields[i].Options = opts
+		found := false
+		for j, o := range opts {
+			if o == ie.cicdFields[i].Value {
+				ie.cicdFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			ie.cicdFields[i].Value = opts[0]
+			ie.cicdFields[i].SelIdx = 0
+		}
+		break
+	}
 }
 
 // SetCloudProvider narrows cloud-aware field options to those appropriate for

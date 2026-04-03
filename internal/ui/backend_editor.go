@@ -3470,6 +3470,12 @@ func (be BackendEditor) CloudProvider() string {
 	return fieldGet(be.EnvFields, "cloud_provider")
 }
 
+// Orchestrator returns the selected orchestrator from the Env tab.
+// Returns an empty string if the env section has not been configured.
+func (be BackendEditor) Orchestrator() string {
+	return fieldGet(be.EnvFields, "orchestrator")
+}
+
 // AuthRoleOptions returns role names for use in frontend page forms.
 // Returns only explicitly configured roles; empty slice means none configured.
 func (be BackendEditor) AuthRoleOptions() []string {
