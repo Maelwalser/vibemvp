@@ -101,9 +101,13 @@ func (fe FrontendEditor) updateTheme(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		}
 	case "enter", " ":
 		f := &fe.themeFields[fe.themeFormIdx]
-		if f.Kind == KindSelect {
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
 			fe.dd.Open = true
-			fe.dd.OptIdx = f.SelIdx
+			if f.Kind == KindSelect {
+				fe.dd.OptIdx = f.SelIdx
+			} else {
+				fe.dd.OptIdx = f.DDCursor
+			}
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -130,16 +134,37 @@ func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, te
 	f := &fe.themeFields[fe.themeFormIdx]
 	fe.dd.OptIdx = NavigateDropdown(key.String(), fe.dd.OptIdx, len(f.Options))
 	switch key.String() {
-	case " ", "enter":
-		f.SelIdx = fe.dd.OptIdx
-		if fe.dd.OptIdx < len(f.Options) {
-			f.Value = f.Options[fe.dd.OptIdx]
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
+			f.DDCursor = fe.dd.OptIdx
+		} else {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+			fe.dd.Open = false
+			if f.PrepareCustomEntry() {
+				return fe.tryEnterInsert()
+			}
+		}
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		} else {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+			if f.PrepareCustomEntry() {
+				return fe.tryEnterInsert()
+			}
 		}
 		fe.dd.Open = false
-		if f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
-		}
 	case "esc", "b":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		}
 		fe.dd.Open = false
 	}
 	return fe, nil

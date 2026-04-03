@@ -82,6 +82,33 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 			} else {
 				valStr = val + StyleSelectArrow.Render(" ▾")
 			}
+		case f.Kind == KindMultiSelect && f.ColorSwatch:
+			arrow := StyleSelectArrow.Render(" ▾")
+			if isCur && ddOpen {
+				arrow = StyleSelectArrow.Render(" ▴")
+			}
+			if len(f.SelectedIdxs) == 0 {
+				placeholder := "(none)"
+				if isCur {
+					valStr = StyleFieldValActive.Render(placeholder) + arrow
+				} else {
+					valStr = StyleFieldVal.Render(placeholder) + arrow
+				}
+			} else {
+				var pieces []string
+				for _, idx := range f.SelectedIdxs {
+					if idx >= 0 && idx < len(f.Options) {
+						hex := f.Options[idx]
+						swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
+						pieces = append(pieces, swatch+StyleFieldVal.Render(" "+hex))
+					}
+				}
+				val := strings.Join(pieces, StyleSectionDesc.Render(" · "))
+				if lipgloss.Width(val) > valW-2 {
+					val = StyleFieldVal.Render(fmt.Sprintf("%d colors", len(f.SelectedIdxs)))
+				}
+				valStr = val + arrow
+			}
 		case f.Kind == KindMultiSelect:
 			val := f.DisplayValue()
 			if val == "" {
@@ -153,7 +180,24 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				opt := f.Options[j]
 				isHL := j == ddOptIdx
 				var optRow string
-				if f.Kind == KindMultiSelect {
+				if f.ColorSwatch && strings.HasPrefix(opt, "#") {
+					// Render a colored swatch block (foreground-only, survives cursor highlight).
+					swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(opt)).Bold(true).Render("■")
+					check := "  "
+					if f.IsMultiSelected(j) {
+						check = StyleNeonGreen.Render("✓") + " "
+					}
+					if isHL {
+						optRow = indent + StyleFieldValActive.Render("► ") + check + swatch + " " + StyleFieldValActive.Render(opt)
+						rw := lipgloss.Width(optRow)
+						if rw < w {
+							optRow += strings.Repeat(" ", w-rw)
+						}
+						optRow = activeCurLineStyle().Render(optRow)
+					} else {
+						optRow = indent + "   " + check + swatch + " " + StyleFieldVal.Render(opt)
+					}
+				} else if f.Kind == KindMultiSelect {
 					check := "  "
 					if f.IsMultiSelected(j) {
 						check = StyleNeonGreen.Render("✓") + " "

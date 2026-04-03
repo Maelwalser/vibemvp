@@ -265,7 +265,7 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 		fe.themeFields = setFieldValue(fe.themeFields, "elevation", th.Elevation)
 		fe.themeFields = setFieldValue(fe.themeFields, "motion", th.Motion)
 		fe.themeFields = setFieldValue(fe.themeFields, "vibe", th.Vibe)
-		fe.themeFields = setFieldValue(fe.themeFields, "colors", th.Colors)
+		fe.themeFields = restoreMultiSelectValue(fe.themeFields, "colors", th.Colors)
 		fe.themeFields = setFieldValue(fe.themeFields, "description", th.Description)
 	}
 

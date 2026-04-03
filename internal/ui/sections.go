@@ -24,6 +24,7 @@ type Field struct {
 	SelectedIdxs []int    // KindMultiSelect: indices of selected options
 	DDCursor     int      // KindMultiSelect: dropdown cursor position
 	CustomText   string   // KindSelect: free-text value when "Custom"/"Other" is selected
+	ColorSwatch  bool     // KindMultiSelect: options are hex colors; render colored swatches in dropdown
 }
 
 // isCustomOption returns true for sentinel options that allow free-text entry.

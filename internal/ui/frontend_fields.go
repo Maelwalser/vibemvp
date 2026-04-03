@@ -170,7 +170,11 @@ func defaultFEThemeFields() []Field {
 			},
 			Value: "Professional",
 		},
-		{Key: "colors", Label: "colors        ", Kind: KindText},
+		{
+			Key: "colors", Label: "colors        ", Kind: KindMultiSelect,
+			ColorSwatch: true,
+			Options:     themeColorPalette,
+		},
 		{Key: "description", Label: "description   ", Kind: KindTextArea},
 	}
 }
@@ -347,6 +351,28 @@ func defaultNavFields() []Field {
 	}
 }
 
+
+// themeColorPalette is the curated set of hex colors offered in the Theme → colors picker.
+// Colors are grouped by hue family for easy visual scanning in the dropdown.
+var themeColorPalette = []string{
+	// Neutrals
+	"#ffffff", "#f8fafc", "#e2e8f0", "#94a3b8", "#64748b",
+	"#334155", "#1e293b", "#0f172a", "#000000",
+	// Blues
+	"#bfdbfe", "#60a5fa", "#3b82f6", "#1d4ed8",
+	// Greens
+	"#6ee7b7", "#10b981", "#059669", "#047857",
+	// Reds
+	"#f87171", "#ef4444", "#b91c1c",
+	// Ambers
+	"#fbbf24", "#f59e0b", "#d97706",
+	// Purples
+	"#a78bfa", "#7c3aed", "#4c1d95",
+	// Pinks
+	"#f472b6", "#ec4899", "#be185d",
+	// Cyans/Teals
+	"#22d3ee", "#06b6d4", "#0e7490",
+}
 
 // ── compatibility maps ────────────────────────────────────────────────────────
 
