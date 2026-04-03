@@ -8,6 +8,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// copyFields makes a deep copy of a field slice, duplicating the Options slice
+// so mutations to one copy do not affect others.
+func copyFields(src []Field) []Field {
+	dst := make([]Field, len(src))
+	for i, f := range src {
+		dst[i] = f
+		if f.Options != nil {
+			dst[i].Options = make([]string, len(f.Options))
+			copy(dst[i].Options, f.Options)
+		}
+	}
+	return dst
+}
+
 // renderFormFields renders a list of Fields into display lines using the
 // shared vim-style form layout. It is the canonical rendering helper for all
 // editors and can be called from any sub-editor's view methods.
@@ -382,6 +396,46 @@ func restoreMultiSelectValue(fields []Field, key, val string) []Field {
 	return fields
 }
 
+// stringSlicesEqual returns true when a and b have the same length and elements.
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// nextFormIdx returns the next non-disabled field index after cur, wrapping around.
+// disabled is a predicate called with the full field slice and a candidate index.
+func nextFormIdx(form []Field, cur int, disabled func([]Field, int) bool) int {
+	n := len(form)
+	if n == 0 {
+		return cur
+	}
+	next := (cur + 1) % n
+	for next != cur && disabled(form, next) {
+		next = (next + 1) % n
+	}
+	return next
+}
+
+// prevFormIdx returns the previous non-disabled field index before cur, wrapping around.
+func prevFormIdx(form []Field, cur int, disabled func([]Field, int) bool) int {
+	n := len(form)
+	if n == 0 {
+		return cur
+	}
+	prev := (cur - 1 + n) % n
+	for prev != cur && disabled(form, prev) {
+		prev = (prev - 1 + n) % n
+	}
+	return prev
+}
+
 // parseVimCount converts a digit buffer (e.g. "3", "12") to an integer count.
 // Returns 1 when the buffer is empty. Caps at 999 for sanity.
 func parseVimCount(buf string) int {
@@ -538,4 +592,34 @@ func stripANSI(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// splitCSV splits a comma-separated string into trimmed, non-empty parts.
+// Both "a, b" and "a,b" are handled identically.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// fillTildes pads lines with vim-style tilde lines to height h.
+func fillTildes(lines []string, h int) string {
+	for len(lines) < h {
+		lines = append(lines, StyleTilde.Render("·"))
+	}
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n") + "\n"
 }

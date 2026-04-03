@@ -152,3 +152,35 @@ const (
 	IndexGIST  IndexType = "gist"
 	IndexBRIN  IndexType = "brin"
 )
+
+// SyncAsyncMode enumerates valid values for CommLink.SyncAsync.
+type SyncAsyncMode = string
+
+const (
+	SyncAsyncSync  SyncAsyncMode = "sync"
+	SyncAsyncAsync SyncAsyncMode = "async"
+)
+
+// PatternTag enumerates valid values for ServiceDef.PatternTag (hybrid arch only).
+type PatternTag = string
+
+const (
+	PatternTagDomain    PatternTag = "domain"
+	PatternTagInfra     PatternTag = "infra"
+	PatternTagBFF       PatternTag = "bff"
+	PatternTagGateway   PatternTag = "gateway"
+	PatternTagWorker    PatternTag = "worker"
+	PatternTagExternal  PatternTag = "external"
+)
+
+// AuthStrategy enumerates valid values for AuthConfig.Strategy.
+type AuthStrategy = string
+
+const (
+	AuthStrategyJWT     AuthStrategy = "JWT"
+	AuthStrategySession AuthStrategy = "Session-based"
+	AuthStrategySAML    AuthStrategy = "SAML"
+	AuthStrategyOIDC    AuthStrategy = "OIDC"
+	AuthStrategyAPIKey  AuthStrategy = "API Key"
+	AuthStrategyNone    AuthStrategy = "None"
+)

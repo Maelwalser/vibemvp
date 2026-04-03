@@ -13,14 +13,6 @@ import (
 // RealizeMsg is emitted when the user presses R to start realization.
 type RealizeMsg struct{}
 
-// ── mode ──────────────────────────────────────────────────────────────────────
-
-type realizeMode int
-
-const (
-	realizeNormal realizeMode = iota
-	realizeInsert
-)
 
 // ── field definitions ─────────────────────────────────────────────────────────
 
@@ -70,12 +62,12 @@ func defaultRealizeFields() []Field {
 		},
 		{
 			Key: "verify", Label: "verify        ", Kind: KindSelect,
-			Options: []string{"true", "false"},
+			Options: OptionsOnOff,
 			Value:   "true",
 		},
 		{
 			Key: "dry_run", Label: "dry_run       ", Kind: KindSelect,
-			Options: []string{"false", "true"},
+			Options: OptionsOffOn,
 			Value:   "false",
 		},
 		// Per-section model overrides (options populated dynamically via UpdateProviderOptions)
@@ -112,11 +104,10 @@ func defaultRealizeFields() []Field {
 type RealizeEditor struct {
 	fields    []Field
 	activeIdx int
-	mode      realizeMode
+	mode      Mode
 	formInput textinput.Model
 	width     int
-	ddOpen    bool
-	ddOptIdx  int
+	dd        DropdownState
 }
 
 func newRealizeEditor() RealizeEditor {
@@ -250,14 +241,14 @@ func (r RealizeEditor) FromRealizeOptions(ro manifest.RealizeOptions) RealizeEdi
 // ── Mode / HintLine ───────────────────────────────────────────────────────────
 
 func (r RealizeEditor) Mode() Mode {
-	if r.mode == realizeInsert {
+	if r.mode == ModeInsert {
 		return ModeInsert
 	}
 	return ModeNormal
 }
 
 func (r RealizeEditor) HintLine() string {
-	if r.mode == realizeInsert {
+	if r.mode == ModeInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
@@ -272,14 +263,14 @@ func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
 		r.formInput.Width = wsz.Width - 22
 		return r, nil
 	}
-	if r.mode == realizeInsert {
+	if r.mode == ModeInsert {
 		return r.updateInsert(msg)
 	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return r, nil
 	}
-	if r.ddOpen {
+	if r.dd.Open {
 		return r.updateDropdown(key)
 	}
 	switch key.String() {
@@ -299,8 +290,8 @@ func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
 		if r.activeIdx < len(r.fields) {
 			f := &r.fields[r.activeIdx]
 			if f.Kind == KindSelect {
-				r.ddOpen = true
-				r.ddOptIdx = f.SelIdx
+				r.dd.Open = true
+				r.dd.OptIdx = f.SelIdx
 			} else {
 				return r.tryEnterInsert()
 			}
@@ -322,30 +313,23 @@ func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
 
 func (r RealizeEditor) updateDropdown(key tea.KeyMsg) (RealizeEditor, tea.Cmd) {
 	if r.activeIdx >= len(r.fields) {
-		r.ddOpen = false
+		r.dd.Open = false
 		return r, nil
 	}
 	f := &r.fields[r.activeIdx]
+	r.dd.OptIdx = NavigateDropdown(key.String(), r.dd.OptIdx, len(f.Options))
 	switch key.String() {
-	case "j", "down":
-		if r.ddOptIdx < len(f.Options)-1 {
-			r.ddOptIdx++
-		}
-	case "k", "up":
-		if r.ddOptIdx > 0 {
-			r.ddOptIdx--
-		}
 	case " ", "enter":
-		f.SelIdx = r.ddOptIdx
-		if r.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[r.ddOptIdx]
+		f.SelIdx = r.dd.OptIdx
+		if r.dd.OptIdx < len(f.Options) {
+			f.Value = f.Options[r.dd.OptIdx]
 		}
-		r.ddOpen = false
+		r.dd.Open = false
 		if f.PrepareCustomEntry() {
 			return r.tryEnterInsert()
 		}
 	case "esc", "b":
-		r.ddOpen = false
+		r.dd.Open = false
 	}
 	return r, nil
 }
@@ -356,7 +340,7 @@ func (r RealizeEditor) updateInsert(msg tea.Msg) (RealizeEditor, tea.Cmd) {
 		switch key.String() {
 		case "esc":
 			r.saveInput()
-			r.mode = realizeNormal
+			r.mode = ModeNormal
 			r.formInput.Blur()
 			return r, nil
 		case "tab":
@@ -386,7 +370,7 @@ func (r *RealizeEditor) saveInput() {
 
 func (r RealizeEditor) tryEnterInsert() (RealizeEditor, tea.Cmd) {
 	if r.activeIdx < len(r.fields) && r.fields[r.activeIdx].CanEditAsText() {
-		r.mode = realizeInsert
+		r.mode = ModeInsert
 		r.formInput.SetValue(r.fields[r.activeIdx].TextInputValue())
 		r.formInput.Width = r.width - 22
 		r.formInput.CursorEnd()
@@ -425,14 +409,14 @@ func (r RealizeEditor) View(w, h int) string {
 		sectionFields = r.fields[6:]
 	}
 
-	lines = append(lines, renderFormFields(w, baseFields, r.activeIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
+	lines = append(lines, renderFormFields(w, baseFields, r.activeIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
 	lines = append(lines, "")
 
 	if len(sectionFields) > 0 {
 		lines = append(lines, StyleSectionDesc.Render("  # Section model overrides — set per-pillar model (default = use global model above)"))
 		lines = append(lines, "")
 		adjIdx := r.activeIdx - 6 // adjust active index for the section fields group
-		lines = append(lines, renderFormFields(w, sectionFields, adjIdx, r.mode == realizeInsert, r.formInput, r.ddOpen, r.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, sectionFields, adjIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
 		lines = append(lines, "")
 	}
 

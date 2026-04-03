@@ -4,26 +4,16 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 )
 
-const (
-	// maxFileChars is the maximum characters included from a single file after
-	// signature extraction. Type-signature excerpts are much more compact than
-	// full implementations, so this budget covers most files completely.
-	maxFileChars = 1500
-
-	// maxTotalChars is the total character budget across all dependency outputs
-	// injected into one agent's context. Signature-only context is denser than
-	// raw file content, so a lower budget covers all necessary type information.
-	maxTotalChars = 8000
-)
 
 // FileExcerpt is a filtered, possibly-truncated snapshot of one generated file.
 type FileExcerpt struct {
 	Path    string
 	Content string
-	// Truncated is true when the original file was larger than maxFileChars.
+	// Truncated is true when the original file was larger than config.MaxFileChars.
 	Truncated bool
 }
 
@@ -84,7 +74,7 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 		if !ok {
 			continue
 		}
-		if total >= maxTotalChars {
+		if total >= config.MaxTotalChars {
 			break
 		}
 		// Shallow-copy the output, trimming files once the budget is reached.
@@ -94,11 +84,11 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 			Kind:   out.Kind,
 		}
 		for _, f := range out.Files {
-			if total >= maxTotalChars {
+			if total >= config.MaxTotalChars {
 				break
 			}
 			content := f.Content
-			remaining := maxTotalChars - total
+			remaining := config.MaxTotalChars - total
 			if len(content) > remaining {
 				content = content[:remaining] + "\n// [truncated by shared memory budget]"
 			}
@@ -141,11 +131,11 @@ func buildExcerpts(files []dag.GeneratedFile) []FileExcerpt {
 		// Mark Truncated=true when the original exceeded the budget (signature
 		// extraction may have already shrunk the content below the cap, but the
 		// caller still needs to know the excerpt is not the full file).
-		originalExceeded := len(f.Content) > maxFileChars
+		originalExceeded := len(f.Content) > config.MaxFileChars
 		content := extractSignatures(f.Path, f.Content)
 		truncated := originalExceeded
-		if len(content) > maxFileChars {
-			content = content[:maxFileChars] + "\n// ... [truncated]"
+		if len(content) > config.MaxFileChars {
+			content = content[:config.MaxFileChars] + "\n// ... [truncated]"
 			truncated = true
 		}
 		excerpts = append(excerpts, FileExcerpt{

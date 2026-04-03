@@ -52,28 +52,53 @@ VibeMenu/
 │   │   ├── manifest_crosscut.go  # CrossCutPillar, TestingConfig, DocsConfig (32 lines)
 │   │   └── recent.go            # Recent manifest tracking (64 lines)
 │   ├── ui/
-│   │   ├── model.go             # Root TUI model, vim modes, tab routing (888 lines)
-│   │   ├── editor.go            # Editor interface (Mode, HintLine, View) (22 lines)
-│   │   ├── nav.go               # NavigateTab(), VimNav struct — shared navigation helpers (126 lines)
-│   │   ├── styles.go            # Tokyo Night palette, all lipgloss styles (196 lines)
-│   │   ├── sections.go          # Section/field definitions, FieldKind enum (303 lines)
-│   │   ├── render_helpers.go    # Shared rendering utilities (516 lines)
-│   │   ├── animation.go         # Animation utilities (32 lines)
-│   │   ├── app.go               # App initialization and setup (105 lines)
-│   │   ├── backend_editor.go    # Backend tab — env, services, comm, messaging, gateway, auth, jobs, security (3,474 lines)
-│   │   ├── data_tab_editor.go   # Data tab — databases, domains, caching, file storage (2,055 lines)
-│   │   ├── data_editor.go       # Entity/column schema editor (1,311 lines)
-│   │   ├── db_editor.go         # Database source editor (665 lines)
-│   │   ├── contracts_editor.go  # DTOs, endpoints, versioning, external APIs (2,240 lines)
-│   │   ├── frontend_editor.go   # Tech stack, theming, pages, navigation (1,802 lines)
-│   │   ├── infra_editor.go      # Networking, CI/CD, observability (787 lines)
-│   │   ├── crosscut_editor.go   # Testing, documentation (751 lines)
-│   │   ├── realize_editor.go    # Code generation configuration (450 lines)
-│   │   ├── provider_menu.go     # Provider selection modal (1,253 lines)
-│   │   ├── realization_screen.go # Code generation output screen (317 lines)
-│   │   ├── frontend_assets.go   # Frontend asset management (220 lines)
-│   │   ├── welcome.go           # Welcome/initialization screen (265 lines)
-│   │   └── open_file_modal.go   # File open dialog (1 line)
+│   │   ├── model.go             # Root TUI model, vim modes, Update + command dispatch
+│   │   ├── model_sections.go    # Section registry: editor getters + update closures (one entry per pillar)
+│   │   ├── model_view.go        # Root View() and all render helpers
+│   │   ├── editor.go            # Editor interface (Mode, HintLine, View)
+│   │   ├── nav.go               # NavigateTab(), VimNav struct — shared navigation helpers
+│   │   ├── styles.go            # Tokyo Night palette, all lipgloss styles
+│   │   ├── sections.go          # Section/field definitions, FieldKind enum
+│   │   ├── render_helpers.go    # Shared rendering utilities (fillTildes, renderFormFields, …)
+│   │   ├── field_options.go     # Shared field option slices (OptionsOnOff, OptionsOffOn)
+│   │   ├── animation.go         # Animation utilities
+│   │   ├── app.go               # App initialization and setup
+│   │   ├── backend_editor.go    # Backend: struct, init, ToManifest, Update dispatcher
+│   │   ├── backend_fields.go    # Backend: default field constructors and service/comm/auth form helpers
+│   │   ├── backend_services.go  # Backend: service list/form + comm list/form + messaging update handlers
+│   │   ├── backend_update.go    # Backend: dropdown, insert, jobs update handlers
+│   │   ├── backend_view.go      # Backend: HintLine, View, all sub-tab render functions
+│   │   ├── backend_auth_security.go # Backend: auth + security update handlers and view
+│   │   ├── data_tab_editor.go   # Data: struct, init, ToManifest, Update dispatcher, View
+│   │   ├── data_tab_fields.go   # Data: domain/caching/fs field constructors + helpers
+│   │   ├── data_domains.go      # Data: domain list/form + attr/rel update handlers + viewDomains
+│   │   ├── data_caching_storage.go # Data: caching/governance/file-storage update handlers + views
+│   │   ├── data_editor.go       # Entity/column schema editor: struct, init, Mode, HintLine, Update
+│   │   ├── data_editor_fields.go # Entity editor: column + entity settings form helpers
+│   │   ├── data_editor_update.go # Entity editor: all update handlers
+│   │   ├── data_editor_view.go  # Entity editor: all view functions
+│   │   ├── db_editor.go         # Database source editor
+│   │   ├── contracts_editor.go  # Contracts: struct, init, ToManifest, Update dispatcher
+│   │   ├── contracts_fields.go  # Contracts: DTO/endpoint/versioning/external field constructors
+│   │   ├── contracts_dtos.go    # Contracts: DTO list/form + field drill-down update + viewDTOs
+│   │   ├── contracts_endpoints.go # Contracts: endpoint/versioning/external update + views
+│   │   ├── frontend_editor.go   # Frontend: struct, init, ToManifest, Update dispatcher
+│   │   ├── frontend_fields.go   # Frontend: compatibility maps + default field constructors
+│   │   ├── frontend_update.go   # Frontend: tech/theme/pages/nav update handlers + View
+│   │   ├── frontend_i18n_a11y.go # Frontend: i18n + a11y/SEO update handlers + viewPages
+│   │   ├── infra_editor.go      # Infra: struct, init, ToManifest, Update dispatcher, View
+│   │   ├── infra_fields.go      # Infra: provider maps, deploy strategies, default field constructors
+│   │   ├── crosscut_editor.go   # Crosscut: struct, init, ToManifest, Update dispatcher, View
+│   │   ├── crosscut_fields.go   # Crosscut: testing/docs/standards field constructors
+│   │   ├── realize_editor.go    # Realize: code generation configuration form
+│   │   ├── provider_menu.go     # Provider modal: types, struct, init, state helpers
+│   │   ├── provider_menu_oauth.go # Provider modal: OAuth 2.0 PKCE flow + credential step
+│   │   ├── provider_menu_update.go # Provider modal: Update handler
+│   │   ├── provider_menu_view.go # Provider modal: View + all render functions
+│   │   ├── realization_screen.go # Code generation output screen
+│   │   ├── frontend_assets.go   # Frontend asset management
+│   │   ├── welcome.go           # Welcome/initialization screen
+│   │   └── open_file_modal.go   # File open dialog
 │   └── realize/
 │       ├── agent/
 │       │   ├── agent.go         # Claude API client, tool-use loop (~134 lines)
@@ -83,23 +108,31 @@ VibeMenu/
 │       │   ├── dag.go           # DAG struct, topological sort, cycle detection (~149 lines)
 │       │   ├── builder.go       # Manifest → DAG task graph construction (~399 lines)
 │       │   └── payload.go       # Task payload types (~39 lines)
+│       ├── config/
+│       │   └── defaults.go      # Tunable constants (DefaultModel, DefaultMaxTokens, MaxSkillBytes, …)
 │       ├── orchestrator/
-│       │   ├── orchestrator.go  # Config, entrypoint, task dispatch (~312 lines)
-│       │   ├── models.go        # Provider model registry, resolveModelID() (~70 lines)
-│       │   └── runner.go        # Per-task runner: agent call + verify + retry (~103 lines)
+│       │   ├── orchestrator.go  # Config, entrypoint, task dispatch
+│       │   ├── models.go        # Provider model registry, resolveModelID()
+│       │   └── runner.go        # Per-task runner: agent call + verify + retry
 │       ├── output/
-│       │   └── writer.go        # File output writer (~74 lines)
+│       │   └── writer.go        # File output writer
 │       ├── skills/
-│       │   ├── registry.go      # In-memory skill registry (~17 lines)
-│       │   ├── aliases.go       # Technology alias map + universal skills per task kind (~110 lines)
-│       │   └── loader.go        # Load skill markdown files from disk (~103 lines)
+│       │   ├── registry.go      # In-memory skill registry
+│       │   ├── aliases.go       # Technology alias map + universal skills per task kind
+│       │   └── loader.go        # Load skill markdown files from disk
+│       ├── deps/
+│       │   ├── resolver_interface.go # LanguageResolver interface + ResolverRegistry
+│       │   ├── resolver.go      # deps.Agent — runs package manager to lock deps
+│       │   ├── modules.go       # Shared: ResolvedDeps types, LibraryAPIDocs, PromptContext, Save/Load
+│       │   ├── go_modules.go    # Go-specific: WellKnownGoModules, GoModForService, ValidateGoMod
+│       │   └── npm_modules.go   # npm-specific: WellKnownNpmPackages, resolveNpmVersion
 │       └── verify/
-│           ├── verifier.go      # Verifier interface + factory (~130 lines)
-│           ├── go_verifier.go   # go build + go vet verifier (~113 lines)
-│           ├── ts_verifier.go   # tsc verifier (~59 lines)
-│           ├── python_verifier.go # python -m py_compile verifier (~63 lines)
-│           ├── tf_verifier.go   # terraform validate verifier (~64 lines)
-│           └── null_verifier.go # No-op verifier for unknown languages (~13 lines)
+│           ├── verifier.go      # Verifier interface + Registry (Register() for extension)
+│           ├── go_verifier.go   # go build + go vet verifier
+│           ├── ts_verifier.go   # tsc verifier
+│           ├── python_verifier.go # python -m py_compile verifier
+│           ├── tf_verifier.go   # terraform validate verifier
+│           └── null_verifier.go # No-op verifier for unknown languages
 ├── system-declaration-menu.md   # Full specification: all options for every field
 ├── go.mod / go.sum
 └── LICENSE
@@ -107,7 +140,7 @@ VibeMenu/
 
 File size budget: **800 lines max** per file. Extract utilities if approaching this limit.
 
-> Several UI files already exceed 800 lines due to accumulated features. When touching these files, extract helpers to `render_helpers.go` or split sub-tab logic into dedicated files.
+> All files are currently under 800 lines. When adding new features, extract helpers to `render_helpers.go` or split sub-tab logic into a new dedicated file (e.g. `backend_new_subtab.go`).
 
 ---
 
@@ -138,7 +171,7 @@ type Editor interface {
 }
 ```
 
-The root `Model` uses `activeEditor() Editor` — a single canonical switch in `model.go` — to dispatch `Mode()`, `HintLine()`, and `View()` without duplicating switch logic across methods. `Update()` dispatch remains typed (bubbletea's value-receiver pattern prevents a fully polymorphic Update).
+The root `Model` uses `activeEditor() Editor` and `delegateUpdate()` — both dispatch through `sectionRegistry` in `model_sections.go` rather than switch statements. Adding a new pillar requires one `sectionEntry` registration in `buildSectionRegistry()`; no other files need changing.
 
 Each sub-editor also implements:
 - `ToManifest[X]Pillar()` — serializes editor state to manifest types
@@ -428,7 +461,7 @@ Saved to `manifest.json` on `:w` / `Ctrl+S`. Structure:
 - **Field abstraction:** New form fields use the `Field` struct with `KindText`, `KindSelect`, or `KindTextArea`. Never render raw text inputs directly in sub-editors.
 - **Tab navigation:** Use `NavigateTab()` from `nav.go` for `h`/`l` sub-tab switching — do not duplicate this switch in new editors.
 - **Vim list navigation:** Use `VimNav` from `nav.go` for `j`/`k`/`gg`/`G`/count-prefix in any new editor with a navigable list.
-- **Editor interface:** New sub-editors must implement the `Editor` interface (`Mode()`, `HintLine()`, `View()`). Register them in `activeEditor()` in `model.go`.
+- **Editor interface:** New sub-editors must implement the `Editor` interface (`Mode()`, `HintLine()`, `View()`). Register them in `buildSectionRegistry()` in `model_sections.go` — add one `sectionEntry` with `editor` and `update` closures, and add the section ID to `sectionOrder`.
 - **Manifest types:** Add new pillar types to the appropriate `manifest_*.go` file, not to `manifest.go`. Only the root `Manifest` struct and `Save()` belong in `manifest.go`.
 - **Model registry:** Add new AI providers or model tiers to `providerModels` in `orchestrator/models.go`. Do not add new switch cases to `resolveAgent()`.
 - **Skill aliases:** Add new technology aliases to `aliasMap` in `skills/aliases.go`. Universal skills for a task kind go in `universalSkillsForKind` in the same file.

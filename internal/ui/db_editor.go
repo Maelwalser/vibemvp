@@ -12,181 +12,12 @@ import (
 
 // ── Modes & views ─────────────────────────────────────────────────────────────
 
-type dbeMode int
-
-const (
-	dbeNormal dbeMode = iota
-	dbeInsert
-)
-
 type dbeView int
 
 const (
 	dbeViewList dbeView = iota
 	dbeViewForm
 )
-
-// ── DB form fields ────────────────────────────────────────────────────────────
-
-// defaultDBForm returns a blank database source form.
-func defaultDBForm() []Field {
-	return []Field{
-		{Key: "alias", Label: "alias         ", Kind: KindText},
-		{Key: "type", Label: "type          ", Kind: KindSelect,
-			Options: []string{
-				"PostgreSQL", "MySQL", "SQLite",
-				"MongoDB", "DynamoDB",
-				"Cassandra",
-				"Redis", "Memcached",
-				"ClickHouse", "Elasticsearch", "other",
-			},
-			Value: "PostgreSQL",
-		},
-		{Key: "version", Label: "version       ", Kind: KindText},
-		{Key: "namespace", Label: "namespace     ", Kind: KindText},
-		{Key: "is_cache", Label: "is_cache      ", Kind: KindSelect,
-			Options: []string{"no", "yes"}, Value: "no",
-		},
-		// Security / network integrity (conditionally shown by type)
-		{Key: "ssl_mode", Label: "  ssl_mode    ", Kind: KindSelect,
-			Options: []string{"require", "disable", "verify-ca", "verify-full"},
-			Value:   "require",
-		},
-		{Key: "consistency", Label: "  consistency ", Kind: KindSelect,
-			Options: []string{"strong", "eventual", "LOCAL_QUORUM", "ONE", "QUORUM", "ALL", "LOCAL_ONE"},
-			Value:   "strong",
-		},
-		// Availability topology (conditionally shown by type)
-		{Key: "replication", Label: "  replication ", Kind: KindSelect,
-			Options: []string{"single-node", "primary-replica", "multi-region"},
-			Value:   "single-node",
-		},
-		// Connection pooling
-		{Key: "pool_min", Label: "  pool_min    ", Kind: KindText},
-		{Key: "pool_max", Label: "  pool_max    ", Kind: KindText},
-		{Key: "notes", Label: "notes         ", Kind: KindText},
-	}
-}
-
-// isDBFormFieldDisabled returns true when a field is gated by the current db type.
-func isDBFormFieldDisabled(form []Field, idx int) bool {
-	key := form[idx].Key
-	var dbType string
-	for _, f := range form {
-		if f.Key == "type" {
-			dbType = f.DisplayValue()
-			break
-		}
-	}
-	switch key {
-	case "ssl_mode":
-		// Only relational databases support explicit SSL mode configuration
-		return dbType != "PostgreSQL" && dbType != "MySQL"
-	case "consistency":
-		// Distributed DBs with tunable consistency
-		return dbType != "Cassandra" && dbType != "MongoDB" && dbType != "DynamoDB"
-	case "replication":
-		// Cache stores and SQLite don't have meaningful replication topology options
-		return dbType == "Redis" || dbType == "Memcached" || dbType == "SQLite"
-	case "pool_min", "pool_max":
-		// Connection pooling doesn't apply to cache stores
-		return dbType == "Redis" || dbType == "Memcached"
-	}
-	return false
-}
-
-func nextDBFormIdx(form []Field, cur int) int {
-	n := len(form)
-	next := (cur + 1) % n
-	for next != cur && isDBFormFieldDisabled(form, next) {
-		next = (next + 1) % n
-	}
-	return next
-}
-
-func prevDBFormIdx(form []Field, cur int) int {
-	n := len(form)
-	prev := (cur - 1 + n) % n
-	for prev != cur && isDBFormFieldDisabled(form, prev) {
-		prev = (prev - 1 + n) % n
-	}
-	return prev
-}
-
-func dbFormFromSource(src manifest.DBSourceDef) []Field {
-	f := defaultDBForm()
-	setVal := func(key, val string) {
-		for i := range f {
-			if f[i].Key != key {
-				continue
-			}
-			f[i].Value = val
-			if f[i].Kind == KindSelect {
-				for j, opt := range f[i].Options {
-					if opt == val {
-						f[i].SelIdx = j
-						break
-					}
-				}
-			}
-			return
-		}
-	}
-	setVal("alias", src.Alias)
-	if src.Type != "" {
-		setVal("type", string(src.Type))
-	}
-	setVal("version", src.Version)
-	setVal("namespace", src.Namespace)
-	if src.IsCache {
-		setVal("is_cache", "yes")
-	}
-	setVal("ssl_mode", src.SSLMode)
-	setVal("consistency", src.Consistency)
-	setVal("replication", src.Replication)
-	if src.PoolMinSize > 0 {
-		setVal("pool_min", fmt.Sprintf("%d", src.PoolMinSize))
-	}
-	if src.PoolMaxSize > 0 {
-		setVal("pool_max", fmt.Sprintf("%d", src.PoolMaxSize))
-	}
-	setVal("notes", src.Notes)
-	return f
-}
-
-func dbFormToSource(form []Field) manifest.DBSourceDef {
-	get := func(key string) string {
-		for _, f := range form {
-			if f.Key == key {
-				return f.DisplayValue()
-			}
-		}
-		return ""
-	}
-	getInt := func(key string) int {
-		v := get(key)
-		if v == "" {
-			return 0
-		}
-		n := 0
-		fmt.Sscanf(v, "%d", &n)
-		return n
-	}
-	src := manifest.DBSourceDef{
-		Alias:       get("alias"),
-		Type:        manifest.DatabaseType(get("type")),
-		Version:     get("version"),
-		Namespace:   get("namespace"),
-		IsCache:     get("is_cache") == "yes",
-		SSLMode:     get("ssl_mode"),
-		Consistency: get("consistency"),
-		Replication: get("replication"),
-		PoolMinSize: getInt("pool_min"),
-		PoolMaxSize: getInt("pool_max"),
-		Notes:       get("notes"),
-	}
-	return src
-}
 
 // ── DBEditor ─────────────────────────────────────────────────────────────────
 
@@ -197,14 +28,13 @@ type DBEditor struct {
 	view   dbeView
 	srcIdx int
 
-	internalMode dbeMode
+	internalMode Mode
 
 	dbForm    []Field
 	formIdx   int
 	formInput textinput.Model
 
-	ddOpen   bool
-	ddOptIdx int
+	dd DropdownState
 
 	width int
 }
@@ -224,7 +54,7 @@ func newDBEditor() DBEditor {
 
 // Mode returns the equivalent app-level Mode for the parent status bar.
 func (db DBEditor) Mode() Mode {
-	if db.internalMode == dbeInsert {
+	if db.internalMode == ModeInsert {
 		return ModeInsert
 	}
 	return ModeNormal
@@ -232,7 +62,7 @@ func (db DBEditor) Mode() Mode {
 
 // HintLine returns context-sensitive key hints.
 func (db DBEditor) HintLine() string {
-	if db.internalMode == dbeInsert {
+	if db.internalMode == ModeInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
@@ -247,7 +77,7 @@ func (db DBEditor) HintLine() string {
 		}
 		return "  " + strings.Join(hints, StyleHelpDesc.Render("  ·  "))
 	case dbeViewForm:
-		if db.ddOpen {
+		if db.dd.Open {
 			hints := []string{
 				StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
 				StyleHelpKey.Render("Enter/Space") + StyleHelpDesc.Render(" select"),
@@ -275,7 +105,7 @@ func (db DBEditor) Update(msg tea.Msg) (DBEditor, tea.Cmd) {
 		return db, nil
 	}
 	switch db.internalMode {
-	case dbeInsert:
+	case ModeInsert:
 		return db.updateInsert(msg)
 	default:
 		return db.updateNormal(msg)
@@ -288,7 +118,7 @@ func (db DBEditor) updateInsert(msg tea.Msg) (DBEditor, tea.Cmd) {
 		switch key.String() {
 		case "esc":
 			db.dbForm[db.formIdx].SaveTextInput(db.formInput.Value())
-			db.internalMode = dbeNormal
+			db.internalMode = ModeNormal
 			db.formInput.Blur()
 			return db, nil
 
@@ -335,7 +165,7 @@ func (db DBEditor) updateNormal(msg tea.Msg) (DBEditor, tea.Cmd) {
 	if !ok {
 		return db, nil
 	}
-	if db.ddOpen && db.view == dbeViewForm {
+	if db.dd.Open && db.view == dbeViewForm {
 		return db.updateDBDropdown(key)
 	}
 	switch db.view {
@@ -412,8 +242,8 @@ func (db DBEditor) updateNormalForm(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 	case "enter", " ":
 		f := &db.dbForm[db.formIdx]
 		if f.Kind == KindSelect {
-			db.ddOpen = true
-			db.ddOptIdx = f.SelIdx
+			db.dd.Open = true
+			db.dd.OptIdx = f.SelIdx
 		} else {
 			return db.enterDBFormInsert()
 		}
@@ -435,30 +265,23 @@ func (db DBEditor) updateNormalForm(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 
 func (db DBEditor) updateDBDropdown(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 	if db.formIdx >= len(db.dbForm) {
-		db.ddOpen = false
+		db.dd.Open = false
 		return db, nil
 	}
 	f := &db.dbForm[db.formIdx]
+	db.dd.OptIdx = NavigateDropdown(key.String(), db.dd.OptIdx, len(f.Options))
 	switch key.String() {
-	case "j", "down":
-		if db.ddOptIdx < len(f.Options)-1 {
-			db.ddOptIdx++
-		}
-	case "k", "up":
-		if db.ddOptIdx > 0 {
-			db.ddOptIdx--
-		}
 	case " ", "enter":
-		f.SelIdx = db.ddOptIdx
-		if db.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[db.ddOptIdx]
+		f.SelIdx = db.dd.OptIdx
+		if db.dd.OptIdx < len(f.Options) {
+			f.Value = f.Options[db.dd.OptIdx]
 		}
-		db.ddOpen = false
+		db.dd.Open = false
 		if f.PrepareCustomEntry() {
 			return db.enterDBFormInsert()
 		}
 	case "esc", "b":
-		db.ddOpen = false
+		db.dd.Open = false
 	}
 	return db, nil
 }
@@ -468,7 +291,7 @@ func (db DBEditor) enterDBFormInsert() (DBEditor, tea.Cmd) {
 	if !f.CanEditAsText() {
 		return db, nil
 	}
-	db.internalMode = dbeInsert
+	db.internalMode = ModeInsert
 	db.formInput.SetValue(f.TextInputValue())
 	db.formInput.Width = db.width - 22
 	db.formInput.CursorEnd()
@@ -601,7 +424,7 @@ func (db DBEditor) viewForm(w, h int) string {
 
 		var valStr string
 		switch {
-		case db.internalMode == dbeInsert && isCur && f.Kind == KindText:
+		case db.internalMode == ModeInsert && isCur && f.Kind == KindText:
 			valStr = db.formInput.View()
 		case f.Kind == KindSelect:
 			val := f.DisplayValue()
@@ -610,7 +433,7 @@ func (db DBEditor) viewForm(w, h int) string {
 			} else {
 				val = StyleFieldVal.Render(val)
 			}
-			if isCur && db.ddOpen {
+			if isCur && db.dd.Open {
 				valStr = val + StyleSelectArrow.Render(" ▴")
 			} else {
 				valStr = val + StyleSelectArrow.Render(" ▾")
@@ -640,11 +463,11 @@ func (db DBEditor) viewForm(w, h int) string {
 		lines = append(lines, row)
 
 		// Inject dropdown options below the active KindSelect field
-		if isCur && db.ddOpen && f.Kind == KindSelect {
+		if isCur && db.dd.Open && f.Kind == KindSelect {
 			const ddIndent = 4 + 14 + 3 // lineNumW + labelW + eqW
 			indent := strings.Repeat(" ", ddIndent)
 			for j, opt := range f.Options {
-				isHL := j == db.ddOptIdx
+				isHL := j == db.dd.OptIdx
 				var optRow string
 				if isHL {
 					optRow = indent + StyleFieldValActive.Render("► "+opt)
