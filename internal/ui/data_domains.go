@@ -88,6 +88,7 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 			// Rebuild attr items
 			attrTypes, _ := attrTypesForSources(d.Databases, dt.dbEditor.Sources)
 			dt.attrItems = make([][]Field, len(d.Attributes))
+			attrNamesList := make([]string, len(d.Attributes))
 			for i, attr := range d.Attributes {
 				f := defaultAttrFields(attrTypes)
 				f = setFieldValue(f, "name", attr.Name)
@@ -99,6 +100,10 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 				}
 				f = restoreMultiSelectValue(f, "validation", attr.Validation)
 				dt.attrItems[i] = f
+				attrNamesList[i] = attr.Name
+			}
+			if len(attrNamesList) > 0 {
+				dt.domainForm = setFieldValue(dt.domainForm, "attr_names", strings.Join(attrNamesList, ", "))
 			}
 			// Rebuild rel items
 			domOpts := dt.domainNames()
