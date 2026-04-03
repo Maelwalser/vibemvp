@@ -88,16 +88,12 @@ func (be BackendEditor) HintLine() string {
 func (be BackendEditor) visibleEnvFields() []Field {
 	arch := be.currentArch()
 	corsStrategy := fieldGet(be.EnvFields, "cors_strategy")
-	computeEnv := fieldGet(be.EnvFields, "compute_env")
 	var out []Field
 	for _, f := range be.EnvFields {
-		if (f.Key == "monolith_lang" || f.Key == "monolith_fw") && arch != "monolith" {
+		if (f.Key == "monolith_lang" || f.Key == "monolith_lang_ver" || f.Key == "monolith_fw" || f.Key == "monolith_fw_ver") && arch != "monolith" {
 			continue
 		}
 		if f.Key == "cors_origins" && corsStrategy != "Strict allowlist" {
-			continue
-		}
-		if f.Key == "orchestrator" && computeEnv == "PaaS" {
 			continue
 		}
 		out = append(out, f)
@@ -405,10 +401,18 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 					name = fmt.Sprintf("(service #%d)", i+1)
 				}
 				lang := fieldGet(item, "language")
+				langVer := fieldGet(item, "language_version")
 				fw := fieldGet(item, "framework")
+				fwVer := fieldGet(item, "framework_version")
 				extra := lang
+				if langVer != "" {
+					extra += " " + langVer
+				}
 				if fw != "" {
 					extra += " / " + fw
+					if fwVer != "" {
+						extra += " " + fwVer
+					}
 				}
 				lines = append(lines, renderListItem(w, i == ed.itemIdx, "  ▶ ", name, extra))
 			}

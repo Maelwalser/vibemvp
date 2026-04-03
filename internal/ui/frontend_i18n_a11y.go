@@ -173,19 +173,74 @@ func (fe FrontendEditor) viewPages(w int) []string {
 				if name == "" {
 					name = fmt.Sprintf("(page #%d)", i+1)
 				}
-				lines = append(lines, renderListItem(w, i == fe.pageIdx, "  ▶ ", name, p.Route))
+				nComp := len(p.Components)
+				suffix := ""
+				if nComp == 1 {
+					suffix = "1 component"
+				} else if nComp > 1 {
+					suffix = fmt.Sprintf("%d components", nComp)
+				}
+				detail := p.Route
+				if suffix != "" && detail != "" {
+					detail = detail + "  [" + suffix + "]"
+				} else if suffix != "" {
+					detail = "[" + suffix + "]"
+				}
+				lines = append(lines, renderListItem(w, i == fe.pageIdx, "  ▶ ", name, detail))
 			}
 		}
 		return lines
 
 	case ceViewForm:
+		if fe.inPageComp {
+			return fe.viewPageComponents(w)
+		}
 		name := fieldGet(fe.pageForm, "name")
 		if name == "" {
 			name = "(new page)"
 		}
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name)+StyleSectionDesc.Render("  [C: components]"), "")
 		lines = append(lines, renderFormFields(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+		return lines
+	}
+	return nil
+}
+
+func (fe FrontendEditor) viewPageComponents(w int) []string {
+	pageName := ""
+	if fe.pageIdx < len(fe.pages) {
+		pageName = fe.pages[fe.pageIdx].Name
+	}
+	if pageName == "" {
+		pageName = "(page)"
+	}
+
+	switch fe.compSubView {
+	case ceViewList:
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(pageName)+StyleSectionDesc.Render(" › Components — a: add  d: delete  Enter: edit"), "")
+		if len(fe.pageComps) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no components yet — press 'a' to add)"))
+		} else {
+			for i, c := range fe.pageComps {
+				name := c.Name
+				if name == "" {
+					name = fmt.Sprintf("(component #%d)", i+1)
+				}
+				lines = append(lines, renderListItem(w, i == fe.compIdx, "  ▶ ", name, c.ComponentType))
+			}
+		}
+		return lines
+
+	case ceViewForm:
+		compName := fieldGet(fe.compForm, "name")
+		if compName == "" {
+			compName = "(new component)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(pageName+" › "+compName), "")
+		lines = append(lines, renderFormFields(w, fe.compForm, fe.compFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
 		return lines
 	}
 	return nil

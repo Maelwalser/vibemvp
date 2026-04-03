@@ -55,6 +55,8 @@ func buildSectionRegistry() map[string]sectionEntry {
 				m.backendEditor.SetDTONames(m.contractsEditor.DTONames())
 				m.backendEditor.SetEndpointNames(m.contractsEditor.EndpointNames())
 				m.backendEditor.SetCacheAliases(m.dataTabEditor.CacheAliases())
+				m.backendEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
+				m.backendEditor.SetOrchestrator(m.infraEditor.PrimaryOrchestrator())
 				var cmd tea.Cmd
 				m.backendEditor, cmd = m.backendEditor.Update(msg)
 				return cmd
@@ -65,6 +67,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 			update: func(m *Model, msg tea.Msg) tea.Cmd {
 				m.dataTabEditor.SetMigrationContext(m.backendEditor.Languages())
 				m.dataTabEditor.SetServiceNames(m.backendEditor.ServiceNames())
+				m.dataTabEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				var cmd tea.Cmd
 				m.dataTabEditor, cmd = m.dataTabEditor.Update(msg)
 				// Refresh rate_limit_backend options whenever cache sources change.
@@ -90,6 +93,8 @@ func buildSectionRegistry() map[string]sectionEntry {
 			update: func(m *Model, msg tea.Msg) tea.Cmd {
 				m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 				m.frontendEditor.SetBackendProtocols(m.backendEditor.CommProtocols(), m.backendEditor.ServiceFrameworks())
+				m.frontendEditor.SetAvailableEndpoints(m.contractsEditor.EndpointNames())
+				m.frontendEditor.SetAvailableDTOs(m.contractsEditor.DTONames())
 				var cmd tea.Cmd
 				m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 				return cmd
@@ -98,11 +103,13 @@ func buildSectionRegistry() map[string]sectionEntry {
 		"infrastructure": {
 			editor: func(m *Model) Editor { return m.infraEditor },
 			update: func(m *Model, msg tea.Msg) tea.Cmd {
-				m.infraEditor.SetCloudProvider(m.backendEditor.CloudProvider())
 				m.infraEditor.SetBackendLanguages(m.backendEditor.Languages())
-				m.infraEditor.SetOrchestrator(m.backendEditor.Orchestrator())
 				var cmd tea.Cmd
 				m.infraEditor, cmd = m.infraEditor.Update(msg)
+				// Propagate environment names to backend and data after infra updates.
+				m.backendEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
+				m.backendEditor.SetOrchestrator(m.infraEditor.PrimaryOrchestrator())
+				m.dataTabEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				return cmd
 			},
 		},

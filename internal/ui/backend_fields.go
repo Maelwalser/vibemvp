@@ -46,47 +46,6 @@ var backendLintersByLang = map[string][]string{
 
 func defaultEnvFields() []Field {
 	return []Field{
-		{
-			Key: "compute_env", Label: "compute_env   ", Kind: KindSelect,
-			Options: []string{
-				"Bare Metal", "VM", "Containers (Docker)", "Kubernetes",
-				"Serverless (FaaS)", "PaaS",
-			},
-			Value: "Containers (Docker)", SelIdx: 2,
-		},
-		{
-			Key: "cloud_provider", Label: "cloud_provider", Kind: KindSelect,
-			Options: []string{
-				"AWS", "GCP", "Azure", "Cloudflare", "Hetzner",
-				"Self-hosted", "Other (specify)",
-			},
-			Value: "AWS",
-		},
-		{
-			Key: "orchestrator", Label: "orchestrator  ", Kind: KindSelect,
-			Options: []string{
-				"Docker Compose", "K3s", "K8s (managed)", "Nomad",
-				"ECS", "Cloud Run", "None",
-			},
-			Value: "Docker Compose",
-		},
-		{
-			Key: "regions", Label: "regions       ", Kind: KindMultiSelect,
-			Options: []string{
-				"us-east-1", "us-east-2", "us-west-1", "us-west-2",
-				"eu-west-1", "eu-west-2", "eu-central-1",
-				"ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
-				"sa-east-1", "ca-central-1", "af-south-1",
-			},
-		},
-		{
-			Key: "stages", Label: "stages        ", Kind: KindSelect,
-			Options: []string{
-				"Development", "Development + Staging", "Development + Staging + Production",
-				"Staging + Production", "Production only",
-			},
-			Value: "Development + Staging + Production", SelIdx: 2,
-		},
 		// Monolith-only: language and framework defined once at top level
 		{
 			Key: "monolith_lang", Label: "language      ", Kind: KindSelect,
@@ -94,9 +53,19 @@ func defaultEnvFields() []Field {
 			Value:   "Go",
 		},
 		{
+			Key: "monolith_lang_ver", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["Go"],
+			Value:   langVersions["Go"][0],
+		},
+		{
 			Key: "monolith_fw", Label: "framework     ", Kind: KindSelect,
 			Options: backendFrameworksByLang["Go"],
 			Value:   "Fiber",
+		},
+		{
+			Key: "monolith_fw_ver", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber"),
+			Value:   compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber")[0],
 		},
 		{
 			Key: "cors_strategy", Label: "CORS Strategy ", Kind: KindSelect,
@@ -129,9 +98,19 @@ func defaultServiceFields() []Field {
 			Value:   "Go",
 		},
 		{
+			Key: "language_version", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["Go"],
+			Value:   langVersions["Go"][0],
+		},
+		{
 			Key: "framework", Label: "framework     ", Kind: KindSelect,
 			Options: backendFrameworksByLang["Go"],
 			Value:   "Fiber",
+		},
+		{
+			Key: "framework_version", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber"),
+			Value:   compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber")[0],
 		},
 		{
 			Key: "technologies", Label: "technologies  ", Kind: KindMultiSelect,
@@ -156,6 +135,12 @@ func defaultServiceFields() []Field {
 			Options: []string{"DNS-based", "Consul", "Kubernetes DNS", "Eureka", "Static config", "None"},
 			Value:   "None", SelIdx: 5,
 		},
+		// environment is a KindSelect populated dynamically from InfraPillar.Environments.
+		{
+			Key: "environment", Label: "environment   ", Kind: KindSelect,
+			Options: []string{"(no environments configured)"},
+			Value:   "(no environments configured)",
+		},
 	}
 }
 
@@ -165,7 +150,21 @@ func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
 	f = setFieldValue(f, "responsibility", s.Responsibility)
 	if s.Language != "" {
 		f = setFieldValue(f, "language", s.Language)
-		// update framework options based on language
+		// Update language_version options for this language.
+		if vers, ok := langVersions[s.Language]; ok {
+			for i := range f {
+				if f[i].Key == "language_version" {
+					f[i].Options = vers
+					f[i].SelIdx = 0
+					f[i].Value = vers[0]
+					if s.LanguageVersion != "" {
+						f = setFieldValue(f, "language_version", s.LanguageVersion)
+					}
+					break
+				}
+			}
+		}
+		// Update framework options based on language.
 		if opts, ok := backendFrameworksByLang[s.Language]; ok {
 			for i := range f {
 				if f[i].Key == "framework" {
@@ -179,9 +178,33 @@ func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
 				}
 			}
 		}
+		// Update framework_version options based on language + language_version + framework.
+		lang := s.Language
+		langVer := s.LanguageVersion
+		fw := s.Framework
+		if fw == "" {
+			if opts, ok := backendFrameworksByLang[lang]; ok && len(opts) > 0 {
+				fw = opts[0]
+			}
+		}
+		fwVers := compatibleFrameworkVersions(lang, langVer, fw)
+		for i := range f {
+			if f[i].Key == "framework_version" {
+				f[i].Options = fwVers
+				f[i].SelIdx = 0
+				f[i].Value = fwVers[0]
+				if s.FrameworkVersion != "" {
+					f = setFieldValue(f, "framework_version", s.FrameworkVersion)
+				}
+				break
+			}
+		}
 	}
 	if s.PatternTag != "" {
 		f = setFieldValue(f, "pattern_tag", s.PatternTag)
+	}
+	if s.Environment != "" {
+		f = setFieldValue(f, "environment", s.Environment)
 	}
 	return f
 }
@@ -199,16 +222,23 @@ func serviceDefFromFields(fields []Field) manifest.ServiceDef {
 			break
 		}
 	}
+	env := fieldGet(fields, "environment")
+	if env == "(no environments configured)" {
+		env = ""
+	}
 	return manifest.ServiceDef{
 		Name:             fieldGet(fields, "name"),
 		Responsibility:   fieldGet(fields, "responsibility"),
 		Language:         fieldGet(fields, "language"),
+		LanguageVersion:  fieldGet(fields, "language_version"),
 		Framework:        fieldGet(fields, "framework"),
+		FrameworkVersion: fieldGet(fields, "framework_version"),
 		PatternTag:       fieldGet(fields, "pattern_tag"),
 		Technologies:     techs,
 		HealthcheckPath:  fieldGet(fields, "healthcheck_path"),
 		ErrorFormat:      fieldGet(fields, "error_format"),
 		ServiceDiscovery: fieldGet(fields, "service_discovery"),
+		Environment:      env,
 	}
 }
 
@@ -437,6 +467,15 @@ func defaultAuthFields() []Field {
 			Value: "Self-managed",
 		},
 		{
+			// Options populated lazily from configured services when provider is
+			// Self-managed or Keycloak; otherwise stays as "None (external)".
+			Key:     "service_unit",
+			Label:   "service_unit  ",
+			Kind:    KindSelect,
+			Options: []string{"None (external)"},
+			Value:   "None (external)",
+		},
+		{
 			Key: "authz_model", Label: "authz_model   ", Kind: KindSelect,
 			Options: []string{"RBAC", "ABAC", "ACL", "ReBAC", "Policy-based (OPA/Cedar)", "Custom"},
 			Value:   "RBAC",
@@ -506,6 +545,7 @@ func defaultJobQueueFormFields(services, dtos []string) []Field {
 	payloadOpts, payloadVal := noneOrPlaceholder(dtos, "(no DTOs configured)")
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
+		{Key: "description", Label: "description   ", Kind: KindText},
 		{
 			Key: "technology", Label: "technology    ", Kind: KindSelect,
 			Options: []string{"Temporal", "BullMQ", "Sidekiq", "Celery", "Faktory", "Asynq", "River", "Custom"},

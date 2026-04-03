@@ -192,6 +192,8 @@ type BackendEditor struct {
 	availableDTOs      []string
 	availableEndpoints []string
 	cacheAliases       []string // IsCache DB aliases from the Data pillar
+	environmentNames   []string // InfraPillar environment names for service env dropdowns
+	orchestrator       string   // Primary orchestrator from InfraPillar for service discovery
 
 	// Vim motion state
 	countBuf string
@@ -264,6 +266,52 @@ func (be *BackendEditor) SetEndpointNames(names []string) {
 	}
 }
 
+// SetEnvironmentNames injects environment names from the infra tab so that
+// service forms can show an environment selector dropdown.
+func (be *BackendEditor) SetEnvironmentNames(names []string) {
+	be.environmentNames = names
+	// Refresh environment dropdowns in the active form and all stored items.
+	be.applyEnvNamesToServiceFields(be.serviceEditor.form)
+	for _, item := range be.serviceEditor.items {
+		be.applyEnvNamesToServiceFields(item)
+	}
+}
+
+// SetOrchestrator injects the primary orchestrator from infra for narrowing
+// service discovery options. A no-op when unchanged.
+func (be *BackendEditor) SetOrchestrator(orch string) {
+	if be.orchestrator == orch {
+		return
+	}
+	be.orchestrator = orch
+	be.updateServiceDiscoveryOptions()
+}
+
+// applyEnvNamesToServiceFields sets the environment field options in a field slice.
+func (be *BackendEditor) applyEnvNamesToServiceFields(fields []Field) {
+	opts, val := noneOrPlaceholder(be.environmentNames, "(no environments configured)")
+	for i := range fields {
+		if fields[i].Key != "environment" {
+			continue
+		}
+		fields[i].Options = opts
+		// Keep current value when still valid.
+		found := false
+		for j, o := range opts {
+			if o == fields[i].Value {
+				fields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found {
+			fields[i].Value = val
+			fields[i].SelIdx = 0
+		}
+		break
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func (be BackendEditor) currentArch() string {
@@ -300,21 +348,19 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	arch := be.currentArch()
 
 	var env manifest.EnvConfig
-	if be.envEnabled {
-		env = manifest.EnvConfig{
-			ComputeEnv:    fieldGet(be.EnvFields, "compute_env"),
-			CloudProvider: fieldGet(be.EnvFields, "cloud_provider"),
-			Orchestrator:  fieldGet(be.EnvFields, "orchestrator"),
-			Regions:       fieldGetMulti(be.EnvFields, "regions"),
-			Stages:        fieldGet(be.EnvFields, "stages"),
-		}
-	}
+	// EnvConfig now only carries stages; server configs live in InfraPillar.Environments.
+	_ = env
 
 	var auth manifest.AuthConfig
 	if be.authEnabled {
+		svcUnit := fieldGet(be.AuthFields, "service_unit")
+		if svcUnit == "None (external)" || svcUnit == "None" || svcUnit == "(no services configured)" {
+			svcUnit = ""
+		}
 		auth = manifest.AuthConfig{
 			Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
 			Provider:     fieldGet(be.AuthFields, "provider"),
+			ServiceUnit:  svcUnit,
 			AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
 			Permissions:  be.authPerms,
 			Roles:        be.authRoles,
@@ -373,15 +419,17 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		}
 	}
 
-	// Legacy compat fields
-	bp.ComputeEnv = manifest.ComputeEnv(env.ComputeEnv)
-	bp.CloudProvider = env.CloudProvider
+	// Legacy compat fields (compute/cloud now live in InfraPillar.Environments)
 	if arch == "monolith" {
 		bp.Language = fieldGet(be.EnvFields, "monolith_lang")
+		bp.LanguageVersion = fieldGet(be.EnvFields, "monolith_lang_ver")
 		bp.Framework = fieldGet(be.EnvFields, "monolith_fw")
+		bp.FrameworkVersion = fieldGet(be.EnvFields, "monolith_fw_ver")
 	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
+		bp.LanguageVersion = be.Services[0].LanguageVersion
 		bp.Framework = be.Services[0].Framework
+		bp.FrameworkVersion = be.Services[0].FrameworkVersion
 	}
 	return bp
 }
@@ -404,14 +452,10 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 	}
 
 	// Env fields.
-	if bp.Env.ComputeEnv != "" || bp.Env.CloudProvider != "" || bp.CORSStrategy != "" || bp.BackendLinter != "" {
+	// Env fields (server configs now in InfraPillar.Environments).
+	if bp.CORSStrategy != "" || bp.BackendLinter != "" || bp.SessionMgmt != "" ||
+		bp.Language != "" {
 		be.envEnabled = true
-		be.EnvFields = setFieldValue(be.EnvFields, "compute_env", bp.Env.ComputeEnv)
-		be.updateEnvOrchestratorOptions()
-		be.EnvFields = setFieldValue(be.EnvFields, "cloud_provider", bp.Env.CloudProvider)
-		be.EnvFields = setFieldValue(be.EnvFields, "orchestrator", bp.Env.Orchestrator)
-		be.EnvFields = restoreMultiSelectValue(be.EnvFields, "regions", bp.Env.Regions)
-		be.EnvFields = setFieldValue(be.EnvFields, "stages", bp.Env.Stages)
 		be.EnvFields = setFieldValue(be.EnvFields, "cors_strategy", bp.CORSStrategy)
 		be.EnvFields = setFieldValue(be.EnvFields, "cors_origins", bp.CORSOrigins)
 		be.EnvFields = setFieldValue(be.EnvFields, "session_mgmt", bp.SessionMgmt)
@@ -419,7 +463,10 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		if arch == "monolith" {
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang", bp.Language)
 			be.updateEnvMonolithOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang_ver", bp.LanguageVersion)
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
+			be.updateEnvMonolithVersionOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw_ver", bp.FrameworkVersion)
 		}
 	}
 
@@ -428,6 +475,17 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.authEnabled = true
 		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "strategy", bp.Auth.Strategy)
 		be.AuthFields = setFieldValue(be.AuthFields, "provider", bp.Auth.Provider)
+		if bp.Auth.ServiceUnit != "" {
+			// Restore service_unit; options will be repopulated lazily on first open.
+			for i := range be.AuthFields {
+				if be.AuthFields[i].Key == "service_unit" {
+					be.AuthFields[i].Options = []string{bp.Auth.ServiceUnit}
+					be.AuthFields[i].Value = bp.Auth.ServiceUnit
+					be.AuthFields[i].SelIdx = 0
+					break
+				}
+			}
+		}
 		be.AuthFields = setFieldValue(be.AuthFields, "authz_model", bp.Auth.AuthzModel)
 		be.authPerms = bp.Auth.Permissions
 		be.authRoles = bp.Auth.Roles
@@ -576,14 +634,9 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	return be, nil
 }
 
-func (be BackendEditor) CloudProvider() string {
-	return fieldGet(be.EnvFields, "cloud_provider")
-}
-
-// Orchestrator returns the selected orchestrator from the Env tab.
-// Returns an empty string if the env section has not been configured.
+// Orchestrator returns the primary orchestrator injected from the infra tab.
 func (be BackendEditor) Orchestrator() string {
-	return fieldGet(be.EnvFields, "orchestrator")
+	return be.orchestrator
 }
 
 // AuthRoleOptions returns role names for use in frontend page forms.
