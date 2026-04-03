@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-menu/internal/manifest"
 )
 
 // ── sub-tabs ──────────────────────────────────────────────────────────────────
@@ -167,16 +167,153 @@ func defaultDomainFormFields(dbOptions []string) []Field {
 	}
 }
 
-func defaultAttrFields() []Field {
+// typesForDBTech returns native data types for a given database technology.
+func typesForDBTech(tech string) []string {
+	switch tech {
+	case "PostgreSQL":
+		return []string{
+			"varchar", "text", "char", "int", "bigint", "smallint",
+			"serial", "bigserial", "boolean", "float", "double precision",
+			"decimal", "numeric", "uuid", "timestamp", "timestamptz",
+			"date", "time", "interval", "json", "jsonb", "bytea",
+			"enum", "array", "inet", "tsvector", "xml",
+		}
+	case "MySQL":
+		return []string{
+			"varchar", "text", "char", "tinytext", "mediumtext", "longtext",
+			"int", "bigint", "smallint", "tinyint", "mediumint",
+			"float", "double", "decimal",
+			"boolean", "date", "datetime", "timestamp", "time", "year",
+			"json", "binary", "varbinary", "blob", "enum", "set",
+		}
+	case "SQLite":
+		return []string{"TEXT", "INTEGER", "REAL", "NUMERIC", "BLOB", "NULL"}
+	case "MongoDB":
+		return []string{
+			"String", "Int32", "Int64", "Double", "Decimal128",
+			"Boolean", "Date", "ObjectId", "UUID",
+			"Array", "Object", "Binary", "Null", "Timestamp", "Mixed",
+		}
+	case "DynamoDB":
+		return []string{
+			"String (S)", "Number (N)", "Binary (B)",
+			"StringSet (SS)", "NumberSet (NS)", "BinarySet (BS)",
+			"List (L)", "Map (M)", "Boolean (BOOL)", "Null (NULL)",
+		}
+	case "Cassandra":
+		return []string{
+			"text", "varchar", "ascii", "int", "bigint", "smallint", "tinyint", "varint",
+			"float", "double", "decimal", "boolean",
+			"date", "timestamp", "time", "uuid", "timeuuid",
+			"blob", "list", "set", "map", "tuple", "frozen",
+		}
+	case "Redis", "Memcached":
+		return []string{"String", "List", "Set", "Sorted Set", "Hash", "Stream"}
+	case "ClickHouse":
+		return []string{
+			"UInt8", "UInt16", "UInt32", "UInt64",
+			"Int8", "Int16", "Int32", "Int64",
+			"Float32", "Float64", "Decimal",
+			"String", "FixedString", "Date", "DateTime", "UUID",
+			"Array", "Tuple", "Nullable", "Enum", "LowCardinality",
+		}
+	case "Elasticsearch":
+		return []string{
+			"text", "keyword", "long", "integer", "short", "byte",
+			"double", "float", "boolean", "date", "binary", "ip",
+			"object", "nested", "geo_point",
+		}
+	default:
+		return []string{
+			"String", "Int", "Float", "Boolean", "DateTime",
+			"UUID", "JSON", "Binary", "Array", "Enum", "Ref",
+		}
+	}
+}
+
+// attrTypesForSources resolves attribute type options for a domain based on its
+// selected database aliases. Returns (nil, true) when no databases are selected.
+// When multiple databases are selected, types are merged (deduplicated, first-seen order).
+func attrTypesForSources(selectedDBs string, sources []manifest.DBSourceDef) (types []string, noDB bool) {
+	if selectedDBs == "" {
+		return nil, true
+	}
+	seen := map[string]bool{}
+	for _, alias := range strings.Split(selectedDBs, ", ") {
+		alias = strings.TrimSpace(alias)
+		if alias == "" {
+			continue
+		}
+		for _, src := range sources {
+			if src.Alias == alias {
+				for _, t := range typesForDBTech(string(src.Type)) {
+					if !seen[t] {
+						seen[t] = true
+						types = append(types, t)
+					}
+				}
+			}
+		}
+	}
+	if len(types) == 0 {
+		return nil, true
+	}
+	return types, false
+}
+
+// refreshAttrTypeOptions updates the "type" field options in an attr form to match
+// the current database selection, preserving the selected value when possible.
+func refreshAttrTypeOptions(form []Field, types []string) []Field {
+	for i := range form {
+		if form[i].Key != "type" {
+			continue
+		}
+		cur := form[i].DisplayValue()
+		if len(types) == 0 {
+			form[i].Options = nil
+			form[i].Value = "(select a database first)"
+			form[i].SelIdx = 0
+		} else {
+			form[i].Options = types
+			form[i].SelIdx = 0
+			form[i].Value = types[0]
+			for j, t := range types {
+				if t == cur {
+					form[i].SelIdx = j
+					form[i].Value = t
+					break
+				}
+			}
+		}
+		break
+	}
+	return form
+}
+
+// currentDomainAttrTypes returns type options for the domain currently being edited,
+// based on its selected databases. Returns nil when no databases are selected.
+func (dt DataTabEditor) currentDomainAttrTypes() []string {
+	dbs := fieldGetMulti(dt.domainForm, "databases")
+	types, _ := attrTypesForSources(dbs, dt.dbEditor.Sources)
+	return types
+}
+
+func defaultAttrFields(types []string) []Field {
+	var typeOpts []string
+	var typeVal string
+	if len(types) == 0 {
+		// No database selected — use empty options so DisplayValue returns the placeholder.
+		typeVal = "(select a database first)"
+	} else {
+		typeOpts = types
+		typeVal = types[0]
+	}
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{
 			Key: "type", Label: "type          ", Kind: KindSelect,
-			Options: []string{
-				"String", "Int", "Float", "Boolean", "DateTime",
-				"UUID", "Enum(values)", "JSON/Map", "Binary", "Array(type)", "Ref(Domain)",
-			},
-			Value: "String",
+			Options: typeOpts,
+			Value:   typeVal,
 		},
 		{
 			Key: "constraints", Label: "constraints   ", Kind: KindMultiSelect,
@@ -755,6 +892,12 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		if f.Kind == KindMultiSelect {
 			f.ToggleMultiSelect(dt.ddOptIdx)
 			f.DDCursor = dt.ddOptIdx
+			// When a custom option is toggled ON, close the dropdown and let the user type.
+			if dt.ddOptIdx < len(f.Options) && isCustomOption(f.Options[dt.ddOptIdx]) && f.IsMultiSelected(dt.ddOptIdx) {
+				f.CustomText = ""
+				dt.ddOpen = false
+				return dt.tryEnterInsert()
+			}
 		} else if f.Kind == KindSelect {
 			f.SelIdx = dt.ddOptIdx
 			f.Value = f.Options[dt.ddOptIdx]
@@ -766,6 +909,15 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 	case "enter":
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = dt.ddOptIdx
+			// Enter on a custom option: toggle it on (if not already) and enter insert mode.
+			if dt.ddOptIdx < len(f.Options) && isCustomOption(f.Options[dt.ddOptIdx]) {
+				if !f.IsMultiSelected(dt.ddOptIdx) {
+					f.ToggleMultiSelect(dt.ddOptIdx)
+				}
+				f.CustomText = ""
+				dt.ddOpen = false
+				return dt.tryEnterInsert()
+			}
 		} else if f.Kind == KindSelect {
 			f.SelIdx = dt.ddOptIdx
 			f.Value = f.Options[dt.ddOptIdx]
@@ -1045,6 +1197,13 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		dt.domains = append(dt.domains, manifest.DomainDef{})
 		dt.domainIdx = len(dt.domains) - 1
 		dt.domainForm = defaultDomainFormFields(dt.dbNames())
+		existing := make([]string, 0, len(dt.domains)-1)
+		for i, d := range dt.domains {
+			if i != dt.domainIdx {
+				existing = append(existing, d.Name)
+			}
+		}
+		dt.domainForm = setFieldValue(dt.domainForm, "name", uniqueName("domain", existing))
 		dt.domainFormIdx = 0
 		dt.attrItems = nil
 		dt.relItems = nil
@@ -1081,9 +1240,10 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 			}
 			dt.domainFormIdx = 0
 			// Rebuild attr items
+			attrTypes, _ := attrTypesForSources(d.Databases, dt.dbEditor.Sources)
 			dt.attrItems = make([][]Field, len(d.Attributes))
 			for i, attr := range d.Attributes {
-				f := defaultAttrFields()
+				f := defaultAttrFields(attrTypes)
 				f = setFieldValue(f, "name", attr.Name)
 				f = setFieldValue(f, "type", attr.Type)
 				f = restoreMultiSelectValue(f, "constraints", attr.Constraints)
@@ -1257,7 +1417,7 @@ func (dt *DataTabEditor) processAttrNames() {
 			}
 		}
 		if !found {
-			f := defaultAttrFields()
+			f := defaultAttrFields(dt.currentDomainAttrTypes())
 			f = setFieldValue(f, "name", name)
 			dt.attrItems = append(dt.attrItems, f)
 		}
@@ -1282,10 +1442,17 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 			dt.attrIdx--
 		}
 	case "a":
-		dt.attrItems = append(dt.attrItems, defaultAttrFields())
+		dt.attrItems = append(dt.attrItems, defaultAttrFields(dt.currentDomainAttrTypes()))
 		dt.saveDomainAttrItemsOnly()
 		dt.attrIdx = len(dt.attrItems) - 1
 		dt.attrForm = copyFields(dt.attrItems[dt.attrIdx])
+		existing := make([]string, 0, len(dt.attrItems)-1)
+		for i, item := range dt.attrItems {
+			if i != dt.attrIdx {
+				existing = append(existing, fieldGet(item, "name"))
+			}
+		}
+		dt.attrForm = setFieldValue(dt.attrForm, "name", uniqueName("attribute", existing))
 		dt.attrFormIdx = 0
 		dt.domainSubView = domainViewAttrForm
 		return dt.tryEnterInsert()
@@ -1300,6 +1467,7 @@ func (dt DataTabEditor) updateAttrList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 	case "enter":
 		if n > 0 {
 			dt.attrForm = copyFields(dt.attrItems[dt.attrIdx])
+			dt.attrForm = refreshAttrTypeOptions(dt.attrForm, dt.currentDomainAttrTypes())
 			dt.attrFormIdx = 0
 			dt.domainSubView = domainViewAttrForm
 		}
@@ -1454,6 +1622,13 @@ func (dt DataTabEditor) updateCachingList(key tea.KeyMsg) (DataTabEditor, tea.Cm
 		dt.cachings = append(dt.cachings, manifest.CachingConfig{})
 		dt.cachingIdx = len(dt.cachings) - 1
 		dt.cachingForm = defaultCachingFields()
+		existing := make([]string, 0, len(dt.cachings)-1)
+		for i, c := range dt.cachings {
+			if i != dt.cachingIdx {
+				existing = append(existing, c.Name)
+			}
+		}
+		dt.cachingForm = setFieldValue(dt.cachingForm, "name", uniqueName("caching", existing))
 		dt.cachingFormIdx = 0
 		dt.cachingSubView = cachingViewForm
 	case "d":
@@ -1587,6 +1762,13 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		dt.fileStorages = append(dt.fileStorages, manifest.FileStorageDef{})
 		dt.fsIdx = len(dt.fileStorages) - 1
 		dt.fsForm = defaultFSFormFields(dt.domainNames())
+		existing := make([]string, 0, len(dt.fileStorages)-1)
+		for i, fs := range dt.fileStorages {
+			if i != dt.fsIdx {
+				existing = append(existing, fs.Purpose)
+			}
+		}
+		dt.fsForm = setFieldValue(dt.fsForm, "purpose", uniqueName("storage", existing))
 		dt.fsFormIdx = 0
 		dt.fsSubView = fsViewForm
 	case "d":

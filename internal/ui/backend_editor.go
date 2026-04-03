@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-menu/internal/manifest"
 )
 
 // ── modes ─────────────────────────────────────────────────────────────────────
@@ -1641,6 +1641,13 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 		ed.items = append(ed.items, defaultServiceFields())
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
+		existing := make([]string, 0, len(be.Services)-1)
+		for i, s := range be.Services {
+			if i != ed.itemIdx {
+				existing = append(existing, s.Name)
+			}
+		}
+		ed.form = setFieldValue(ed.form, "name", uniqueName("service", existing))
 		ed.formIdx = 0
 		ed.itemView = beListViewForm
 		be.activeField = 0
@@ -1736,6 +1743,15 @@ func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cm
 	case "i", "a":
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterServiceFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveServiceForm()
@@ -1886,6 +1902,15 @@ func (be BackendEditor) updateCommForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterCommFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveCommForm()
 		ed.itemView = beListViewList
@@ -1975,6 +2000,13 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 		ed.items = append(ed.items, be.withDomainNames(defaultEventFields()))
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
+		existing := make([]string, 0, len(be.Events)-1)
+		for i, ev := range be.Events {
+			if i != ed.itemIdx {
+				existing = append(existing, ev.Name)
+			}
+		}
+		ed.form = setFieldValue(ed.form, "name", uniqueName("event", existing))
 		ed.formIdx = 0
 		ed.itemView = beListViewForm
 		be.activeField = brokerCount + ed.itemIdx
@@ -2019,6 +2051,15 @@ func (be BackendEditor) updateEventForm(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 	case "i", "a":
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterEventFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveEventForm()
@@ -2551,6 +2592,13 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
 		be.jobsIdx = len(be.jobQueues) - 1
 		be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
+		existing := make([]string, 0, len(be.jobQueues)-1)
+		for i, jq := range be.jobQueues {
+			if i != be.jobsIdx {
+				existing = append(existing, jq.Name)
+			}
+		}
+		be.jobsForm = setFieldValue(be.jobsForm, "name", uniqueName("queue", existing))
 		be.jobsFormIdx = 0
 		be.jobsSubView = beViewForm
 		be.activeField = 0
@@ -2625,6 +2673,15 @@ func (be BackendEditor) updateJobsForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "i", "a":
 		if be.jobsFormIdx < n && be.jobsForm[be.jobsFormIdx].CanEditAsText() {
 			return be.enterJobsFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveJobsForm()
@@ -2854,6 +2911,13 @@ func (be BackendEditor) updateAuthRoleList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.authRoles = append(be.authRoles, manifest.RoleDef{})
 		be.authRolesIdx = len(be.authRoles) - 1
 		be.authRoleForm = defaultRoleFormFields(be.permissionNames(), be.roleNamesExcept(be.authRolesIdx))
+		existing := make([]string, 0, len(be.authRoles)-1)
+		for i, r := range be.authRoles {
+			if i != be.authRolesIdx {
+				existing = append(existing, r.Name)
+			}
+		}
+		be.authRoleForm = setFieldValue(be.authRoleForm, "name", uniqueName("role", existing))
 		be.authRoleFormIdx = 0
 		be.authSubView = beAuthViewRoleForm
 		be.activeField = 0
@@ -2918,6 +2982,15 @@ func (be BackendEditor) updateAuthRoleForm(key tea.KeyMsg) (BackendEditor, tea.C
 		if be.authRoleFormIdx < n && be.authRoleForm[be.authRoleFormIdx].Kind == KindText {
 			return be.enterAuthRoleFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveAuthRoleForm()
 		be.authSubView = beAuthViewRoleList
@@ -2968,6 +3041,13 @@ func (be BackendEditor) updateAuthPermList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.authPerms = append(be.authPerms, manifest.PermissionDef{})
 		be.authPermsIdx = len(be.authPerms) - 1
 		be.authPermForm = defaultPermFormFields()
+		existing := make([]string, 0, len(be.authPerms)-1)
+		for i, p := range be.authPerms {
+			if i != be.authPermsIdx {
+				existing = append(existing, p.Name)
+			}
+		}
+		be.authPermForm = setFieldValue(be.authPermForm, "name", uniqueName("permission", existing))
 		be.authPermFormIdx = 0
 		be.authSubView = beAuthViewPermForm
 		be.activeField = 0
@@ -3019,6 +3099,15 @@ func (be BackendEditor) updateAuthPermForm(key tea.KeyMsg) (BackendEditor, tea.C
 	case "enter", "i", "a":
 		if be.authPermFormIdx < n && be.authPermForm[be.authPermFormIdx].Kind == KindText {
 			return be.enterAuthPermFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveAuthPermForm()
@@ -3319,31 +3408,15 @@ func (be BackendEditor) viewJobs(w int) []string {
 }
 
 // AuthRoleOptions returns role names for use in frontend page forms.
-// Returns names from the structured roles list when defined; falls back to
-// authz_model-based defaults otherwise.
+// Returns only explicitly configured roles; empty slice means none configured.
 func (be BackendEditor) AuthRoleOptions() []string {
-	if len(be.authRoles) > 0 {
-		names := make([]string, 0, len(be.authRoles))
-		for _, r := range be.authRoles {
-			if r.Name != "" {
-				names = append(names, r.Name)
-			}
-		}
-		if len(names) > 0 {
-			return names
+	names := make([]string, 0, len(be.authRoles))
+	for _, r := range be.authRoles {
+		if r.Name != "" {
+			names = append(names, r.Name)
 		}
 	}
-	model := fieldGet(be.AuthFields, "authz_model")
-	switch model {
-	case "RBAC":
-		return []string{"admin", "user", "moderator", "editor", "viewer", "superadmin"}
-	case "ABAC":
-		return []string{"admin", "user", "owner", "manager", "auditor"}
-	case "ACL":
-		return []string{"admin", "read", "write", "execute", "owner"}
-	default:
-		return []string{"admin", "user", "moderator", "editor", "viewer"}
-	}
+	return names
 }
 
 // ServiceNames returns the names of all created service units for cross-reference.

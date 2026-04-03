@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vibe-mvp/internal/realize/dag"
+	"github.com/vibe-menu/internal/realize/dag"
 )
 
 // maxSkillBytes is the maximum number of characters stored per skill document.

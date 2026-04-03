@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-menu/internal/manifest"
 )
 
 // ── Modes & views ─────────────────────────────────────────────────────────────
@@ -377,6 +377,13 @@ func (db DBEditor) updateNormalList(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 		})
 		db.srcIdx = len(db.Sources) - 1
 		db.dbForm = dbFormFromSource(db.Sources[db.srcIdx])
+		existing := make([]string, 0, len(db.Sources)-1)
+		for i, s := range db.Sources {
+			if i != db.srcIdx {
+				existing = append(existing, s.Alias)
+			}
+		}
+		db.dbForm = setFieldValue(db.dbForm, "alias", uniqueName("database", existing))
 		db.formIdx = 0
 		db.view = dbeViewForm
 		// Auto-focus alias field

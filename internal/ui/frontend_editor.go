@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-menu/internal/manifest"
 )
 
 // ── sub-tabs ──────────────────────────────────────────────────────────────────
@@ -44,8 +44,160 @@ var frontendFrameworksByLang = map[string][]string{
 	"Swift":      {"SwiftUI", "UIKit"},
 }
 
-var frontendMetaframeworks = []string{
-	"Next.js", "Nuxt", "SvelteKit", "Remix", "Astro", "None",
+// ── compatibility maps ────────────────────────────────────────────────────────
+
+var frontendMetaframeworksByFramework = map[string][]string{
+	"React":                       {"Next.js", "Remix", "Astro", "None"},
+	"Vue":                         {"Nuxt", "Astro", "None"},
+	"Svelte":                      {"SvelteKit", "Astro", "None"},
+	"Angular":                     {"None"},
+	"Solid":                       {"Astro", "None"},
+	"Qwik":                        {"None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+var feComponentLibByFramework = map[string][]string{
+	"React":                       {"shadcn/ui", "Radix", "Material UI", "Ant Design", "Headless UI", "DaisyUI", "None", "Custom"},
+	"Vue":                         {"Material UI", "None", "Custom"},
+	"Angular":                     {"Material UI", "None", "Custom"},
+	"Svelte":                      {"None", "Custom"},
+	"Solid":                       {"None", "Custom"},
+	"Qwik":                        {"None", "Custom"},
+	"HTMX":                        {"None", "Custom"},
+	"Flutter":                     {"None", "Custom"},
+	"Jetpack Compose":             {"None", "Custom"},
+	"KMP (Compose Multiplatform)": {"None", "Custom"},
+	"SwiftUI":                     {"None", "Custom"},
+	"UIKit":                       {"None", "Custom"},
+}
+
+var feStateMgmtByFramework = map[string][]string{
+	"React":                       {"React Context", "Zustand", "Redux Toolkit", "Jotai", "None"},
+	"Vue":                         {"Pinia", "None"},
+	"Svelte":                      {"Svelte stores", "None"},
+	"Angular":                     {"Signals", "None"},
+	"Solid":                       {"Signals", "None"},
+	"Qwik":                        {"Signals", "None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+var feDataFetchingByFramework = map[string][]string{
+	"React":                       {"TanStack Query", "SWR", "Apollo Client", "tRPC client", "RTK Query", "Native fetch"},
+	"Vue":                         {"TanStack Query", "Apollo Client", "Native fetch"},
+	"Svelte":                      {"TanStack Query", "SWR", "Native fetch"},
+	"Angular":                     {"Apollo Client", "Native fetch"},
+	"Solid":                       {"TanStack Query", "Native fetch"},
+	"Qwik":                        {"Native fetch"},
+	"HTMX":                        {"Native fetch"},
+	"Flutter":                     {"Native fetch"},
+	"Jetpack Compose":             {"Native fetch"},
+	"KMP (Compose Multiplatform)": {"Native fetch"},
+	"SwiftUI":                     {"Native fetch"},
+	"UIKit":                       {"Native fetch"},
+}
+
+var feFormHandlingByFramework = map[string][]string{
+	"React":                       {"React Hook Form", "Formik", "Zod + native", "None"},
+	"Vue":                         {"Vee-Validate", "Zod + native", "None"},
+	"Svelte":                      {"Zod + native", "None"},
+	"Angular":                     {"Zod + native", "None"},
+	"Solid":                       {"Zod + native", "None"},
+	"Qwik":                        {"Zod + native", "None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+var feStylingByLanguage = map[string][]string{
+	"TypeScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
+	"JavaScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
+	"Dart":       {"None", "Custom"},
+	"Kotlin":     {"None", "Custom"},
+	"Swift":      {"None", "Custom"},
+}
+
+var feValidationByLanguage = map[string][]string{
+	"TypeScript": {"Zod", "Yup", "Valibot", "Joi", "Class-validator", "None"},
+	"JavaScript": {"Zod", "Yup", "Valibot", "Joi", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var fePkgManagerByLanguage = map[string][]string{
+	"TypeScript": {"npm", "yarn", "pnpm", "bun"},
+	"JavaScript": {"npm", "yarn", "pnpm", "bun"},
+	"Dart":       {"pub"},
+	"Kotlin":     {"Gradle"},
+	"Swift":      {"SwiftPM"},
+}
+
+var feErrorBoundaryByFramework = map[string][]string{
+	"React":                       {"React Error Boundary", "Global try-catch", "Framework default", "Custom"},
+	"Vue":                         {"Global try-catch", "Framework default", "Custom"},
+	"Angular":                     {"Global try-catch", "Framework default", "Custom"},
+	"Svelte":                      {"Global try-catch", "Framework default", "Custom"},
+	"Solid":                       {"Global try-catch", "Framework default", "Custom"},
+	"Qwik":                        {"Global try-catch", "Framework default", "Custom"},
+	"HTMX":                        {"Global try-catch", "Custom"},
+	"Flutter":                     {"Framework default", "Custom"},
+	"Jetpack Compose":             {"Framework default", "Custom"},
+	"KMP (Compose Multiplatform)": {"Framework default", "Custom"},
+	"SwiftUI":                     {"Framework default", "Custom"},
+	"UIKit":                       {"Framework default", "Custom"},
+}
+
+var feTestingByLanguage = map[string][]string{
+	"TypeScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
+	"JavaScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var feLinterByLanguage = map[string][]string{
+	"TypeScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
+	"JavaScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
+	"Dart":       {"Custom", "None"},
+	"Kotlin":     {"Custom", "None"},
+	"Swift":      {"Custom", "None"},
+}
+
+var fePwaSupportByPlatform = map[string][]string{
+	"Web (SPA)":               {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
+	"Web (SSR/SSG)":           {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
+	"Mobile (cross-platform)": {"None"},
+	"Mobile (native)":         {"None"},
+	"Desktop":                 {"None"},
+}
+
+var feBundleOptByLanguage = map[string][]string{
+	"TypeScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
+	"JavaScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var feImageOptByPlatform = map[string][]string{
+	"Web (SPA)":               {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
+	"Web (SSR/SSG)":           {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
+	"Mobile (cross-platform)": {"None"},
+	"Mobile (native)":         {"None"},
+	"Desktop":                 {"None"},
 }
 
 // ── field definitions ─────────────────────────────────────────────────────────
@@ -72,8 +224,8 @@ func defaultFETechFields() []Field {
 		},
 		{
 			Key: "meta_framework", Label: "meta_framework", Kind: KindSelect,
-			Options: frontendMetaframeworks,
-			Value:   "None", SelIdx: 5,
+			Options: frontendMetaframeworksByFramework["React"],
+			Value:   "None", SelIdx: 3,
 		},
 		{
 			Key: "pkg_manager", Label: "pkg_manager   ", Kind: KindSelect,
@@ -869,8 +1021,8 @@ func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		f := &fe.techFields[fe.techFormIdx]
 		if f.Kind == KindSelect {
 			f.CyclePrev()
-			if f.Key == "language" {
-				fe.updateFEFrameworkOptions()
+			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+				fe.updateFEDependentOptions()
 			}
 		}
 	case "D":
@@ -904,8 +1056,8 @@ func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea
 			f.Value = f.Options[fe.ddOptIdx]
 		}
 		fe.ddOpen = false
-		if f.Key == "language" {
-			fe.updateFEFrameworkOptions()
+		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+			fe.updateFEDependentOptions()
 		}
 		if f.PrepareCustomEntry() {
 			return fe.tryEnterInsert()
@@ -916,19 +1068,138 @@ func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea
 	return fe, nil
 }
 
-func (fe *FrontendEditor) updateFEFrameworkOptions() {
-	lang := fieldGet(fe.techFields, "language")
-	opts, ok := frontendFrameworksByLang[lang]
-	if !ok {
-		opts = []string{"React", "Vue", "Svelte"}
-	}
+// setTechFieldOptions updates a tech field's options, preserving the current
+// value when it is still valid, or resetting to the first option otherwise.
+func (fe *FrontendEditor) setTechFieldOptions(key string, opts []string) {
 	for i := range fe.techFields {
-		if fe.techFields[i].Key == "framework" {
-			fe.techFields[i].Options = opts
+		if fe.techFields[i].Key != key {
+			continue
+		}
+		current := fe.techFields[i].Value
+		fe.techFields[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				fe.techFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
 			fe.techFields[i].SelIdx = 0
 			fe.techFields[i].Value = opts[0]
-			break
 		}
+		return
+	}
+}
+
+// updateFEDependentOptions refreshes all tech fields whose valid options depend
+// on the currently selected language, platform, or framework.
+func (fe *FrontendEditor) updateFEDependentOptions() {
+	lang := fieldGet(fe.techFields, "language")
+	platform := fieldGet(fe.techFields, "platform")
+
+	// framework ← language
+	if opts, ok := frontendFrameworksByLang[lang]; ok {
+		fe.setTechFieldOptions("framework", opts)
+	} else {
+		fe.setTechFieldOptions("framework", []string{"React", "Vue", "Svelte"})
+	}
+
+	framework := fieldGet(fe.techFields, "framework")
+
+	// meta_framework ← framework
+	if opts, ok := frontendMetaframeworksByFramework[framework]; ok {
+		fe.setTechFieldOptions("meta_framework", opts)
+	} else {
+		fe.setTechFieldOptions("meta_framework", []string{"None"})
+	}
+
+	// pkg_manager ← language
+	if opts, ok := fePkgManagerByLanguage[lang]; ok {
+		fe.setTechFieldOptions("pkg_manager", opts)
+	}
+
+	// styling ← language
+	if opts, ok := feStylingByLanguage[lang]; ok {
+		fe.setTechFieldOptions("styling", opts)
+	}
+
+	// component_lib ← framework
+	if opts, ok := feComponentLibByFramework[framework]; ok {
+		fe.setTechFieldOptions("component_lib", opts)
+	} else {
+		fe.setTechFieldOptions("component_lib", []string{"None", "Custom"})
+	}
+
+	// state_mgmt ← framework
+	if opts, ok := feStateMgmtByFramework[framework]; ok {
+		fe.setTechFieldOptions("state_mgmt", opts)
+	} else {
+		fe.setTechFieldOptions("state_mgmt", []string{"None"})
+	}
+
+	// data_fetching ← framework
+	if opts, ok := feDataFetchingByFramework[framework]; ok {
+		fe.setTechFieldOptions("data_fetching", opts)
+	} else {
+		fe.setTechFieldOptions("data_fetching", []string{"Native fetch"})
+	}
+
+	// form_handling ← framework
+	if opts, ok := feFormHandlingByFramework[framework]; ok {
+		fe.setTechFieldOptions("form_handling", opts)
+	} else {
+		fe.setTechFieldOptions("form_handling", []string{"None"})
+	}
+
+	// validation ← language
+	if opts, ok := feValidationByLanguage[lang]; ok {
+		fe.setTechFieldOptions("validation", opts)
+	} else {
+		fe.setTechFieldOptions("validation", []string{"None"})
+	}
+
+	// pwa_support ← platform
+	if opts, ok := fePwaSupportByPlatform[platform]; ok {
+		fe.setTechFieldOptions("pwa_support", opts)
+	} else {
+		fe.setTechFieldOptions("pwa_support", []string{"None"})
+	}
+
+	// image_opt ← platform
+	if opts, ok := feImageOptByPlatform[platform]; ok {
+		fe.setTechFieldOptions("image_opt", opts)
+	} else {
+		fe.setTechFieldOptions("image_opt", []string{"None"})
+	}
+
+	// error_boundary ← framework
+	if opts, ok := feErrorBoundaryByFramework[framework]; ok {
+		fe.setTechFieldOptions("error_boundary", opts)
+	} else {
+		fe.setTechFieldOptions("error_boundary", []string{"Framework default", "Custom"})
+	}
+
+	// bundle_opt ← language
+	if opts, ok := feBundleOptByLanguage[lang]; ok {
+		fe.setTechFieldOptions("bundle_opt", opts)
+	} else {
+		fe.setTechFieldOptions("bundle_opt", []string{"None"})
+	}
+
+	// fe_testing ← language
+	if opts, ok := feTestingByLanguage[lang]; ok {
+		fe.setTechFieldOptions("fe_testing", opts)
+	} else {
+		fe.setTechFieldOptions("fe_testing", []string{"None"})
+	}
+
+	// fe_linter ← language
+	if opts, ok := feLinterByLanguage[lang]; ok {
+		fe.setTechFieldOptions("fe_linter", opts)
+	} else {
+		fe.setTechFieldOptions("fe_linter", []string{"Custom", "None"})
 	}
 }
 
@@ -1027,6 +1298,15 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
 		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes())
+		existing := make([]string, 0, len(fe.pages)-1)
+		for i, p := range fe.pages {
+			if i != fe.pageIdx {
+				existing = append(existing, p.Name)
+			}
+		}
+		name := uniqueName("page", existing)
+		fe.pageForm = setFieldValue(fe.pageForm, "name", name)
+		fe.pageForm = setFieldValue(fe.pageForm, "route", "/"+name)
 		fe.pageFormIdx = 0
 		fe.pageSubView = ceViewForm
 		return fe.tryEnterInsert()

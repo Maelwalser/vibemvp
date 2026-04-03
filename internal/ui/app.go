@@ -2,7 +2,7 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-menu/internal/manifest"
 )
 
 type appPhase int
@@ -49,6 +49,7 @@ func (a AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Welcome complete: build save func and transition to main editor.
 	if wc, ok := msg.(WelcomeCompleteMsg); ok {
+		manifest.RecordRecentPath(wc.Path)
 		saveFn := func(mf *manifest.Manifest) error {
 			return mf.Save(wc.Path)
 		}

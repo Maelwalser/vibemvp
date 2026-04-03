@@ -33,14 +33,21 @@ func isCustomOption(opt string) bool {
 }
 
 // CanEditAsText returns true when the field supports free-text entry in its current state.
-// This is true for KindText, KindTextArea, and KindSelect when the active option is
-// "Custom" or "Other".
+// This is true for KindText, KindTextArea, KindSelect when the active option is
+// "Custom"/"Other", and KindMultiSelect when a "custom"/"other" option is selected.
 func (f Field) CanEditAsText() bool {
 	if f.Kind == KindText || f.Kind == KindTextArea {
 		return true
 	}
 	if f.Kind == KindSelect && len(f.Options) > 0 {
 		return isCustomOption(f.Options[f.SelIdx])
+	}
+	if f.Kind == KindMultiSelect {
+		for _, idx := range f.SelectedIdxs {
+			if idx >= 0 && idx < len(f.Options) && isCustomOption(f.Options[idx]) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -50,6 +57,13 @@ func (f Field) TextInputValue() string {
 	if f.Kind == KindSelect && len(f.Options) > 0 && isCustomOption(f.Options[f.SelIdx]) {
 		return f.CustomText
 	}
+	if f.Kind == KindMultiSelect {
+		for _, idx := range f.SelectedIdxs {
+			if idx >= 0 && idx < len(f.Options) && isCustomOption(f.Options[idx]) {
+				return f.CustomText
+			}
+		}
+	}
 	return f.Value
 }
 
@@ -58,6 +72,14 @@ func (f *Field) SaveTextInput(val string) {
 	if f.Kind == KindSelect && len(f.Options) > 0 && isCustomOption(f.Options[f.SelIdx]) {
 		f.CustomText = val
 		return
+	}
+	if f.Kind == KindMultiSelect {
+		for _, idx := range f.SelectedIdxs {
+			if idx >= 0 && idx < len(f.Options) && isCustomOption(f.Options[idx]) {
+				f.CustomText = val
+				return
+			}
+		}
 	}
 	f.Value = val
 }
@@ -95,7 +117,12 @@ func (f Field) DisplayValue() string {
 		parts := make([]string, 0, len(f.SelectedIdxs))
 		for _, idx := range f.SelectedIdxs {
 			if idx >= 0 && idx < len(f.Options) {
-				parts = append(parts, f.Options[idx])
+				opt := f.Options[idx]
+				if isCustomOption(opt) && f.CustomText != "" {
+					parts = append(parts, f.CustomText)
+				} else {
+					parts = append(parts, opt)
+				}
 			}
 		}
 		return strings.Join(parts, ", ")
