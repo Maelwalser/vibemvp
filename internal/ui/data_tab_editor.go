@@ -104,6 +104,8 @@ type DataTabEditor struct {
 	backendLangs []string
 	// Context from backend — used to populate the service selector in FS forms.
 	serviceNames []string
+	// Context from contracts — used to populate entities multiselect in caching forms.
+	availableDTOs []string
 
 	// Shared
 	internalMode Mode
