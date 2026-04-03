@@ -901,6 +901,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 	if bp.Env.ComputeEnv != "" || bp.Env.CloudProvider != "" || bp.CORSStrategy != "" || bp.BackendLinter != "" {
 		be.envEnabled = true
 		be.EnvFields = setFieldValue(be.EnvFields, "compute_env", bp.Env.ComputeEnv)
+		be.updateEnvOrchestratorOptions()
 		be.EnvFields = setFieldValue(be.EnvFields, "cloud_provider", bp.Env.CloudProvider)
 		be.EnvFields = setFieldValue(be.EnvFields, "orchestrator", bp.Env.Orchestrator)
 		be.EnvFields = restoreMultiSelectValue(be.EnvFields, "regions", bp.Env.Regions)
@@ -1328,8 +1329,13 @@ func (be *BackendEditor) applyDropdown() bool {
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
 		f.SelIdx = be.ddOptIdx
 		f.Value = f.Options[be.ddOptIdx]
-		if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
-			be.updateEnvMonolithOptions()
+		if be.activeTab() == beTabEnv {
+			switch f.Key {
+			case "monolith_lang":
+				be.updateEnvMonolithOptions()
+			case "compute_env":
+				be.updateEnvOrchestratorOptions()
+			}
 		}
 	}
 	return applyTo(be.mutableFieldPtr())
@@ -1608,8 +1614,13 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
-			if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
-				be.updateEnvMonolithOptions()
+			if be.activeTab() == beTabEnv {
+				switch f.Key {
+				case "monolith_lang":
+					be.updateEnvMonolithOptions()
+				case "compute_env":
+					be.updateEnvOrchestratorOptions()
+				}
 			}
 		}
 	case "i", "a":
@@ -1773,6 +1784,47 @@ func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
 			ed.form[i].Value = opts[0]
 			break
 		}
+	}
+}
+
+// orchestratorByComputeEnv maps compute_env values to the valid orchestrator options.
+var orchestratorByComputeEnv = map[string][]string{
+	"Bare Metal":           {"Docker Compose", "K3s", "Nomad", "None"},
+	"VM":                   {"Docker Compose", "K3s", "Nomad", "None"},
+	"Containers (Docker)":  {"Docker Compose", "K3s", "K8s (managed)", "Nomad", "ECS", "None"},
+	"Kubernetes":           {"K3s", "K8s (managed)"},
+	"Serverless (FaaS)":    {"Cloud Run", "None"},
+	// PaaS: orchestrator field is hidden entirely via visibleEnvFields.
+}
+
+// updateEnvOrchestratorOptions narrows the orchestrator dropdown to the options
+// that are valid for the currently selected compute_env.
+func (be *BackendEditor) updateEnvOrchestratorOptions() {
+	computeEnv := fieldGet(be.EnvFields, "compute_env")
+	opts, ok := orchestratorByComputeEnv[computeEnv]
+	if !ok {
+		// Unknown compute env: show all options.
+		opts = []string{"Docker Compose", "K3s", "K8s (managed)", "Nomad", "ECS", "Cloud Run", "None"}
+	}
+	for i := range be.EnvFields {
+		if be.EnvFields[i].Key != "orchestrator" {
+			continue
+		}
+		be.EnvFields[i].Options = opts
+		// Keep value if still valid; otherwise reset to first option.
+		found := false
+		for j, o := range opts {
+			if o == be.EnvFields[i].Value {
+				be.EnvFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			be.EnvFields[i].Value = opts[0]
+			be.EnvFields[i].SelIdx = 0
+		}
+		break
 	}
 }
 
@@ -2097,19 +2149,24 @@ func (be *BackendEditor) saveEventForm() {
 	}
 }
 
-// visibleEnvFields returns the ENV fields filtered by the current arch.
-// For monolith, monolith_lang and monolith_fw are shown.
-// For other archs, they are hidden.
-// cors_origins is only shown when cors_strategy is "Strict allowlist".
+// visibleEnvFields returns the ENV fields filtered by the current arch and
+// compute environment.
+// - monolith_lang / monolith_fw only shown for monolith arch.
+// - cors_origins only shown when cors_strategy is "Strict allowlist".
+// - orchestrator hidden when compute_env is "PaaS" (irrelevant — no orchestration layer).
 func (be BackendEditor) visibleEnvFields() []Field {
 	arch := be.currentArch()
 	corsStrategy := fieldGet(be.EnvFields, "cors_strategy")
+	computeEnv := fieldGet(be.EnvFields, "compute_env")
 	var out []Field
 	for _, f := range be.EnvFields {
 		if (f.Key == "monolith_lang" || f.Key == "monolith_fw") && arch != "monolith" {
 			continue
 		}
 		if f.Key == "cors_origins" && corsStrategy != "Strict allowlist" {
+			continue
+		}
+		if f.Key == "orchestrator" && computeEnv == "PaaS" {
 			continue
 		}
 		out = append(out, f)
