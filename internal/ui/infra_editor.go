@@ -1,10 +1,123 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibe-menu/internal/manifest"
 )
+
+// infraAllOptions is the full (provider-agnostic) option set for each
+// cloud-provider-aware field. Used when no provider is selected.
+var infraAllOptions = map[string][]string{
+	"registry":     {"Docker Hub", "GHCR", "ECR", "GCR", "Artifact Registry", "ACR", "Self-hosted"},
+	"cdn":          {"Cloudflare", "CloudFront", "Cloud CDN", "Azure CDN", "Fastly", "Vercel Edge", "None"},
+	"dns_provider": {"Cloudflare", "Route53", "Cloud DNS", "Azure DNS", "Other"},
+	"secrets_mgmt": {"GitHub Secrets", "HashiCorp Vault", "AWS Secrets Manager", "GCP Secret Manager", "Azure Key Vault", "None"},
+	"logging":      {"Loki + Grafana", "ELK Stack", "CloudWatch", "Cloud Logging", "Azure Monitor", "Datadog", "Stdout/file"},
+	"metrics":      {"Prometheus + Grafana", "Datadog", "CloudWatch", "Cloud Monitoring", "Azure Monitor", "New Relic", "None"},
+	"ssl_cert":     {"Auto-renew (certbot/ACME)", "ACM", "GCP-managed", "Azure-managed", "Cloudflare proxy", "Manual"},
+}
+
+// infraProviderOptions maps field key → cloud_provider → recommended option slice.
+var infraProviderOptions = map[string]map[string][]string{
+	"registry": {
+		"AWS":         {"ECR", "GHCR", "Docker Hub"},
+		"GCP":         {"GCR", "Artifact Registry", "GHCR"},
+		"Azure":       {"ACR", "GHCR"},
+		"Cloudflare":  {"GHCR", "Docker Hub"},
+		"Hetzner":     {"GHCR", "Docker Hub", "Self-hosted"},
+		"Self-hosted": {"GHCR", "Docker Hub", "Self-hosted"},
+	},
+	"cdn": {
+		"AWS":         {"CloudFront", "Cloudflare", "None"},
+		"GCP":         {"Cloud CDN", "Cloudflare", "None"},
+		"Azure":       {"Azure CDN", "Cloudflare", "None"},
+		"Cloudflare":  {"Cloudflare", "None"},
+		"Hetzner":     {"Cloudflare", "None"},
+		"Self-hosted": {"Cloudflare", "None"},
+	},
+	"dns_provider": {
+		"AWS":         {"Route53", "Cloudflare", "Other"},
+		"GCP":         {"Cloud DNS", "Cloudflare", "Other"},
+		"Azure":       {"Azure DNS", "Cloudflare", "Other"},
+		"Cloudflare":  {"Cloudflare", "Other"},
+		"Hetzner":     {"Cloudflare", "Other"},
+		"Self-hosted": {"Cloudflare", "Other"},
+	},
+	"secrets_mgmt": {
+		"AWS":         {"AWS Secrets Manager", "HashiCorp Vault", "GitHub Secrets"},
+		"GCP":         {"GCP Secret Manager", "HashiCorp Vault", "GitHub Secrets"},
+		"Azure":       {"Azure Key Vault", "HashiCorp Vault", "GitHub Secrets"},
+		"Cloudflare":  {"HashiCorp Vault", "GitHub Secrets"},
+		"Hetzner":     {"HashiCorp Vault", "GitHub Secrets"},
+		"Self-hosted": {"HashiCorp Vault", "GitHub Secrets"},
+	},
+	"logging": {
+		"AWS":         {"CloudWatch", "ELK Stack", "Loki + Grafana", "Datadog", "Stdout/file"},
+		"GCP":         {"Cloud Logging", "ELK Stack", "Loki + Grafana", "Datadog", "Stdout/file"},
+		"Azure":       {"Azure Monitor", "ELK Stack", "Loki + Grafana", "Datadog", "Stdout/file"},
+		"Cloudflare":  {"Loki + Grafana", "ELK Stack", "Datadog", "Stdout/file"},
+		"Hetzner":     {"Loki + Grafana", "ELK Stack", "Datadog", "Stdout/file"},
+		"Self-hosted": {"Loki + Grafana", "ELK Stack", "Datadog", "Stdout/file"},
+	},
+	"metrics": {
+		"AWS":         {"CloudWatch", "Prometheus + Grafana", "Datadog", "New Relic", "None"},
+		"GCP":         {"Cloud Monitoring", "Prometheus + Grafana", "Datadog", "New Relic", "None"},
+		"Azure":       {"Azure Monitor", "Prometheus + Grafana", "Datadog", "New Relic", "None"},
+		"Cloudflare":  {"Prometheus + Grafana", "Datadog", "New Relic", "None"},
+		"Hetzner":     {"Prometheus + Grafana", "Datadog", "New Relic", "None"},
+		"Self-hosted": {"Prometheus + Grafana", "Datadog", "New Relic", "None"},
+	},
+	"ssl_cert": {
+		"AWS":         {"ACM", "Auto-renew (certbot/ACME)", "Manual"},
+		"GCP":         {"GCP-managed", "Auto-renew (certbot/ACME)", "Manual"},
+		"Azure":       {"Azure-managed", "Auto-renew (certbot/ACME)", "Manual"},
+		"Cloudflare":  {"Cloudflare proxy", "Auto-renew (certbot/ACME)", "Manual"},
+		"Hetzner":     {"Auto-renew (certbot/ACME)", "Manual"},
+		"Self-hosted": {"Auto-renew (certbot/ACME)", "Manual"},
+	},
+}
+
+// applyCloudProviderToFields returns a copy of fields with Options narrowed (and
+// Value/SelIdx reconciled) for any field present in infraProviderOptions.
+func applyCloudProviderToFields(fields []Field, provider string) []Field {
+	// Strip " (specify)" suffix produced by "Other (specify)" backend option.
+	cp := provider
+	if idx := strings.Index(cp, " ("); idx >= 0 {
+		cp = cp[:idx]
+	}
+	out := make([]Field, len(fields))
+	copy(out, fields)
+	for i := range out {
+		providerMap, ok := infraProviderOptions[out[i].Key]
+		if !ok {
+			continue
+		}
+		var opts []string
+		if filtered, has := providerMap[cp]; has {
+			opts = filtered
+		} else {
+			opts = infraAllOptions[out[i].Key]
+		}
+		out[i].Options = opts
+		// Keep current value when still valid; otherwise fall back to first option.
+		found := false
+		for j, o := range opts {
+			if o == out[i].Value {
+				out[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			out[i].Value = opts[0]
+			out[i].SelIdx = 0
+		}
+	}
+	return out
+}
 
 // ── sub-tabs ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +147,7 @@ func defaultNetworkingFields() []Field {
 	return []Field{
 		{
 			Key: "dns_provider", Label: "dns_provider  ", Kind: KindSelect,
-			Options: []string{"Cloudflare", "Route53", "Cloud DNS", "Other"},
+			Options: infraAllOptions["dns_provider"],
 			Value:   "Cloudflare",
 		},
 		{
@@ -49,8 +162,8 @@ func defaultNetworkingFields() []Field {
 		},
 		{
 			Key: "cdn", Label: "cdn           ", Kind: KindSelect,
-			Options: []string{"Cloudflare", "CloudFront", "Fastly", "Vercel Edge", "None"},
-			Value:   "None", SelIdx: 4,
+			Options: infraAllOptions["cdn"],
+			Value:   "None", SelIdx: 6,
 		},
 		{Key: "primary_domain", Label: "Primary Domain", Kind: KindText},
 		{
@@ -65,7 +178,7 @@ func defaultNetworkingFields() []Field {
 		},
 		{
 			Key: "ssl_cert", Label: "SSL Cert Mgmt ", Kind: KindSelect,
-			Options: []string{"Auto-renew (certbot/ACME)", "Managed (cloud provider)", "Manual", "Cloudflare proxy"},
+			Options: infraAllOptions["ssl_cert"],
 			Value:   "Auto-renew (certbot/ACME)",
 		},
 	}
@@ -83,7 +196,7 @@ func defaultInfraCICDFields() []Field {
 		},
 		{
 			Key: "registry", Label: "registry      ", Kind: KindSelect,
-			Options: []string{"Docker Hub", "GHCR", "ECR", "GCR", "Self-hosted"},
+			Options: infraAllOptions["registry"],
 			Value:   "GHCR", SelIdx: 1,
 		},
 		{
@@ -98,11 +211,8 @@ func defaultInfraCICDFields() []Field {
 		},
 		{
 			Key: "secrets_mgmt", Label: "secrets_mgmt  ", Kind: KindSelect,
-			Options: []string{
-				"GitHub Secrets", "HashiCorp Vault", "AWS Secrets Manager",
-				"GCP Secret Manager", "None",
-			},
-			Value: "GitHub Secrets",
+			Options: infraAllOptions["secrets_mgmt"],
+			Value:   "GitHub Secrets",
 		},
 		{
 			Key: "container_runtime", Label: "Container     ", Kind: KindSelect,
@@ -163,19 +273,18 @@ func defaultEnvTopologyFields() []Field {
 func defaultObservabilityFields() []Field {
 	return []Field{
 		{
-			Key: "logging", Label: "logging       ", Kind: KindSelect,
-			Options: []string{
-				"Loki + Grafana", "ELK Stack", "CloudWatch",
-				"Datadog", "Stdout/file",
-			},
-			Value: "Loki + Grafana",
+			Key:     "logging",
+			Label:   "logging       ",
+			Kind:    KindSelect,
+			Options: infraAllOptions["logging"],
+			Value:   "Loki + Grafana",
 		},
 		{
-			Key: "metrics", Label: "metrics       ", Kind: KindSelect,
-			Options: []string{
-				"Prometheus + Grafana", "Datadog", "CloudWatch", "New Relic", "None",
-			},
-			Value: "Prometheus + Grafana",
+			Key:     "metrics",
+			Label:   "metrics       ",
+			Kind:    KindSelect,
+			Options: infraAllOptions["metrics"],
+			Value:   "Prometheus + Grafana",
 		},
 		{
 			Key: "tracing", Label: "tracing       ", Kind: KindSelect,
@@ -240,6 +349,22 @@ type InfraEditor struct {
 
 	ddOpen   bool
 	ddOptIdx int
+
+	// cloudProvider mirrors the backend Env cloud_provider selection so that
+	// provider-specific option lists stay consistent across pillars.
+	cloudProvider string
+}
+
+// SetCloudProvider narrows cloud-aware field options to those appropriate for
+// the given provider. A no-op when the provider has not changed.
+func (ie *InfraEditor) SetCloudProvider(cp string) {
+	if ie.cloudProvider == cp {
+		return
+	}
+	ie.cloudProvider = cp
+	ie.networkingFields = applyCloudProviderToFields(ie.networkingFields, cp)
+	ie.cicdFields = applyCloudProviderToFields(ie.cicdFields, cp)
+	ie.obsFields = applyCloudProviderToFields(ie.obsFields, cp)
 }
 
 func (ie InfraEditor) activeTabEnabled() bool {

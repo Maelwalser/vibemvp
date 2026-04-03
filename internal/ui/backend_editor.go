@@ -3407,6 +3407,12 @@ func (be BackendEditor) viewJobs(w int) []string {
 	return lines
 }
 
+// CloudProvider returns the selected cloud provider from the Env tab.
+// Returns an empty string if the env section has not been configured.
+func (be BackendEditor) CloudProvider() string {
+	return fieldGet(be.EnvFields, "cloud_provider")
+}
+
 // AuthRoleOptions returns role names for use in frontend page forms.
 // Returns only explicitly configured roles; empty slice means none configured.
 func (be BackendEditor) AuthRoleOptions() []string {

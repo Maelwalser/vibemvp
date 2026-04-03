@@ -371,6 +371,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 	case "infrastructure":
+		m.infraEditor.SetCloudProvider(m.backendEditor.CloudProvider())
 		m.infraEditor, cmd = m.infraEditor.Update(msg)
 	case "crosscut":
 		m.crossCutEditor.SetTestingContext(
