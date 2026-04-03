@@ -68,10 +68,20 @@ type FrontendEditor struct {
 	assetForm    []Field
 	assetFormIdx int
 
+	// COMPONENTS (drill-down from page form — press C)
+	inPageComp  bool
+	pageComps   []manifest.PageComponentDef
+	compSubView ceSubView
+	compIdx     int
+	compForm    []Field
+	compFormIdx int
+
 	// Cross-editor data
 	availableAuthRoles   []string // from BackendEditor auth roles
 	backendProtocols     []string // comm-link protocols (REST (HTTP), GraphQL, gRPC, tRPC, …)
 	backendSvcFrameworks []string // service frameworks (tRPC, NestJS, …)
+	availableEndpoints   []string // from ContractsEditor.EndpointNames()
+	availableDTOs        []string // from ContractsEditor.DTONames()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	dd DropdownState
@@ -108,6 +118,16 @@ func (fe *FrontendEditor) SetBackendProtocols(protocols, svcFrameworks []string)
 	fe.backendProtocols = protocols
 	fe.backendSvcFrameworks = svcFrameworks
 	fe.updateFEDependentOptions()
+}
+
+// SetAvailableEndpoints updates the endpoint name list for component forms.
+func (fe *FrontendEditor) SetAvailableEndpoints(endpoints []string) {
+	fe.availableEndpoints = endpoints
+}
+
+// SetAvailableDTOs updates the DTO name list for component forms.
+func (fe *FrontendEditor) SetAvailableDTOs(dtos []string) {
+	fe.availableDTOs = dtos
 }
 
 // Language returns the frontend language selected in the Tech sub-tab.
@@ -160,7 +180,6 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 			AuthFlowType:       fieldGet(fe.techFields, "auth_flow"),
 			ErrorBoundary:      fieldGet(fe.techFields, "error_boundary"),
 			BundleOptimization: fieldGet(fe.techFields, "bundle_opt"),
-			FrontendTesting:    fieldGet(fe.techFields, "fe_testing"),
 			FrontendLinter:     fieldGet(fe.techFields, "fe_linter"),
 		}
 		// Legacy compatibility
@@ -234,7 +253,6 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 		fe.techFields = setFieldValue(fe.techFields, "auth_flow", t.AuthFlowType)
 		fe.techFields = setFieldValue(fe.techFields, "error_boundary", t.ErrorBoundary)
 		fe.techFields = setFieldValue(fe.techFields, "bundle_opt", t.BundleOptimization)
-		fe.techFields = setFieldValue(fe.techFields, "fe_testing", t.FrontendTesting)
 		fe.techFields = setFieldValue(fe.techFields, "fe_linter", t.FrontendLinter)
 	}
 
@@ -337,7 +355,13 @@ func (fe FrontendEditor) HintLine() string {
 		if fe.pageSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add page", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
 		}
-		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		if fe.inPageComp {
+			if fe.compSubView == ceViewList {
+				return hintBar("j/k", "navigate", "a", "add component", "d", "delete", "Enter", "edit", "b/Esc", "back")
+			}
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "C", "components", "b/Esc", "back")
 	case feTabAssets:
 		if fe.assetSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add asset", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
@@ -433,7 +457,12 @@ func (fe *FrontendEditor) advanceField(delta int) {
 			fe.themeFormIdx = (fe.themeFormIdx + delta + n) % n
 		}
 	case feTabPages:
-		if fe.pageSubView == ceViewForm {
+		if fe.inPageComp && fe.compSubView == ceViewForm {
+			n := len(fe.compForm)
+			if n > 0 {
+				fe.compFormIdx = (fe.compFormIdx + delta + n) % n
+			}
+		} else if fe.pageSubView == ceViewForm {
 			n := len(fe.pageForm)
 			if n > 0 {
 				fe.pageFormIdx = (fe.pageFormIdx + delta + n) % n
@@ -476,7 +505,9 @@ func (fe *FrontendEditor) saveInput() {
 			fe.themeFields[fe.themeFormIdx].SaveTextInput(val)
 		}
 	case feTabPages:
-		if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
+		if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) && fe.compForm[fe.compFormIdx].CanEditAsText() {
+			fe.compForm[fe.compFormIdx].SaveTextInput(val)
+		} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
 			fe.pageForm[fe.pageFormIdx].SaveTextInput(val)
 		}
 	case feTabNav:
@@ -506,7 +537,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	case feTabTheme:
 		n = len(fe.themeFields)
 	case feTabPages:
-		if fe.pageSubView == ceViewForm {
+		if fe.inPageComp && fe.compSubView == ceViewForm {
+			n = len(fe.compForm)
+		} else if fe.pageSubView == ceViewForm {
 			n = len(fe.pageForm)
 		}
 	case feTabNav:
@@ -532,7 +565,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 				f = &fe.themeFields[fe.themeFormIdx]
 			}
 		case feTabPages:
-			if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
+			if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) {
+				f = &fe.compForm[fe.compFormIdx]
+			} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
 				f = &fe.pageForm[fe.pageFormIdx]
 			}
 		case feTabNav:

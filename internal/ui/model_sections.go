@@ -89,6 +89,8 @@ func buildSectionRegistry() map[string]sectionEntry {
 			update: func(m *Model, msg tea.Msg) tea.Cmd {
 				m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 				m.frontendEditor.SetBackendProtocols(m.backendEditor.CommProtocols(), m.backendEditor.ServiceFrameworks())
+				m.frontendEditor.SetAvailableEndpoints(m.contractsEditor.EndpointNames())
+				m.frontendEditor.SetAvailableDTOs(m.contractsEditor.DTONames())
 				var cmd tea.Cmd
 				m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 				return cmd

@@ -23,7 +23,6 @@ type FrontendTechConfig struct {
 	AuthFlowType       string `json:"auth_flow_type,omitempty"`
 	ErrorBoundary      string `json:"error_boundary,omitempty"`
 	BundleOptimization string `json:"bundle_optimization,omitempty"`
-	FrontendTesting    string `json:"frontend_testing,omitempty"`
 	FrontendLinter     string `json:"frontend_linter,omitempty"`
 }
 
@@ -39,18 +38,30 @@ type FrontendTheme struct {
 	Description  string `json:"description,omitempty"`
 }
 
+// PageComponentDef describes a UI component within a page.
+type PageComponentDef struct {
+	Name               string `json:"name"`
+	ComponentType      string `json:"component_type"`
+	ConnectedEndpoints string `json:"connected_endpoints,omitempty"`
+	RequestDTO         string `json:"request_dto,omitempty"`
+	ResponseDTO        string `json:"response_dto,omitempty"`
+	Description        string `json:"description,omitempty"`
+}
+
 // PageDef describes a frontend page.
 type PageDef struct {
-	Name          string `json:"name"`
-	Route         string `json:"route"`
-	AuthRequired  string `json:"auth_required"`
-	Layout        string `json:"layout"`
-	Description   string `json:"description,omitempty"`
-	CoreActions   string `json:"core_actions,omitempty"`
-	Loading       string `json:"loading"`
-	ErrorHandling string `json:"error_handling"`
-	AuthRoles     string `json:"auth_roles,omitempty"`
-	LinkedPages   string `json:"linked_pages,omitempty"`
+	Name          string             `json:"name"`
+	Route         string             `json:"route"`
+	AuthRequired  string             `json:"auth_required"`
+	Layout        string             `json:"layout"`
+	Purpose       string             `json:"purpose,omitempty"`
+	Description   string             `json:"description,omitempty"`
+	CoreActions   string             `json:"core_actions,omitempty"`
+	Loading       string             `json:"loading"`
+	ErrorHandling string             `json:"error_handling"`
+	AuthRoles     string             `json:"auth_roles,omitempty"`
+	LinkedPages   string             `json:"linked_pages,omitempty"`
+	Components    []PageComponentDef `json:"components,omitempty"`
 }
 
 // NavigationConfig describes frontend navigation settings.
@@ -95,6 +106,7 @@ type AssetDef struct {
 	AssetType   string     `json:"asset_type"`          // image, icon, font, video, mockup, moodboard
 	Format      string     `json:"format"`              // png, jpg, svg, gif, mp4, pdf, figma, sketch, other
 	Usage       AssetUsage `json:"usage"`               // project | inspiration
+	Pages       string     `json:"pages,omitempty"`     // comma-separated page routes this asset is used on
 	Description string     `json:"description,omitempty"`
 }
 
