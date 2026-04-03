@@ -39,7 +39,7 @@ func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		f := &fe.techFields[fe.techFormIdx]
 		if f.Kind == KindSelect {
 			f.CyclePrev()
-			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" || f.Key == "language_version" {
 				fe.updateFEDependentOptions()
 			}
 		}
@@ -67,7 +67,7 @@ func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea
 			f.Value = f.Options[fe.dd.OptIdx]
 		}
 		fe.dd.Open = false
-		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" || f.Key == "language_version" {
 			fe.updateFEDependentOptions()
 		}
 		if f.PrepareCustomEntry() {
@@ -149,6 +149,12 @@ func (fe FrontendEditor) updatePages(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	if fe.pageSubView == ceViewList {
 		return fe.updatePageList(key)
 	}
+	if fe.inPageComp {
+		if fe.compSubView == ceViewList {
+			return fe.updateCompList(key)
+		}
+		return fe.updateCompForm(key)
+	}
 	return fe.updatePageForm(key)
 }
 
@@ -199,6 +205,9 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes)
 			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
 			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
+			if p.Purpose != "" {
+				fe.pageForm = setFieldValue(fe.pageForm, "purpose", p.Purpose)
+			}
 			fe.pageForm = setFieldValue(fe.pageForm, "auth_required", p.AuthRequired)
 			if p.Layout != "" {
 				fe.pageForm = setFieldValue(fe.pageForm, "layout", p.Layout)
@@ -283,8 +292,20 @@ func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		if fe.pageForm[fe.pageFormIdx].CanEditAsText() {
 			return fe.tryEnterInsert()
 		}
+	case "c", "C":
+		fe.savePageForm()
+		if fe.pageIdx < len(fe.pages) {
+			fe.pageComps = make([]manifest.PageComponentDef, len(fe.pages[fe.pageIdx].Components))
+			copy(fe.pageComps, fe.pages[fe.pageIdx].Components)
+		} else {
+			fe.pageComps = nil
+		}
+		fe.inPageComp = true
+		fe.compSubView = ceViewList
+		fe.compIdx = 0
 	case "b", "esc":
 		fe.savePageForm()
+		fe.inPageComp = false
 		fe.pageSubView = ceViewList
 	}
 	return fe, nil
@@ -341,6 +362,7 @@ func (fe *FrontendEditor) savePageForm() {
 	p := &fe.pages[fe.pageIdx]
 	p.Name = fieldGet(fe.pageForm, "name")
 	p.Route = fieldGet(fe.pageForm, "route")
+	p.Purpose = fieldGet(fe.pageForm, "purpose")
 	p.AuthRequired = fieldGet(fe.pageForm, "auth_required")
 	p.Layout = fieldGet(fe.pageForm, "layout")
 	p.Description = fieldGet(fe.pageForm, "description")
@@ -349,6 +371,191 @@ func (fe *FrontendEditor) savePageForm() {
 	p.ErrorHandling = fieldGet(fe.pageForm, "error_handling")
 	p.AuthRoles = fieldGetMulti(fe.pageForm, "auth_roles")
 	p.LinkedPages = fieldGetMulti(fe.pageForm, "linked_pages")
+}
+
+func (fe *FrontendEditor) saveCompsToPage() {
+	if fe.pageIdx >= len(fe.pages) {
+		return
+	}
+	comps := make([]manifest.PageComponentDef, len(fe.pageComps))
+	copy(comps, fe.pageComps)
+	fe.pages[fe.pageIdx].Components = comps
+}
+
+func (fe *FrontendEditor) saveCompForm() {
+	if fe.compIdx >= len(fe.pageComps) {
+		return
+	}
+	c := &fe.pageComps[fe.compIdx]
+	c.Name = fieldGet(fe.compForm, "name")
+	c.ComponentType = fieldGet(fe.compForm, "comp_type")
+	c.ConnectedEndpoints = fieldGetMulti(fe.compForm, "endpoints")
+	reqDTO := fieldGet(fe.compForm, "request_dto")
+	if reqDTO == "None" {
+		reqDTO = ""
+	}
+	c.RequestDTO = reqDTO
+	respDTO := fieldGet(fe.compForm, "response_dto")
+	if respDTO == "None" {
+		respDTO = ""
+	}
+	c.ResponseDTO = respDTO
+	c.Description = fieldGet(fe.compForm, "description")
+}
+
+func (fe FrontendEditor) updateCompList(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	n := len(fe.pageComps)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && fe.compIdx < n-1 {
+			fe.compIdx++
+		}
+	case "k", "up":
+		if fe.compIdx > 0 {
+			fe.compIdx--
+		}
+	case "a":
+		fe.pageComps = append(fe.pageComps, manifest.PageComponentDef{})
+		fe.compIdx = len(fe.pageComps) - 1
+		existing := make([]string, 0, len(fe.pageComps)-1)
+		for i, c := range fe.pageComps {
+			if i != fe.compIdx {
+				existing = append(existing, c.Name)
+			}
+		}
+		fe.compForm = defaultComponentFormFields(fe.availableEndpoints, fe.availableDTOs)
+		fe.compForm = setFieldValue(fe.compForm, "name", uniqueName("component", existing))
+		fe.compFormIdx = 0
+		fe.compSubView = ceViewForm
+		return fe.tryEnterInsert()
+	case "d":
+		if n > 0 {
+			fe.pageComps = append(fe.pageComps[:fe.compIdx], fe.pageComps[fe.compIdx+1:]...)
+			if fe.compIdx > 0 && fe.compIdx >= len(fe.pageComps) {
+				fe.compIdx = len(fe.pageComps) - 1
+			}
+			fe.saveCompsToPage()
+		}
+	case "enter":
+		if n > 0 {
+			c := fe.pageComps[fe.compIdx]
+			fe.compForm = defaultComponentFormFields(fe.availableEndpoints, fe.availableDTOs)
+			fe.compForm = setFieldValue(fe.compForm, "name", c.Name)
+			fe.compForm = setFieldValue(fe.compForm, "comp_type", c.ComponentType)
+			reqDTO := c.RequestDTO
+			if reqDTO == "" {
+				reqDTO = "None"
+			}
+			fe.compForm = setFieldValue(fe.compForm, "request_dto", reqDTO)
+			respDTO := c.ResponseDTO
+			if respDTO == "" {
+				respDTO = "None"
+			}
+			fe.compForm = setFieldValue(fe.compForm, "response_dto", respDTO)
+			fe.compForm = setFieldValue(fe.compForm, "description", c.Description)
+			// Restore multiselect for endpoints
+			if c.ConnectedEndpoints != "" {
+				for i := range fe.compForm {
+					if fe.compForm[i].Key == "endpoints" {
+						for _, sel := range strings.Split(c.ConnectedEndpoints, ", ") {
+							for j, opt := range fe.compForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.compForm[i].SelectedIdxs = append(fe.compForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
+			fe.compFormIdx = 0
+			fe.compSubView = ceViewForm
+		}
+	case "b", "esc":
+		fe.saveCompsToPage()
+		fe.inPageComp = false
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateCompForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.dd.Open {
+		return fe.updateCompFormDropdown(key)
+	}
+	switch key.String() {
+	case "j", "down":
+		if fe.compFormIdx < len(fe.compForm)-1 {
+			fe.compFormIdx++
+		}
+	case "k", "up":
+		if fe.compFormIdx > 0 {
+			fe.compFormIdx--
+		}
+	case "enter", " ":
+		f := &fe.compForm[fe.compFormIdx]
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			fe.dd.Open = true
+			if f.Kind == KindSelect {
+				fe.dd.OptIdx = f.SelIdx
+			} else {
+				fe.dd.OptIdx = f.DDCursor
+			}
+		} else {
+			return fe.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &fe.compForm[fe.compFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+		}
+	case "i", "a":
+		if fe.compForm[fe.compFormIdx].CanEditAsText() {
+			return fe.tryEnterInsert()
+		}
+	case "b", "esc":
+		fe.saveCompForm()
+		fe.saveCompsToPage()
+		fe.compSubView = ceViewList
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateCompFormDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.compFormIdx >= len(fe.compForm) {
+		fe.dd.Open = false
+		return fe, nil
+	}
+	f := &fe.compForm[fe.compFormIdx]
+	fe.dd.OptIdx = NavigateDropdown(key.String(), fe.dd.OptIdx, len(f.Options))
+	switch key.String() {
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
+			f.DDCursor = fe.dd.OptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+			fe.dd.Open = false
+		}
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		} else if f.Kind == KindSelect {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+		}
+		fe.dd.Open = false
+	case "esc", "b":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		}
+		fe.dd.Open = false
+	}
+	return fe, nil
 }
 
 func (fe FrontendEditor) updateNav(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
@@ -445,6 +652,8 @@ func (fe FrontendEditor) View(w, h int) string {
 		pageLines := fe.viewPages(w)
 		if fe.pageSubView == ceViewList {
 			pageLines = appendViewport(pageLines, 2, fe.pageIdx, h-feHeaderH)
+		} else if fe.inPageComp && fe.compSubView == ceViewList {
+			pageLines = appendViewport(pageLines, 2, fe.compIdx, h-feHeaderH)
 		}
 		lines = append(lines, pageLines...)
 	case feTabNav:

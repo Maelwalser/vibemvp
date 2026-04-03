@@ -22,6 +22,11 @@ func defaultFETechFields() []Field {
 			Value:   "TypeScript",
 		},
 		{
+			Key: "language_version", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["TypeScript"],
+			Value:   langVersions["TypeScript"][0],
+		},
+		{
 			Key: "platform", Label: "platform      ", Kind: KindSelect,
 			Options: []string{
 				"Web (SPA)", "Web (SSR/SSG)", "Mobile (cross-platform)",
@@ -33,6 +38,11 @@ func defaultFETechFields() []Field {
 			Key: "framework", Label: "framework     ", Kind: KindSelect,
 			Options: frontendFrameworksByLang["TypeScript"],
 			Value:   "React",
+		},
+		{
+			Key: "framework_version", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("TypeScript", langVersions["TypeScript"][0], "React"),
+			Value:   compatibleFrameworkVersions("TypeScript", langVersions["TypeScript"][0], "React")[0],
 		},
 		{
 			Key: "meta_framework", Label: "meta_framework", Kind: KindSelect,
@@ -118,11 +128,6 @@ func defaultFETechFields() []Field {
 			Value:   "None", SelIdx: 3,
 		},
 		{
-			Key: "fe_testing", Label: "FE Testing    ", Kind: KindSelect,
-			Options: []string{"Vitest", "Jest", "Testing Library", "Storybook", "None"},
-			Value:   "None", SelIdx: 4,
-		},
-		{
 			Key: "fe_linter", Label: "Linter        ", Kind: KindSelect,
 			Options: []string{"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
 			Value:   "None", SelIdx: 5,
@@ -175,6 +180,15 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "route", Label: "route         ", Kind: KindText},
 		{
+			Key: "purpose", Label: "purpose       ", Kind: KindSelect,
+			Options: []string{
+				"Landing/Marketing", "Dashboard/Overview", "List/Index",
+				"Detail/View", "Create/Form", "Edit/Form",
+				"Auth/Login", "Settings/Profile", "Error/404", "Admin", "Other",
+			},
+			Value: "Other", SelIdx: 10,
+		},
+		{
 			Key: "auth_required", Label: "auth_required ", Kind: KindSelect,
 			Options: OptionsOffOn, Value: "false",
 		},
@@ -205,6 +219,34 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 			Options: pageRouteOptions,
 			Value:   placeholderFor(pageRouteOptions, "(no pages configured)"),
 		},
+	}
+}
+
+func defaultComponentFormFields(endpointOptions, dtoOptions []string) []Field {
+	dtoWithNone := append([]string{"None"}, dtoOptions...)
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{
+			Key: "comp_type", Label: "comp_type     ", Kind: KindSelect,
+			Options: []string{"Form", "Table", "Card", "List", "Chart", "Modal", "Button", "Navigation", "Custom"},
+			Value:   "Form",
+		},
+		{
+			Key: "endpoints", Label: "endpoints     ", Kind: KindMultiSelect,
+			Options: endpointOptions,
+			Value:   placeholderFor(endpointOptions, "(no endpoints configured)"),
+		},
+		{
+			Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
+			Options: dtoWithNone,
+			Value:   "None",
+		},
+		{
+			Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
+			Options: dtoWithNone,
+			Value:   "None",
+		},
+		{Key: "description", Label: "description   ", Kind: KindText},
 	}
 }
 
@@ -571,6 +613,13 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	lang := fieldGet(fe.techFields, "language")
 	platform := fieldGet(fe.techFields, "platform")
 
+	// language_version ← language
+	if vers, ok := langVersions[lang]; ok {
+		fe.setTechFieldOptions("language_version", vers)
+	} else {
+		fe.setTechFieldOptions("language_version", []string{"latest"})
+	}
+
 	// framework ← language
 	if opts, ok := frontendFrameworksByLang[lang]; ok {
 		fe.setTechFieldOptions("framework", opts)
@@ -579,6 +628,10 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	}
 
 	framework := fieldGet(fe.techFields, "framework")
+	langVer := fieldGet(fe.techFields, "language_version")
+
+	// framework_version ← language + language_version + framework
+	fe.setTechFieldOptions("framework_version", compatibleFrameworkVersions(lang, langVer, framework))
 
 	// meta_framework ← framework
 	if opts, ok := frontendMetaframeworksByFramework[framework]; ok {
@@ -654,13 +707,6 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 		fe.setTechFieldOptions("bundle_opt", opts)
 	} else {
 		fe.setTechFieldOptions("bundle_opt", []string{"None"})
-	}
-
-	// fe_testing ← language
-	if opts, ok := feTestingByLanguage[lang]; ok {
-		fe.setTechFieldOptions("fe_testing", opts)
-	} else {
-		fe.setTechFieldOptions("fe_testing", []string{"None"})
 	}
 
 	// fe_linter ← language

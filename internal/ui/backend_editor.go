@@ -353,9 +353,14 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 
 	var auth manifest.AuthConfig
 	if be.authEnabled {
+		svcUnit := fieldGet(be.AuthFields, "service_unit")
+		if svcUnit == "None (external)" || svcUnit == "None" || svcUnit == "(no services configured)" {
+			svcUnit = ""
+		}
 		auth = manifest.AuthConfig{
 			Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
 			Provider:     fieldGet(be.AuthFields, "provider"),
+			ServiceUnit:  svcUnit,
 			AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
 			Permissions:  be.authPerms,
 			Roles:        be.authRoles,
@@ -416,10 +421,14 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	// Legacy compat fields (compute/cloud now live in InfraPillar.Environments)
 	if arch == "monolith" {
 		bp.Language = fieldGet(be.EnvFields, "monolith_lang")
+		bp.LanguageVersion = fieldGet(be.EnvFields, "monolith_lang_ver")
 		bp.Framework = fieldGet(be.EnvFields, "monolith_fw")
+		bp.FrameworkVersion = fieldGet(be.EnvFields, "monolith_fw_ver")
 	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
+		bp.LanguageVersion = be.Services[0].LanguageVersion
 		bp.Framework = be.Services[0].Framework
+		bp.FrameworkVersion = be.Services[0].FrameworkVersion
 	}
 	return bp
 }
@@ -453,7 +462,10 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		if arch == "monolith" {
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang", bp.Language)
 			be.updateEnvMonolithOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang_ver", bp.LanguageVersion)
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
+			be.updateEnvMonolithVersionOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw_ver", bp.FrameworkVersion)
 		}
 	}
 
@@ -462,6 +474,17 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.authEnabled = true
 		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "strategy", bp.Auth.Strategy)
 		be.AuthFields = setFieldValue(be.AuthFields, "provider", bp.Auth.Provider)
+		if bp.Auth.ServiceUnit != "" {
+			// Restore service_unit; options will be repopulated lazily on first open.
+			for i := range be.AuthFields {
+				if be.AuthFields[i].Key == "service_unit" {
+					be.AuthFields[i].Options = []string{bp.Auth.ServiceUnit}
+					be.AuthFields[i].Value = bp.Auth.ServiceUnit
+					be.AuthFields[i].SelIdx = 0
+					break
+				}
+			}
+		}
 		be.AuthFields = setFieldValue(be.AuthFields, "authz_model", bp.Auth.AuthzModel)
 		be.authPerms = bp.Auth.Permissions
 		be.authRoles = bp.Auth.Roles
