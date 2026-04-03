@@ -356,6 +356,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.contractsEditor.SetDomainDefs(m.dataTabEditor.domains)
 		m.contractsEditor.SetServices(m.backendEditor.ServiceNames())
 		m.contractsEditor.SetServiceDefs(m.backendEditor.ServiceDefs())
+		m.contractsEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 	case "frontend":
 		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
@@ -363,6 +364,11 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "infrastructure":
 		m.infraEditor, cmd = m.infraEditor.Update(msg)
 	case "crosscut":
+		m.crossCutEditor.SetTestingContext(
+			m.backendEditor.Languages(),
+			m.frontendEditor.Language(),
+			m.frontendEditor.Framework(),
+		)
 		m.crossCutEditor, cmd = m.crossCutEditor.Update(msg)
 	case "realize":
 		m.realizeEditor, cmd = m.realizeEditor.Update(msg)

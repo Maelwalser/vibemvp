@@ -272,13 +272,16 @@ func (ce *ContractsEditor) dtoFieldFormFieldByKey(key string) *Field {
 	return nil
 }
 
-func defaultEndpointFormFields(serviceOptions, dtoOptions []string) []Field {
+func defaultEndpointFormFields(serviceOptions, dtoOptions, roleOptions []string) []Field {
 	// Ensure at least empty slice so KindSelect works
 	if serviceOptions == nil {
 		serviceOptions = []string{}
 	}
 	if dtoOptions == nil {
 		dtoOptions = []string{}
+	}
+	if roleOptions == nil {
+		roleOptions = []string{}
 	}
 	fields := []Field{
 		{Key: "service_unit", Label: "service_unit  ", Kind: KindSelect,
@@ -294,6 +297,10 @@ func defaultEndpointFormFields(serviceOptions, dtoOptions []string) []Field {
 		{
 			Key: "auth_required", Label: "auth_required ", Kind: KindSelect,
 			Options: []string{"false", "true"}, Value: "false",
+		},
+		{Key: "auth_roles", Label: "auth_roles    ", Kind: KindMultiSelect,
+			Options: roleOptions,
+			Value:   placeholderFor(roleOptions, "(no roles configured)"),
 		},
 		{Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
 			Options: dtoOptions,
@@ -363,15 +370,18 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 		dtoOptions = []string{}
 	}
 	return []Field{
+		// ── Common ──────────────────────────────────────────────────────────────
 		{Key: "provider", Label: "provider      ", Kind: KindText},
+		{
+			Key: "protocol", Label: "protocol      ", Kind: KindSelect,
+			Options: []string{"REST", "GraphQL", "gRPC", "WebSocket", "Webhook", "SOAP"},
+			Value:   "REST",
+		},
 		{
 			Key: "auth_mechanism", Label: "auth_mechanism", Kind: KindSelect,
 			Options: []string{"API Key", "OAuth2 Client Credentials", "OAuth2 PKCE", "Bearer Token", "Basic Auth", "mTLS", "None"},
 			Value:   "API Key",
 		},
-		{Key: "base_url", Label: "base_url      ", Kind: KindText},
-		{Key: "rate_limit", Label: "rate_limit    ", Kind: KindText, Value: ""},
-		{Key: "webhook_endpoint", Label: "webhook_path  ", Kind: KindText},
 		{
 			Key: "failure_strategy", Label: "failure_strat ", Kind: KindSelect,
 			Options: []string{"Circuit Breaker", "Retry with backoff", "Fallback value", "Timeout + fail", "None"},
@@ -385,6 +395,148 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 			Options: dtoOptions,
 			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
 		},
+
+		// ── REST ────────────────────────────────────────────────────────────────
+		{Key: "base_url", Label: "base_url      ", Kind: KindText},
+		{
+			Key: "http_method", Label: "http_method   ", Kind: KindSelect,
+			Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "Any"},
+			Value:   "GET",
+		},
+		{
+			Key: "content_type", Label: "content_type  ", Kind: KindSelect,
+			Options: []string{"JSON", "XML", "Form Data", "Multipart"},
+			Value:   "JSON",
+		},
+		{Key: "rate_limit", Label: "rate_limit    ", Kind: KindText},
+		{Key: "webhook_endpoint", Label: "webhook_path  ", Kind: KindText},
+
+		// ── GraphQL ─────────────────────────────────────────────────────────────
+		// base_url shared with REST
+		{
+			Key: "gql_operation", Label: "gql_operation ", Kind: KindSelect,
+			Options: []string{"Query", "Mutation", "Subscription"},
+			Value:   "Query",
+		},
+		// rate_limit shared with REST
+
+		// ── gRPC ────────────────────────────────────────────────────────────────
+		// base_url shared with REST (used as endpoint address)
+		{
+			Key: "grpc_stream_type", Label: "stream_type   ", Kind: KindSelect,
+			Options: []string{"Unary", "Server streaming", "Client streaming", "Bidirectional"},
+			Value:   "Unary",
+		},
+		{
+			Key: "tls_mode", Label: "tls_mode      ", Kind: KindSelect,
+			Options: []string{"TLS", "mTLS", "Insecure"},
+			Value:   "TLS",
+		},
+
+		// ── WebSocket ───────────────────────────────────────────────────────────
+		// base_url shared (ws:// / wss://)
+		{Key: "ws_subprotocol", Label: "subprotocol   ", Kind: KindText},
+		{
+			Key: "message_format", Label: "message_format", Kind: KindSelect,
+			Options: []string{"JSON", "MessagePack", "Binary", "Text"},
+			Value:   "JSON",
+		},
+
+		// ── Webhook (inbound) ───────────────────────────────────────────────────
+		// webhook_endpoint shared with REST (our inbound path)
+		{Key: "hmac_header", Label: "hmac_header   ", Kind: KindText, Value: "X-Hub-Signature-256"},
+		{
+			Key: "retry_policy", Label: "retry_policy  ", Kind: KindSelect,
+			Options: []string{"Retry 3x", "Retry 5x", "Immediate fail", "None"},
+			Value:   "Retry 3x",
+		},
+
+		// ── SOAP ────────────────────────────────────────────────────────────────
+		// base_url shared (WSDL URL)
+		{
+			Key: "soap_version", Label: "soap_version  ", Kind: KindSelect,
+			Options: []string{"1.1", "1.2"},
+			Value:   "1.1",
+		},
+	}
+}
+
+// visibleExtFormFields returns only the fields relevant to the currently
+// selected protocol, hiding all others.
+func (ce ContractsEditor) visibleExtFormFields() []Field {
+	if len(ce.extForm) == 0 {
+		return nil
+	}
+	proto := fieldGet(ce.extForm, "protocol")
+	var visible []Field
+	for _, f := range ce.extForm {
+		switch f.Key {
+		// REST-only
+		case "http_method", "content_type":
+			if proto != "REST" {
+				continue
+			}
+		case "rate_limit":
+			if proto != "REST" && proto != "GraphQL" {
+				continue
+			}
+		case "webhook_endpoint":
+			if proto != "REST" && proto != "Webhook" {
+				continue
+			}
+		// GraphQL-only
+		case "gql_operation":
+			if proto != "GraphQL" {
+				continue
+			}
+		// gRPC-only
+		case "grpc_stream_type", "tls_mode":
+			if proto != "gRPC" {
+				continue
+			}
+		// WebSocket-only
+		case "ws_subprotocol", "message_format":
+			if proto != "WebSocket" {
+				continue
+			}
+		// Webhook-only
+		case "hmac_header", "retry_policy":
+			if proto != "Webhook" {
+				continue
+			}
+		// SOAP-only
+		case "soap_version":
+			if proto != "SOAP" {
+				continue
+			}
+		// base_url: shown for REST, GraphQL, gRPC, WebSocket, SOAP (not Webhook)
+		case "base_url":
+			if proto == "Webhook" {
+				continue
+			}
+		}
+		visible = append(visible, f)
+	}
+	return visible
+}
+
+// extFormFieldByKey returns a pointer to the ext form field with the given key.
+func (ce *ContractsEditor) extFormFieldByKey(key string) *Field {
+	for i := range ce.extForm {
+		if ce.extForm[i].Key == key {
+			return &ce.extForm[i]
+		}
+	}
+	return nil
+}
+
+// updateExtDependentFields refreshes protocol-filtered DTO options and clamps
+// extFormIdx to the visible field range after a protocol change.
+func (ce *ContractsEditor) updateExtDependentFields() {
+	ce.refreshExtDTOOptions()
+	visible := ce.visibleExtFormFields()
+	if len(visible) > 0 && ce.extFormIdx >= len(visible) {
+		ce.extFormIdx = len(visible) - 1
 	}
 }
 
@@ -426,10 +578,11 @@ type ContractsEditor struct {
 	extFormIdx   int
 
 	// Cross-editor reference data (set by model.go before each Update)
-	availableDomains    []string               // from DataTabEditor.domainNames()
-	availableDomainDefs []manifest.DomainDef   // from DataTabEditor.domains
-	availableServices   []string               // from BackendEditor.ServiceNames()
-	availableServiceDefs []manifest.ServiceDef // from BackendEditor.ServiceDefs()
+	availableDomains     []string               // from DataTabEditor.domainNames()
+	availableDomainDefs  []manifest.DomainDef   // from DataTabEditor.domains
+	availableServices    []string               // from BackendEditor.ServiceNames()
+	availableServiceDefs []manifest.ServiceDef  // from BackendEditor.ServiceDefs()
+	availableAuthRoles   []string               // from BackendEditor.AuthRoleOptions()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	ddOpen   bool
@@ -461,6 +614,11 @@ func (ce *ContractsEditor) SetServices(services []string) {
 // SetServiceDefs updates full service definitions for technology-based protocol filtering.
 func (ce *ContractsEditor) SetServiceDefs(defs []manifest.ServiceDef) {
 	ce.availableServiceDefs = defs
+}
+
+// SetAuthRoles updates the auth role options used in endpoint forms.
+func (ce *ContractsEditor) SetAuthRoles(roles []string) {
+	ce.availableAuthRoles = roles
 }
 
 // protocolsForService returns the protocol options valid for the named service
@@ -592,15 +750,20 @@ func (ce *ContractsEditor) updateDTODependentFields() {
 }
 
 // visibleEPFields returns only the endpoint form fields relevant to the
-// currently selected protocol, hiding the other protocol-specific fields.
+// currently selected protocol and auth setting.
 func (ce ContractsEditor) visibleEPFields() []Field {
 	if len(ce.epForm) == 0 {
 		return nil
 	}
 	proto := fieldGet(ce.epForm, "protocol")
+	authRequired := fieldGet(ce.epForm, "auth_required")
 	var visible []Field
 	for _, f := range ce.epForm {
 		switch f.Key {
+		case "auth_roles":
+			if authRequired != "true" {
+				continue
+			}
 		case "http_method":
 			if proto != "REST" {
 				continue
@@ -735,6 +898,58 @@ func (ce ContractsEditor) dtoNames() []string {
 	return names
 }
 
+// dtoNamesForProtocol returns DTO names whose protocol matches the given
+// external API protocol. DTOs with no protocol set are included for all
+// protocols (backwards compatibility with manifests saved before this feature).
+func (ce ContractsEditor) dtoNamesForProtocol(protocol string) []string {
+	names := make([]string, 0, len(ce.dtos))
+	for _, d := range ce.dtos {
+		if d.Name == "" {
+			continue
+		}
+		if d.Protocol == "" || d.Protocol == protocol {
+			names = append(names, d.Name)
+		}
+	}
+	return names
+}
+
+// refreshExtDTOOptions updates the request_dto and response_dto option lists
+// in the ext form to match the currently selected protocol, preserving the
+// current selection when it is still valid.
+func (ce *ContractsEditor) refreshExtDTOOptions() {
+	proto := fieldGet(ce.extForm, "protocol")
+	opts := ce.dtoNamesForProtocol(proto)
+	placeholder := placeholderFor(opts, "(no matching DTOs)")
+	for i := range ce.extForm {
+		key := ce.extForm[i].Key
+		if key != "request_dto" && key != "response_dto" {
+			continue
+		}
+		f := &ce.extForm[i]
+		prev := f.Value
+		f.Options = opts
+		// Try to preserve current selection.
+		found := false
+		for j, o := range opts {
+			if o == prev {
+				f.SelIdx = j
+				f.Value = o
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.SelIdx = 0
+			if len(opts) > 0 {
+				f.Value = opts[0]
+			} else {
+				f.Value = placeholder
+			}
+		}
+	}
+}
+
 // activeCEFieldPtr returns a pointer to the currently focused field that supports dropdown.
 func (ce *ContractsEditor) activeCEFieldPtr() *Field {
 	switch ce.activeTab {
@@ -763,8 +978,9 @@ func (ce *ContractsEditor) activeCEFieldPtr() *Field {
 			return &ce.versioningFields[ce.verFormIdx]
 		}
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) {
-			return &ce.extForm[ce.extFormIdx]
+		visible := ce.visibleExtFormFields()
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
+			return ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
 		}
 	}
 	return nil
@@ -826,9 +1042,10 @@ func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.C
 		}
 		ce.ddOpen = false
 	}
-	// After any dropdown interaction, refresh dependent fields for both DTO and EP forms.
+	// After any dropdown interaction, refresh dependent fields for DTO, EP, and ext forms.
 	ce.updateDTODependentFields()
 	ce.updateEPDependentFields()
+	ce.updateExtDependentFields()
 	return ce, nil
 }
 
@@ -927,7 +1144,7 @@ func (ce *ContractsEditor) advanceField(delta int) {
 		}
 	case contractsTabExternal:
 		if ce.extSubView == ceViewForm {
-			n := len(ce.extForm)
+			n := len(ce.visibleExtFormFields())
 			if n > 0 {
 				ce.extFormIdx = (ce.extFormIdx + delta + n) % n
 			}
@@ -962,8 +1179,12 @@ func (ce *ContractsEditor) saveInput() {
 			ce.versioningFields[ce.verFormIdx].SaveTextInput(val)
 		}
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) && ce.extForm[ce.extFormIdx].CanEditAsText() {
-			ce.extForm[ce.extFormIdx].SaveTextInput(val)
+		visible := ce.visibleExtFormFields()
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
+			f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			if f != nil && f.CanEditAsText() {
+				f.SaveTextInput(val)
+			}
 		}
 	}
 }
@@ -986,7 +1207,7 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 		n = len(ce.versioningFields)
 	case contractsTabExternal:
 		if ce.extSubView == ceViewForm {
-			n = len(ce.extForm)
+			n = len(ce.visibleExtFormFields())
 		}
 	}
 	for range n {
@@ -1013,8 +1234,9 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 				f = &ce.versioningFields[ce.verFormIdx]
 			}
 		case contractsTabExternal:
-			if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) {
-				f = &ce.extForm[ce.extFormIdx]
+			visible := ce.visibleExtFormFields()
+			if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
+				f = ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
 			}
 		}
 		if f == nil {
@@ -1439,7 +1661,7 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "a":
 		ce.endpoints = append(ce.endpoints, manifest.EndpointDef{})
 		ce.epIdx = len(ce.endpoints) - 1
-		ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames())
+		ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames(), ce.availableAuthRoles)
 		existing := make([]string, 0, len(ce.endpoints)-1)
 		for i, ep := range ce.endpoints {
 			if i != ce.epIdx {
@@ -1460,13 +1682,28 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "enter":
 		if n > 0 {
 			ep := ce.endpoints[ce.epIdx]
-			ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames())
+			ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames(), ce.availableAuthRoles)
 			ce.epForm = setFieldValue(ce.epForm, "service_unit", ep.ServiceUnit)
 			ce.epForm = setFieldValue(ce.epForm, "name_path", ep.NamePath)
 			if ep.Protocol != "" {
 				ce.epForm = setFieldValue(ce.epForm, "protocol", ep.Protocol)
 			}
 			ce.epForm = setFieldValue(ce.epForm, "auth_required", ep.AuthRequired)
+			if ep.AuthRoles != "" {
+				for i := range ce.epForm {
+					if ce.epForm[i].Key != "auth_roles" {
+						continue
+					}
+					for _, sel := range strings.Split(ep.AuthRoles, ", ") {
+						for j, opt := range ce.epForm[i].Options {
+							if opt == strings.TrimSpace(sel) {
+								ce.epForm[i].SelectedIdxs = append(ce.epForm[i].SelectedIdxs, j)
+							}
+						}
+					}
+					break
+				}
+			}
 			ce.epForm = setFieldValue(ce.epForm, "request_dto", ep.RequestDTO)
 			ce.epForm = setFieldValue(ce.epForm, "response_dto", ep.ResponseDTO)
 			if ep.HTTPMethod != "" {
@@ -1510,9 +1747,13 @@ func (ce ContractsEditor) updateEPForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "enter", " ":
 		if ce.epFormIdx < n {
 			f := ce.epFieldByKey(visible[ce.epFormIdx].Key)
-			if f != nil && f.Kind == KindSelect {
+			if f != nil && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
 				ce.ddOpen = true
-				ce.ddOptIdx = f.SelIdx
+				if f.Kind == KindMultiSelect {
+					ce.ddOptIdx = f.DDCursor
+				} else {
+					ce.ddOptIdx = f.SelIdx
+				}
 			} else {
 				return ce.tryEnterInsert()
 			}
@@ -1548,6 +1789,7 @@ func (ce *ContractsEditor) saveEPForm() {
 	ep.NamePath = fieldGet(ce.epForm, "name_path")
 	ep.Protocol = fieldGet(ce.epForm, "protocol")
 	ep.AuthRequired = fieldGet(ce.epForm, "auth_required")
+	ep.AuthRoles = fieldGetMulti(ce.epForm, "auth_roles")
 	ep.RequestDTO = fieldGet(ce.epForm, "request_dto")
 	ep.ResponseDTO = fieldGet(ce.epForm, "response_dto")
 	ep.HTTPMethod = fieldGet(ce.epForm, "http_method")
@@ -1637,6 +1879,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			}
 		}
 		ce.extForm = setFieldValue(ce.extForm, "provider", uniqueName("api", existing))
+		ce.refreshExtDTOOptions()
 		ce.extFormIdx = 0
 		ce.extSubView = ceViewForm
 		return ce.tryEnterInsert()
@@ -1652,13 +1895,52 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			api := ce.externalAPIs[ce.extIdx]
 			ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
 			ce.extForm = setFieldValue(ce.extForm, "provider", api.Provider)
+			if api.Protocol != "" {
+				ce.extForm = setFieldValue(ce.extForm, "protocol", api.Protocol)
+			}
 			ce.extForm = setFieldValue(ce.extForm, "auth_mechanism", api.AuthMechanism)
-			ce.extForm = setFieldValue(ce.extForm, "base_url", api.BaseURL)
-			ce.extForm = setFieldValue(ce.extForm, "rate_limit", api.RateLimit)
-			ce.extForm = setFieldValue(ce.extForm, "webhook_endpoint", api.WebhookEndpoint)
 			ce.extForm = setFieldValue(ce.extForm, "failure_strategy", api.FailureStrategy)
 			ce.extForm = setFieldValue(ce.extForm, "request_dto", api.RequestDTO)
 			ce.extForm = setFieldValue(ce.extForm, "response_dto", api.ResponseDTO)
+			// REST / shared
+			ce.extForm = setFieldValue(ce.extForm, "base_url", api.BaseURL)
+			if api.HTTPMethod != "" {
+				ce.extForm = setFieldValue(ce.extForm, "http_method", api.HTTPMethod)
+			}
+			if api.ContentType != "" {
+				ce.extForm = setFieldValue(ce.extForm, "content_type", api.ContentType)
+			}
+			ce.extForm = setFieldValue(ce.extForm, "rate_limit", api.RateLimit)
+			ce.extForm = setFieldValue(ce.extForm, "webhook_endpoint", api.WebhookEndpoint)
+			// GraphQL
+			if api.GQLOperation != "" {
+				ce.extForm = setFieldValue(ce.extForm, "gql_operation", api.GQLOperation)
+			}
+			// gRPC
+			if api.GRPCStreamType != "" {
+				ce.extForm = setFieldValue(ce.extForm, "grpc_stream_type", api.GRPCStreamType)
+			}
+			if api.TLSMode != "" {
+				ce.extForm = setFieldValue(ce.extForm, "tls_mode", api.TLSMode)
+			}
+			// WebSocket
+			ce.extForm = setFieldValue(ce.extForm, "ws_subprotocol", api.WSSubprotocol)
+			if api.MessageFormat != "" {
+				ce.extForm = setFieldValue(ce.extForm, "message_format", api.MessageFormat)
+			}
+			// Webhook
+			if api.HMACHeader != "" {
+				ce.extForm = setFieldValue(ce.extForm, "hmac_header", api.HMACHeader)
+			}
+			if api.RetryPolicy != "" {
+				ce.extForm = setFieldValue(ce.extForm, "retry_policy", api.RetryPolicy)
+			}
+			// SOAP
+			if api.SOAPVersion != "" {
+				ce.extForm = setFieldValue(ce.extForm, "soap_version", api.SOAPVersion)
+			}
+			// Filter DTO options to match the saved protocol.
+			ce.refreshExtDTOOptions()
 			ce.extFormIdx = 0
 			ce.extSubView = ceViewForm
 		}
@@ -1667,9 +1949,11 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 }
 
 func (ce ContractsEditor) updateExtForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	visible := ce.visibleExtFormFields()
+	n := len(visible)
 	switch key.String() {
 	case "j", "down":
-		if ce.extFormIdx < len(ce.extForm)-1 {
+		if ce.extFormIdx < n-1 {
 			ce.extFormIdx++
 		}
 	case "k", "up":
@@ -1677,21 +1961,33 @@ func (ce ContractsEditor) updateExtForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			ce.extFormIdx--
 		}
 	case "enter", " ":
-		f := &ce.extForm[ce.extFormIdx]
-		if f.Kind == KindSelect {
-			ce.ddOpen = true
-			ce.ddOptIdx = f.SelIdx
-		} else {
-			return ce.tryEnterInsert()
+		if ce.extFormIdx < n {
+			f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			if f != nil && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
+				ce.ddOpen = true
+				if f.Kind == KindMultiSelect {
+					ce.ddOptIdx = f.DDCursor
+				} else {
+					ce.ddOptIdx = f.SelIdx
+				}
+			} else {
+				return ce.tryEnterInsert()
+			}
 		}
 	case "H", "shift+left":
-		f := &ce.extForm[ce.extFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
+		if ce.extFormIdx < n {
+			f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			if f != nil && f.Kind == KindSelect {
+				f.CyclePrev()
+				ce.updateExtDependentFields()
+			}
 		}
 	case "i", "a":
-		if ce.extForm[ce.extFormIdx].CanEditAsText() {
-			return ce.tryEnterInsert()
+		if ce.extFormIdx < n {
+			f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			if f != nil && f.CanEditAsText() {
+				return ce.tryEnterInsert()
+			}
 		}
 	case "b", "esc":
 		ce.saveExtForm()
@@ -1706,13 +2002,30 @@ func (ce *ContractsEditor) saveExtForm() {
 	}
 	api := &ce.externalAPIs[ce.extIdx]
 	api.Provider = fieldGet(ce.extForm, "provider")
+	api.Protocol = fieldGet(ce.extForm, "protocol")
 	api.AuthMechanism = fieldGet(ce.extForm, "auth_mechanism")
-	api.BaseURL = fieldGet(ce.extForm, "base_url")
-	api.RateLimit = fieldGet(ce.extForm, "rate_limit")
-	api.WebhookEndpoint = fieldGet(ce.extForm, "webhook_endpoint")
 	api.FailureStrategy = fieldGet(ce.extForm, "failure_strategy")
 	api.RequestDTO = fieldGet(ce.extForm, "request_dto")
 	api.ResponseDTO = fieldGet(ce.extForm, "response_dto")
+	// REST / shared
+	api.BaseURL = fieldGet(ce.extForm, "base_url")
+	api.HTTPMethod = fieldGet(ce.extForm, "http_method")
+	api.ContentType = fieldGet(ce.extForm, "content_type")
+	api.RateLimit = fieldGet(ce.extForm, "rate_limit")
+	api.WebhookEndpoint = fieldGet(ce.extForm, "webhook_endpoint")
+	// GraphQL
+	api.GQLOperation = fieldGet(ce.extForm, "gql_operation")
+	// gRPC
+	api.GRPCStreamType = fieldGet(ce.extForm, "grpc_stream_type")
+	api.TLSMode = fieldGet(ce.extForm, "tls_mode")
+	// WebSocket
+	api.WSSubprotocol = fieldGet(ce.extForm, "ws_subprotocol")
+	api.MessageFormat = fieldGet(ce.extForm, "message_format")
+	// Webhook
+	api.HMACHeader = fieldGet(ce.extForm, "hmac_header")
+	api.RetryPolicy = fieldGet(ce.extForm, "retry_policy")
+	// SOAP
+	api.SOAPVersion = fieldGet(ce.extForm, "soap_version")
 }
 
 func (ce ContractsEditor) viewExternal(w int) []string {
@@ -1728,7 +2041,14 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 				if name == "" {
 					name = fmt.Sprintf("(api #%d)", i+1)
 				}
-				lines = append(lines, renderListItem(w, i == ce.extIdx, "  ▶ ", name, api.AuthMechanism))
+				subtitle := api.Protocol
+				if subtitle == "" {
+					subtitle = "REST"
+				}
+				if api.AuthMechanism != "" {
+					subtitle += " · " + api.AuthMechanism
+				}
+				lines = append(lines, renderListItem(w, i == ce.extIdx, "  ▶ ", name, subtitle))
 			}
 		}
 		return lines
@@ -1738,9 +2058,14 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 		if provider == "" {
 			provider = "(new external API)"
 		}
+		proto := fieldGet(ce.extForm, "protocol")
+		if proto == "" {
+			proto = "REST"
+		}
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider), "")
-		lines = append(lines, renderFormFields(w, ce.extForm, ce.extFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider)+" "+StyleSectionDesc.Render("["+proto+"]"), "")
+		visible := ce.visibleExtFormFields()
+		lines = append(lines, renderFormFields(w, visible, ce.extFormIdx, ce.internalMode == ceInsert, ce.formInput, ce.ddOpen, ce.ddOptIdx)...)
 		return lines
 	}
 	return nil
