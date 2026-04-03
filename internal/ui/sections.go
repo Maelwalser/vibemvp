@@ -23,17 +23,72 @@ type Field struct {
 	SelIdx       int      // KindSelect: currently selected index
 	SelectedIdxs []int    // KindMultiSelect: indices of selected options
 	DDCursor     int      // KindMultiSelect: dropdown cursor position
+	CustomText   string   // KindSelect: free-text value when "Custom"/"Other" is selected
+}
+
+// isCustomOption returns true for sentinel options that allow free-text entry.
+func isCustomOption(opt string) bool {
+	lower := strings.ToLower(opt)
+	return lower == "custom" || lower == "other"
+}
+
+// CanEditAsText returns true when the field supports free-text entry in its current state.
+// This is true for KindText, KindTextArea, and KindSelect when the active option is
+// "Custom" or "Other".
+func (f Field) CanEditAsText() bool {
+	if f.Kind == KindText || f.Kind == KindTextArea {
+		return true
+	}
+	if f.Kind == KindSelect && len(f.Options) > 0 {
+		return isCustomOption(f.Options[f.SelIdx])
+	}
+	return false
+}
+
+// TextInputValue returns the value to pre-populate a text input with when editing this field.
+func (f Field) TextInputValue() string {
+	if f.Kind == KindSelect && len(f.Options) > 0 && isCustomOption(f.Options[f.SelIdx]) {
+		return f.CustomText
+	}
+	return f.Value
+}
+
+// SaveTextInput saves the typed text back into the appropriate storage slot.
+func (f *Field) SaveTextInput(val string) {
+	if f.Kind == KindSelect && len(f.Options) > 0 && isCustomOption(f.Options[f.SelIdx]) {
+		f.CustomText = val
+		return
+	}
+	f.Value = val
+}
+
+// PrepareCustomEntry clears CustomText so the text input starts blank when the
+// user selects a "Custom"/"Other" option from a dropdown.
+// Returns true when the field is now in custom-entry state (caller should enter insert mode).
+func (f *Field) PrepareCustomEntry() bool {
+	if f.Kind == KindSelect && len(f.Options) > 0 && isCustomOption(f.Options[f.SelIdx]) {
+		f.CustomText = ""
+		return true
+	}
+	return false
 }
 
 // DisplayValue returns the rendered value string for NORMAL mode.
 func (f Field) DisplayValue() string {
 	if f.Kind == KindSelect {
 		if len(f.Options) == 0 {
-			return ""
+			return f.Value // placeholder shown when dependent items not yet created
 		}
-		return f.Options[f.SelIdx]
+		opt := f.Options[f.SelIdx]
+		if isCustomOption(opt) && f.CustomText != "" {
+			return f.CustomText
+		}
+		return opt
 	}
 	if f.Kind == KindMultiSelect {
+		if len(f.Options) == 0 {
+			return f.Value // placeholder shown when dependent items not yet created
+		}
 		if len(f.SelectedIdxs) == 0 {
 			return ""
 		}
@@ -195,4 +250,27 @@ func splitLines(s string) []string {
 	}
 	lines = append(lines, s[start:])
 	return lines
+}
+
+// placeholderFor returns placeholder when opts is empty, or "" otherwise.
+// Use as the Value of a KindSelect/KindMultiSelect field whose Options are
+// populated dynamically — DisplayValue will show it when Options is empty,
+// but it is never added to the options list so it cannot be "selected".
+func placeholderFor(opts []string, placeholder string) string {
+	if len(opts) == 0 {
+		return placeholder
+	}
+	return ""
+}
+
+// noneOrPlaceholder handles fields where "(none)" is a valid explicit choice.
+// When items is non-empty it returns options with "(none)" prepended and "(none)"
+// as the default value.  When items is empty it returns an empty options slice
+// and the placeholder string as the value, so DisplayValue shows the hint
+// without adding a fake selectable entry.
+func noneOrPlaceholder(items []string, placeholder string) (opts []string, defaultVal string) {
+	if len(items) == 0 {
+		return []string{}, placeholder
+	}
+	return append([]string{"(none)"}, items...), "(none)"
 }

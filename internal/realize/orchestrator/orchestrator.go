@@ -190,17 +190,18 @@ func (o *Orchestrator) runWave(
 			}
 
 			runner := &TaskRunner{
-				task:       task,
-				agent:      a,
-				verifier:   verifiers.ForTask(task),
-				writer:     writer,
-				state:      st,
-				memory:     mem,
-				skillDocs:  skillDocs,
-				maxRetries: o.cfg.MaxRetries,
-				verbose:    o.cfg.Verbose,
-				logFn:      o.cfg.LogFunc,
-				baseModel:  baseModel,
+				task:        task,
+				agent:       a,
+				verifier:    verifiers.ForTask(task),
+				writer:      writer,
+				state:       st,
+				memory:      mem,
+				skillDocs:   skillDocs,
+				maxRetries:  o.cfg.MaxRetries,
+				verbose:     o.cfg.Verbose,
+				logFn:       o.cfg.LogFunc,
+				baseModel:   baseModel,
+				depsContext: buildDepsContext(task),
 			}
 			return runner.Run(gctx)
 		})
@@ -342,6 +343,23 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return &m, nil
+}
+
+// buildDepsContext computes the dependency & API reference context for a task's
+// system prompt. Returns "" for tasks with no service payload (data, infra, etc.).
+func buildDepsContext(task *dag.Task) string {
+	if task.Payload.Service == nil {
+		return ""
+	}
+	var technologies []string
+	technologies = append(technologies, task.Payload.Service.Language)
+	for _, db := range task.Payload.Databases {
+		technologies = append(technologies, string(db.Type))
+	}
+	if task.Payload.Auth != nil {
+		technologies = append(technologies, task.Payload.Auth.Strategy)
+	}
+	return deps.PromptContext(task.Payload.Service.Framework, technologies)
 }
 
 // technologiesFor returns all technology strings relevant to a task for skill lookup.

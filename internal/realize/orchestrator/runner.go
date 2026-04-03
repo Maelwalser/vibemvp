@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +17,44 @@ import (
 	"github.com/vibe-mvp/internal/realize/state"
 	"github.com/vibe-mvp/internal/realize/verify"
 )
+
+// errorType classifies a verification failure for routing to the right fix strategy.
+type errorType int
+
+const (
+	errTypeUnknown   errorType = iota
+	errTypeGofmt               // fixable by gofmt -w
+	errTypeEscape              // fixable by raw string conversion
+	errTypeDeps                // fixable by go mod tidy with correct versions
+	errTypeUndefined           // needs LLM retry with targeted guidance
+	errTypeTestFail            // needs LLM retry with test output
+	errTypeDuplicate           // fixable by removing duplicate decls
+)
+
+// classifyError inspects verification output and returns the dominant error type.
+func classifyError(output string) errorType {
+	switch {
+	case strings.Contains(output, "unknown escape sequence"):
+		return errTypeEscape
+	case strings.Contains(output, "files not gofmt-clean") &&
+		!strings.Contains(output, "undefined:") &&
+		!strings.Contains(output, "FAIL"):
+		return errTypeGofmt
+	case strings.Contains(output, "missing go.sum entry") ||
+		strings.Contains(output, "invalid version") ||
+		strings.Contains(output, "cannot find module"):
+		return errTypeDeps
+	case strings.Contains(output, "redeclared in this block"):
+		return errTypeDuplicate
+	case strings.Contains(output, "--- FAIL:"):
+		return errTypeTestFail
+	case strings.Contains(output, "undefined:") ||
+		strings.Contains(output, "does not implement"):
+		return errTypeUndefined
+	default:
+		return errTypeUnknown
+	}
+}
 
 // TaskRunner handles one task's agent invocation + verification retry loop.
 type TaskRunner struct {
@@ -32,6 +71,9 @@ type TaskRunner struct {
 	// baseModel is the tier-selected model for this task (empty = use agent as-is).
 	// When set, each retry attempt escalates through Haiku → Sonnet → Opus.
 	baseModel string
+	// depsContext is pre-computed dependency & API reference text injected into
+	// the system prompt to prevent module version hallucination.
+	depsContext string
 }
 
 func (r *TaskRunner) log(format string, args ...interface{}) {
@@ -63,13 +105,47 @@ func (r *TaskRunner) writeDebugLog(attempt int, passed bool, output string) {
 // Run executes the task, retrying up to maxRetries times on verification failure.
 // On each retry the previous verification output is fed back to the agent.
 // When baseModel is set, each attempt escalates through Haiku → Sonnet → Opus.
-// Before any LLM retry, a deterministic pre-fix pass is attempted on the failed files.
+//
+// Each attempt applies deterministic fixes (gofmt, escape sequences, duplicate type
+// removal) before running the verifier, so common LLM mistakes are corrected without
+// burning a retry slot. On retry, errors are classified and mechanically-fixable issues
+// are resolved without an LLM call.
 func (r *TaskRunner) Run(ctx context.Context) error {
 	var lastVerifyOutput string
+	var lastFiles []dag.GeneratedFile // files from the most recent agent call
+
+	// Determine shared temp directory. Service-chain tasks share a single directory
+	// so each layer accumulates files for go build (go.mod, interfaces, impls).
+	var tmpDir string
+	if slug, ok := serviceSlug(r.task.ID); ok {
+		tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", "svc."+slug)
+	} else {
+		tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", r.task.ID)
+	}
+
+	// Read the locked go.mod produced by the deps resolution task (if any).
+	// Implementation layers must not overwrite it with a freshly-hallucinated one.
+	lockedGoMod := r.readLockedGoMod(tmpDir)
+	if lockedGoMod != "" {
+		r.log("[%s] go.mod locked from deps phase", r.task.ID)
+	}
 
 	for attempt := 0; attempt <= r.maxRetries; attempt++ {
 		if attempt > 0 {
 			r.log("[%s] retry %d/%d", r.task.ID, attempt, r.maxRetries)
+
+			// On retry: classify the error and try mechanically-fixable issues first
+			// before spending an LLM call.
+			if classifyError(lastVerifyOutput) == errTypeDeps && lockedGoMod != "" {
+				if modPath := findGoMod(tmpDir); modPath != "" {
+					os.WriteFile(modPath, []byte(lockedGoMod), 0644)
+					runGoModTidy(ctx, filepath.Dir(modPath))
+					if vr, err := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(lastFiles)); err == nil && vr.Passed {
+						r.log("[%s] deps fix resolved verification — skipping LLM retry", r.task.ID)
+						return r.commit(ctx, tmpDir, lastFiles)
+					}
+				}
+			}
 		}
 
 		// Resolve agent for this attempt: escalate model tier on retries when
@@ -83,6 +159,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			PreviousErrors:    lastVerifyOutput,
 			DependencyOutputs: r.memory.DepsOf(r.task),
 			AttemptNumber:     attempt,
+			DepsContext:       r.depsContext,
 		}
 
 		result, err := a.Run(ctx, ac)
@@ -103,24 +180,31 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Write to a temp directory. Service-chain tasks (plan, repository, service,
-		// handler, bootstrap) share a single directory so each layer can see the
-		// go.mod and interfaces produced by the plan task when go build runs.
-		// Non-service tasks keep their own isolated temp directory.
-		var tmpDir string
-		if slug, ok := serviceSlug(r.task.ID); ok {
-			tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", "svc."+slug)
-		} else {
-			tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", r.task.ID)
-		}
+		lastFiles = result.Files
+
 		if err := r.writer.WriteAllTo(tmpDir, result.Files); err != nil {
 			return fmt.Errorf("task %s: write to temp dir: %w", r.task.ID, err)
 		}
 
+		// Restore locked go.mod if the agent overwrote it, then run go mod tidy
+		// so the checksum database is up to date without inventing new versions.
+		if lockedGoMod != "" {
+			if modPath := findGoMod(tmpDir); modPath != "" {
+				os.WriteFile(modPath, []byte(lockedGoMod), 0644)
+				runGoModTidy(ctx, filepath.Dir(modPath))
+			}
+		}
+
+		// Apply deterministic fixes (gofmt, invalid escape sequences, duplicate
+		// type declarations) before every verification — not just on retries.
+		if fixes := verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(result.Files)); fixes != "" {
+			r.log("[%s] applied deterministic fixes: %s", r.task.ID, fixes)
+		}
+
 		// Run verification.
-		vResult, err := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(result.Files))
-		if err != nil {
-			return fmt.Errorf("task %s: verifier error: %w", r.task.ID, err)
+		vResult, verifyErr := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(result.Files))
+		if verifyErr != nil {
+			return fmt.Errorf("task %s: verifier error: %w", r.task.ID, verifyErr)
 		}
 
 		r.log("[%s] verify: passed=%v", r.task.ID, vResult.Passed)
@@ -132,56 +216,24 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		}
 
 		if vResult.Passed {
-			if err := r.writer.Commit(tmpDir, result.Files); err != nil {
-				return fmt.Errorf("task %s: commit files: %w", r.task.ID, err)
-			}
-			// Keep the shared service temp dir alive until the bootstrap task
-			// (last in chain) so each layer's files accumulate for go build.
-			_, isSvcTask := serviceSlug(r.task.ID)
-			if !isSvcTask || isBootstrapTask(r.task.ID) {
-				if err := os.RemoveAll(tmpDir); err != nil {
-					r.log("[%s] warning: failed to remove temp dir %s: %v", r.task.ID, tmpDir, err)
-				}
-			}
-			// Publish generated files to shared memory so downstream agents can
-			// reference the types, schemas, and interfaces this task produced.
-			r.memory.Record(r.task, result.Files)
-			if err := r.state.MarkCompleted(r.task.ID); err != nil {
-				// Non-fatal: files are committed; losing the progress marker just
-				// means this task might re-run on the next resume.
-				r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
-			}
-			r.log("[%s] done (%d files)", r.task.ID, len(result.Files))
-			return nil
+			return r.commit(ctx, tmpDir, result.Files)
 		}
 
-		// Before consuming a retry slot, try deterministic fixes (e.g. gofmt,
-		// unused imports). If a fix succeeds and passes verification, we save
-		// the full LLM retry cost.
-		if attempt <= r.maxRetries {
+		// Before consuming a retry slot, try the in-memory fix layer (unused
+		// import removal + gofmt via go/format). This catches issues that the
+		// disk-based fixes above miss (e.g. imports added after file was written).
+		if attempt < r.maxRetries {
 			if fixed, fixedFiles := verify.TryFix(result.Files, vResult.Output); fixed {
-				r.log("[%s] applying deterministic fixes before retry", r.task.ID)
+				r.log("[%s] applying in-memory fixes before retry", r.task.ID)
 				if err := r.writer.WriteAllTo(tmpDir, fixedFiles); err == nil {
 					fixResult, ferr := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(fixedFiles))
 					if ferr == nil && fixResult.Passed {
-						r.log("[%s] deterministic fix resolved verification — skipping LLM retry", r.task.ID)
-						if err := r.writer.Commit(tmpDir, fixedFiles); err != nil {
-							return fmt.Errorf("task %s: commit fixed files: %w", r.task.ID, err)
-						}
-						_, isSvcTask := serviceSlug(r.task.ID)
-						if !isSvcTask || isBootstrapTask(r.task.ID) {
-							_ = os.RemoveAll(tmpDir)
-						}
-						r.memory.Record(r.task, fixedFiles)
-						if err := r.state.MarkCompleted(r.task.ID); err != nil {
-							r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
-						}
-						r.log("[%s] done (%d files, deterministic fix)", r.task.ID, len(fixedFiles))
-						return nil
+						r.log("[%s] in-memory fix resolved verification — skipping LLM retry", r.task.ID)
+						return r.commit(ctx, tmpDir, fixedFiles)
 					}
-					// Fix applied but still failing — use the post-fix errors for the LLM retry.
 					if ferr == nil {
 						vResult = fixResult
+						lastFiles = fixedFiles
 					}
 				}
 			}
@@ -191,6 +243,74 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("task %s: exhausted %d retry attempts", r.task.ID, r.maxRetries)
+}
+
+// commit writes files to the output directory, publishes to shared memory,
+// and marks the task as completed.
+func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.GeneratedFile) error {
+	if err := r.writer.Commit(tmpDir, files); err != nil {
+		return fmt.Errorf("task %s: commit files: %w", r.task.ID, err)
+	}
+	// Keep the shared service temp dir alive until the bootstrap task completes
+	// so each layer's files accumulate for go build verification.
+	_, isSvcTask := serviceSlug(r.task.ID)
+	if !isSvcTask || isBootstrapTask(r.task.ID) {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			r.log("[%s] warning: failed to remove temp dir %s: %v", r.task.ID, tmpDir, err)
+		}
+	}
+	r.memory.Record(r.task, files)
+	if err := r.state.MarkCompleted(r.task.ID); err != nil {
+		r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
+	}
+	r.log("[%s] done (%d files)", r.task.ID, len(files))
+	return nil
+}
+
+// readLockedGoMod reads the go.mod produced by a prior phase (plan or deps resolution)
+// from the shared service temp directory. Returns "" for non-implementation tasks
+// or when no prior go.mod exists.
+func (r *TaskRunner) readLockedGoMod(tmpDir string) string {
+	if !isImplementationTask(r.task.ID) {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// isImplementationTask reports whether the task is an implementation layer that
+// should not regenerate the project's go.mod.
+func isImplementationTask(taskID string) bool {
+	return strings.HasSuffix(taskID, ".repository") ||
+		strings.HasSuffix(taskID, ".service") ||
+		strings.HasSuffix(taskID, ".handler") ||
+		strings.HasSuffix(taskID, ".bootstrap")
+}
+
+// findGoMod walks dir to find the first go.mod file.
+func findGoMod(dir string) string {
+	var result string
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || result != "" {
+			return nil
+		}
+		if info.Name() == "go.mod" {
+			result = path
+		}
+		return nil
+	})
+	return result
+}
+
+// runGoModTidy runs go mod tidy in dir, silently ignoring failures (the verifier
+// will surface any remaining issues on the next verification pass).
+func runGoModTidy(ctx context.Context, dir string) {
+	cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
 }
 
 // agentForAttempt returns the agent to use for a given attempt number.

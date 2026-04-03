@@ -19,4 +19,8 @@ type Context struct {
 	// Used by prompt builders to prune context on retries (dependency outputs
 	// are omitted after attempt 0 to avoid re-sending unchanged upstream context).
 	AttemptNumber int
+	// DepsContext is pre-computed dependency and library API reference text
+	// for the task's technology stack. Injected into the system prompt to
+	// prevent the agent from inventing module versions or non-existent types.
+	DepsContext string
 }

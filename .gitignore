@@ -27,6 +27,7 @@ go.work.sum
 # env file
 .env
 everything-claude-code/
+test.json
 # Editor/IDE
 # .idea/
 # .vscode/

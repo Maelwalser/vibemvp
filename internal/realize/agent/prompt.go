@@ -10,13 +10,20 @@ import (
 )
 
 // SystemPrompt builds the stable system prompt for a task kind.
+// depsContext, if non-empty, is injected after the output format instructions
+// to provide exact module versions and library API docs for the task's stack.
 // The prompt is stable across retries so it benefits from prompt caching.
-func SystemPrompt(kind dag.TaskKind, skillDocs []skills.Doc) string {
+func SystemPrompt(kind dag.TaskKind, skillDocs []skills.Doc, depsContext string) string {
 	var b strings.Builder
 
 	b.WriteString(roleDescription(kind))
 	b.WriteString("\n\n")
 	b.WriteString(outputFormatInstructions())
+
+	if depsContext != "" {
+		b.WriteString("\n")
+		b.WriteString(depsContext)
+	}
 
 	if len(skillDocs) > 0 {
 		b.WriteString("\n\n## Technology Skill Guides\n\n")
@@ -318,12 +325,25 @@ Rules:
 - Include ALL files needed for the task to be complete and buildable.
 - File paths must use forward slashes and be relative (no leading slash).
 - File content must be complete — no placeholders, no TODO comments for required logic.
-- For Go: include go.mod with correct module path and explicit require blocks that pin ALL direct dependencies to specific, well-known recent versions (e.g. "require github.com/gofiber/fiber/v2 v2.52.5"). Do NOT rely solely on "go mod tidy" to resolve versions — transitive deps with invalid version strings will cause build failures. If a library you want has known broken transitive deps (e.g. old github.com/mattn/go-runewidth pulling github.com/rivo/unpad), either choose a newer version or add a replace directive in go.mod to redirect the broken module.
-- For TypeScript/JS: include package.json and all necessary config files.
+- For TypeScript/JS: include package.json with pinned dependency versions and all necessary config files.
 - For Terraform: include all .tf files needed to apply successfully.
 - Generated code must pass the relevant linter/build check for its language.
-- For Go services: always generate _test.go files alongside every service, handler, and repository file. Use table-driven tests covering happy path, error cases, and edge cases.
-- No hardcoded secrets: read all credentials from environment variables with a startup check (if os.Getenv("KEY") == "" { log.Fatal("KEY not configured") }).
-- Apply idiomatic Go: constructor injection, small focused interfaces, error wrapping with fmt.Errorf("context: %w", err). Never ignore errors.
-- All Go code must be gofmt-clean — use standard Go indentation and formatting.`
+
+### Go-Specific Rules (CRITICAL)
+- If a go.mod was provided in the "Shared Team Context" or "LOCKED DEPENDENCIES" section,
+  DO NOT include go.mod or go.sum in your output. The build system manages dependencies.
+- If you MUST generate go.mod (plan/skeleton task only), use EXACTLY the module paths and
+  versions from the "Dependency & API Reference" section. Never invent version strings.
+- All Go regex patterns MUST use backtick raw strings, not double-quoted strings:
+  CORRECT: regexp.MustCompile(` + "`" + `\d{4}-\d{2}-\d{2}` + "`" + `)
+  WRONG:   regexp.MustCompile("\d{4}-\d{2}-\d{2}")    // invalid escape sequences
+  WRONG:   regexp.MustCompile("\\d{4}-\\d{2}-\\d{2}") // fragile double-escaping
+- All Go code MUST be gofmt-clean — use tabs for indentation, not spaces.
+- Always generate _test.go files alongside every service, handler, and repository file.
+  Use table-driven tests covering happy path, error cases, and edge cases.
+- No hardcoded secrets: read all credentials from environment variables with a startup check.
+- Apply idiomatic Go: constructor injection, small focused interfaces, error wrapping with
+  fmt.Errorf("context: %w", err). Never ignore errors.
+- Use the EXACT library APIs documented in the "Dependency & API Reference" section.
+  Do NOT invent types or functions that are not listed there.`
 }

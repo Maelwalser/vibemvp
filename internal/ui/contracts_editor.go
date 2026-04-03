@@ -55,6 +55,7 @@ func defaultDTOFormFields(domainOptions []string) []Field {
 		{
 			Key: "source_domains", Label: "source_domains", Kind: KindMultiSelect,
 			Options: domainOptions,
+			Value:   placeholderFor(domainOptions, "(no domains configured)"),
 		},
 		{Key: "description", Label: "description   ", Kind: KindText},
 	}
@@ -98,16 +99,11 @@ func defaultEndpointFormFields(serviceOptions, dtoOptions []string) []Field {
 	if dtoOptions == nil {
 		dtoOptions = []string{}
 	}
-	serviceKind := KindText
-	if len(serviceOptions) > 0 {
-		serviceKind = KindSelect
-	}
-	dtoKind := KindText
-	if len(dtoOptions) > 0 {
-		dtoKind = KindSelect
-	}
 	fields := []Field{
-		{Key: "service_unit", Label: "service_unit  ", Kind: serviceKind, Options: serviceOptions},
+		{Key: "service_unit", Label: "service_unit  ", Kind: KindSelect,
+			Options: serviceOptions,
+			Value:   placeholderFor(serviceOptions, "(no services configured)"),
+		},
 		{Key: "name_path", Label: "name_path     ", Kind: KindText},
 		{
 			Key: "protocol", Label: "protocol      ", Kind: KindSelect,
@@ -118,8 +114,14 @@ func defaultEndpointFormFields(serviceOptions, dtoOptions []string) []Field {
 			Key: "auth_required", Label: "auth_required ", Kind: KindSelect,
 			Options: []string{"false", "true"}, Value: "false",
 		},
-		{Key: "request_dto", Label: "request_dto   ", Kind: dtoKind, Options: dtoOptions},
-		{Key: "response_dto", Label: "response_dto  ", Kind: dtoKind, Options: dtoOptions},
+		{Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
+		},
+		{Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
+		},
 		{
 			Key: "http_method", Label: "http_method   ", Kind: KindSelect,
 			Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
@@ -551,6 +553,10 @@ func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.C
 				f.Value = f.Options[ce.ddOptIdx]
 			}
 			ce.ddOpen = false
+			if f.PrepareCustomEntry() {
+				ce.updateEPDependentFields()
+				return ce.tryEnterInsert()
+			}
 		}
 	case "enter":
 		if f.Kind == KindMultiSelect {
@@ -562,6 +568,10 @@ func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.C
 			}
 		}
 		ce.ddOpen = false
+		if f.Kind == KindSelect && f.PrepareCustomEntry() {
+			ce.updateEPDependentFields()
+			return ce.tryEnterInsert()
+		}
 	case "esc", "b":
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = ce.ddOptIdx
@@ -682,29 +692,29 @@ func (ce *ContractsEditor) saveInput() {
 	case contractsTabDTOs:
 		switch ce.dtoSubView {
 		case ceViewForm:
-			if ce.dtoFormIdx < len(ce.dtoForm) && ce.dtoForm[ce.dtoFormIdx].Kind == KindText {
-				ce.dtoForm[ce.dtoFormIdx].Value = val
+			if ce.dtoFormIdx < len(ce.dtoForm) && ce.dtoForm[ce.dtoFormIdx].CanEditAsText() {
+				ce.dtoForm[ce.dtoFormIdx].SaveTextInput(val)
 			}
 		case ceViewSubForm:
-			if ce.dtoFieldFormIdx < len(ce.dtoFieldForm) && ce.dtoFieldForm[ce.dtoFieldFormIdx].Kind == KindText {
-				ce.dtoFieldForm[ce.dtoFieldFormIdx].Value = val
+			if ce.dtoFieldFormIdx < len(ce.dtoFieldForm) && ce.dtoFieldForm[ce.dtoFieldFormIdx].CanEditAsText() {
+				ce.dtoFieldForm[ce.dtoFieldFormIdx].SaveTextInput(val)
 			}
 		}
 	case contractsTabEndpoints:
 		visible := ce.visibleEPFields()
 		if ce.epSubView == ceViewForm && ce.epFormIdx < len(visible) {
 			f := ce.epFieldByKey(visible[ce.epFormIdx].Key)
-			if f != nil && f.Kind == KindText {
-				f.Value = val
+			if f != nil && f.CanEditAsText() {
+				f.SaveTextInput(val)
 			}
 		}
 	case contractsTabVersioning:
-		if ce.verFormIdx < len(ce.versioningFields) && ce.versioningFields[ce.verFormIdx].Kind == KindText {
-			ce.versioningFields[ce.verFormIdx].Value = val
+		if ce.verFormIdx < len(ce.versioningFields) && ce.versioningFields[ce.verFormIdx].CanEditAsText() {
+			ce.versioningFields[ce.verFormIdx].SaveTextInput(val)
 		}
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) && ce.extForm[ce.extFormIdx].Kind == KindText {
-			ce.extForm[ce.extFormIdx].Value = val
+		if ce.extSubView == ceViewForm && ce.extFormIdx < len(ce.extForm) && ce.extForm[ce.extFormIdx].CanEditAsText() {
+			ce.extForm[ce.extFormIdx].SaveTextInput(val)
 		}
 	}
 }
@@ -761,9 +771,9 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 		if f == nil {
 			break
 		}
-		if f.Kind == KindText || f.Kind == KindTextArea {
+		if f.CanEditAsText() {
 			ce.internalMode = ceInsert
-			ce.formInput.SetValue(f.Value)
+			ce.formInput.SetValue(f.TextInputValue())
 			ce.formInput.Width = ce.width - 22
 			ce.formInput.CursorEnd()
 			return ce, ce.formInput.Focus()
@@ -904,7 +914,7 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			f.CyclePrev()
 		}
 	case "i", "a":
-		if ce.dtoForm[ce.dtoFormIdx].Kind == KindText {
+		if ce.dtoForm[ce.dtoFormIdx].CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
 	case "F":
@@ -1078,7 +1088,7 @@ func (ce ContractsEditor) updateDTOFieldForm(key tea.KeyMsg) (ContractsEditor, t
 			f.CyclePrev()
 		}
 	case "i", "a":
-		if ce.dtoFieldForm[ce.dtoFieldFormIdx].Kind == KindText {
+		if ce.dtoFieldForm[ce.dtoFieldFormIdx].CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
 	case "b", "esc":
@@ -1198,7 +1208,7 @@ func (ce ContractsEditor) updateEPForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 	case "i", "a":
 		if ce.epFormIdx < n {
 			f := ce.epFieldByKey(visible[ce.epFormIdx].Key)
-			if f != nil && f.Kind == KindText {
+			if f != nil && f.CanEditAsText() {
 				return ce.tryEnterInsert()
 			}
 		}
@@ -1266,7 +1276,7 @@ func (ce ContractsEditor) updateVersioning(key tea.KeyMsg) (ContractsEditor, tea
 		ce.versioningFields = defaultVersioningFields()
 		ce.verFormIdx = 0
 	case "i", "a":
-		if ce.versioningFields[ce.verFormIdx].Kind == KindText {
+		if ce.versioningFields[ce.verFormIdx].CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
 	}
@@ -1351,7 +1361,7 @@ func (ce ContractsEditor) updateExtForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			f.CyclePrev()
 		}
 	case "i", "a":
-		if ce.extForm[ce.extFormIdx].Kind == KindText {
+		if ce.extForm[ce.extFormIdx].CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
 	case "b", "esc":

@@ -15,9 +15,9 @@ type TaskPayload struct {
 	EnvConfig   manifest.EnvConfig   `json:"env_config,omitempty"`
 
 	// Data pillar
-	Domains      []manifest.DomainDef    `json:"domains,omitempty"`
-	Databases    []manifest.DBSourceDef  `json:"databases,omitempty"`
-	Caching      manifest.CachingConfig  `json:"caching,omitempty"`
+	Domains      []manifest.DomainDef      `json:"domains,omitempty"`
+	Databases    []manifest.DBSourceDef    `json:"databases,omitempty"`
+	Cachings     []manifest.CachingConfig  `json:"cachings,omitempty"`
 	FileStorages []manifest.FileStorageDef `json:"file_storages,omitempty"`
 
 	// Backend pillar — per-service tasks set Service; others see AllServices.

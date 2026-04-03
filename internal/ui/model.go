@@ -347,6 +347,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.activeSectionID() {
 	case "backend":
 		m.backendEditor.SetDomainNames(m.dataTabEditor.domainNames())
+		m.backendEditor.SetDTONames(m.contractsEditor.DTONames())
 		m.backendEditor, cmd = m.backendEditor.Update(msg)
 	case "data":
 		m.dataTabEditor, cmd = m.dataTabEditor.Update(msg)

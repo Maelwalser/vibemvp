@@ -9,7 +9,19 @@ type DBSourceDef struct {
 	Version   string       `json:"version,omitempty"`
 	Namespace string       `json:"namespace,omitempty"`
 	IsCache   bool         `json:"is_cache"`
-	Notes     string       `json:"notes,omitempty"`
+
+	// Security / network integrity
+	SSLMode     string `json:"ssl_mode,omitempty"`     // disable | require | verify-ca | verify-full
+	Consistency string `json:"consistency,omitempty"` // strong | eventual | LOCAL_QUORUM | ONE | QUORUM | ALL | LOCAL_ONE
+
+	// Connection pooling
+	PoolMinSize int `json:"pool_min_size,omitempty"`
+	PoolMaxSize int `json:"pool_max_size,omitempty"`
+
+	// Availability topology
+	Replication string `json:"replication,omitempty"` // single-node | primary-replica | multi-region
+
+	Notes string `json:"notes,omitempty"`
 }
 
 // ── Column / Entity definitions ───────────────────────────────────────────────
@@ -109,9 +121,11 @@ type DomainRelationship struct {
 
 // ── Data pillar supporting types ──────────────────────────────────────────────
 
-// CachingConfig describes the application-level caching strategy.
+// CachingConfig describes a single application-level caching strategy.
 type CachingConfig struct {
+	Name         string `json:"name,omitempty"`
 	Layer        string `json:"layer"`
+	CacheDB      string `json:"cache_db,omitempty"`
 	Strategy     string `json:"strategy"`
 	Invalidation string `json:"invalidation"`
 	TTL          string `json:"ttl,omitempty"`
@@ -144,7 +158,7 @@ type DataPillar struct {
 	Databases         []DBSourceDef        `json:"databases,omitempty"`
 	Domains           []DomainDef          `json:"domains,omitempty"`
 	Entities          []EntityDef          `json:"entities,omitempty"` // legacy
-	Caching           CachingConfig        `json:"caching"`
+	Cachings          []CachingConfig      `json:"cachings,omitempty"`
 	FileStorages      []FileStorageDef     `json:"file_storages,omitempty"`
 	Governance        DataGovernanceConfig `json:"governance,omitempty"`
 	MigrationTool     string               `json:"migration_tool,omitempty"`
