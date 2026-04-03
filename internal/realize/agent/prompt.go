@@ -223,7 +223,7 @@ Example:
   },
   {
     "path": "services/user-api/Dockerfile",
-    "content": "FROM golang:1.26-alpine\n..."
+    "content": "FROM golang:<version>-alpine\n..."
   }
 ]
 </files>

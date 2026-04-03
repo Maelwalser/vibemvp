@@ -86,10 +86,13 @@ var WellKnownGoDevTools = []GoDevTool{
 	},
 }
 
-// WellKnownNpmPackages maps npm package names to fallback versions used when the
-// npm registry is unreachable. At runtime, InfraPromptContext resolves the actual
-// latest stable versions from registry.npmjs.org and only falls back to these.
-func GoModForService(modulePath, framework string, technologies []string) string {
+// GoModForService generates a go.mod for a service based on its declared
+// framework and database dependencies, using only known-good versions.
+// goVersion is the minimum Go runtime version (e.g. "1.25") resolved at
+// pipeline startup via ResolveGoVersion; it must match the Docker base image.
+// resolved, if non-nil, is the live-fetched module map from ResolveGoModuleVersions.
+func GoModForService(modulePath, framework, goVersion string, technologies []string, resolved map[string]ModuleInfo) string {
+	modules_ := moduleSource(resolved)
 	var requires []string
 	seen := make(map[string]bool)
 
@@ -106,22 +109,22 @@ func GoModForService(modulePath, framework string, technologies []string) string
 		}
 	}
 
-	if info, ok := WellKnownGoModules[framework]; ok {
+	if info, ok := modules_[framework]; ok {
 		addModule(info)
 	}
 	for _, tech := range technologies {
-		if info, ok := WellKnownGoModules[tech]; ok {
+		if info, ok := modules_[tech]; ok {
 			addModule(info)
 		}
 	}
 	for _, key := range []string{"testify", "uuid"} {
-		if info, ok := WellKnownGoModules[key]; ok {
+		if info, ok := modules_[key]; ok {
 			addModule(info)
 		}
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("module %s\n\ngo 1.23\n\n", modulePath))
+	b.WriteString(fmt.Sprintf("module %s\n\ngo %s\n\n", modulePath, goVersion))
 	if len(requires) > 0 {
 		b.WriteString("require (\n")
 		for _, r := range requires {
@@ -132,8 +135,117 @@ func GoModForService(modulePath, framework string, technologies []string) string
 	return b.String()
 }
 
-// resolveNpmVersion fetches the latest stable version of a package from the npm registry.
-// Falls back to fallback on any error (network failure, registry unavailable, etc.).
+// ResolveGoVersion resolves the minimum Go runtime version required by all dev
+// tools (e.g. air) by querying the Go module proxy. Falls back to the pinned
+// MinGoVersion in WellKnownGoDevTools when the proxy is unreachable.
+// Call this once at pipeline startup and share the result across all tasks.
+func ResolveGoVersion(ctx context.Context) string {
+	tools := resolveAllGoDevTools(ctx)
+	if len(tools) == 0 {
+		return ""
+	}
+	min := tools[0].MinGoVersion
+	for _, t := range tools[1:] {
+		if t.MinGoVersion > min {
+			min = t.MinGoVersion
+		}
+	}
+	return min
+}
+
+// resolveGoModuleVersion fetches the latest tagged version of a single Go module
+// from the Go module proxy. Falls back to info.Version on any error.
+// TestDeps versions are not changed — they are resolved transitively by go mod tidy.
+func resolveGoModuleVersion(ctx context.Context, info ModuleInfo) ModuleInfo {
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	encoded := goModProxyPath(info.Module)
+	latestURL := "https://proxy.golang.org/" + encoded + "/@latest"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, latestURL, nil)
+	if err != nil {
+		return info
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return info
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return info
+	}
+	var latest struct {
+		Version string `json:"Version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil || latest.Version == "" {
+		return info
+	}
+	resolved := info
+	resolved.Version = latest.Version
+	return resolved
+}
+
+// ResolveGoModuleVersions fetches the latest versions for every module in
+// WellKnownGoModules from the Go module proxy, deduplicating by module path so
+// each import URL is queried only once. Falls back to static versions on any error.
+// Call once at pipeline startup and pass the result to PromptContext / GoModForService.
+func ResolveGoModuleVersions(ctx context.Context) map[string]ModuleInfo {
+	type job struct {
+		keys []string
+		info ModuleInfo
+	}
+	byModule := make(map[string]*job)
+	for key, info := range WellKnownGoModules {
+		if j, ok := byModule[info.Module]; ok {
+			j.keys = append(j.keys, key)
+		} else {
+			infoCopy := info
+			byModule[info.Module] = &job{keys: []string{key}, info: infoCopy}
+		}
+	}
+
+	type result struct {
+		modulePath string
+		resolved   ModuleInfo
+	}
+	ch := make(chan result, len(byModule))
+	var wg sync.WaitGroup
+	for _, j := range byModule {
+		wg.Add(1)
+		go func(jb *job) {
+			defer wg.Done()
+			ch <- result{jb.info.Module, resolveGoModuleVersion(ctx, jb.info)}
+		}(j)
+	}
+	wg.Wait()
+	close(ch)
+
+	resolvedByPath := make(map[string]ModuleInfo, len(byModule))
+	for r := range ch {
+		resolvedByPath[r.modulePath] = r.resolved
+	}
+
+	out := make(map[string]ModuleInfo, len(WellKnownGoModules))
+	for key, info := range WellKnownGoModules {
+		if resolved, ok := resolvedByPath[info.Module]; ok {
+			out[key] = resolved
+		} else {
+			out[key] = info
+		}
+	}
+	return out
+}
+
+// moduleSource returns the resolved map if non-nil, otherwise falls back to
+// the static WellKnownGoModules. Used by PromptContext and GoModForService.
+func moduleSource(resolved map[string]ModuleInfo) map[string]ModuleInfo {
+	if resolved != nil {
+		return resolved
+	}
+	return WellKnownGoModules
+}
+
+// ValidateGoMod runs go mod tidy in a temp directory to resolve real versions.
 func ValidateGoMod(ctx context.Context, goModContent string, goFiles map[string]string) (*ResolvedDeps, error) {
 	tmpDir, err := os.MkdirTemp("", "deps-resolve-*")
 	if err != nil {
