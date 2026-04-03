@@ -377,10 +377,14 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	bp.CloudProvider = env.CloudProvider
 	if arch == "monolith" {
 		bp.Language = fieldGet(be.EnvFields, "monolith_lang")
+		bp.LanguageVersion = fieldGet(be.EnvFields, "monolith_lang_ver")
 		bp.Framework = fieldGet(be.EnvFields, "monolith_fw")
+		bp.FrameworkVersion = fieldGet(be.EnvFields, "monolith_fw_ver")
 	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
+		bp.LanguageVersion = be.Services[0].LanguageVersion
 		bp.Framework = be.Services[0].Framework
+		bp.FrameworkVersion = be.Services[0].FrameworkVersion
 	}
 	return bp
 }
@@ -418,7 +422,10 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		if arch == "monolith" {
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang", bp.Language)
 			be.updateEnvMonolithOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang_ver", bp.LanguageVersion)
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
+			be.updateEnvMonolithVersionOptions()
+			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw_ver", bp.FrameworkVersion)
 		}
 	}
 

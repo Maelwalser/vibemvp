@@ -142,8 +142,10 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 	if fe.techEnabled {
 		p.Tech = manifest.FrontendTechConfig{
 			Language:           fieldGet(fe.techFields, "language"),
+			LanguageVersion:    fieldGet(fe.techFields, "language_version"),
 			Platform:           fieldGet(fe.techFields, "platform"),
 			Framework:          fieldGet(fe.techFields, "framework"),
+			FrameworkVersion:   fieldGet(fe.techFields, "framework_version"),
 			MetaFramework:      fieldGet(fe.techFields, "meta_framework"),
 			PackageManager:     fieldGet(fe.techFields, "pkg_manager"),
 			Styling:            fieldGet(fe.techFields, "styling"),
@@ -214,8 +216,10 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 	if t.Language != "" || t.Framework != "" || t.Platform != "" {
 		fe.techEnabled = true
 		fe.techFields = setFieldValue(fe.techFields, "language", t.Language)
+		fe.techFields = setFieldValue(fe.techFields, "language_version", t.LanguageVersion)
 		fe.techFields = setFieldValue(fe.techFields, "platform", t.Platform)
 		fe.techFields = setFieldValue(fe.techFields, "framework", t.Framework)
+		fe.techFields = setFieldValue(fe.techFields, "framework_version", t.FrameworkVersion)
 		fe.techFields = setFieldValue(fe.techFields, "meta_framework", t.MetaFramework)
 		fe.techFields = setFieldValue(fe.techFields, "pkg_manager", t.PackageManager)
 		fe.techFields = setFieldValue(fe.techFields, "styling", t.Styling)

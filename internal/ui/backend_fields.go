@@ -94,9 +94,19 @@ func defaultEnvFields() []Field {
 			Value:   "Go",
 		},
 		{
+			Key: "monolith_lang_ver", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["Go"],
+			Value:   langVersions["Go"][0],
+		},
+		{
 			Key: "monolith_fw", Label: "framework     ", Kind: KindSelect,
 			Options: backendFrameworksByLang["Go"],
 			Value:   "Fiber",
+		},
+		{
+			Key: "monolith_fw_ver", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber"),
+			Value:   compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber")[0],
 		},
 		{
 			Key: "cors_strategy", Label: "CORS Strategy ", Kind: KindSelect,
@@ -129,9 +139,19 @@ func defaultServiceFields() []Field {
 			Value:   "Go",
 		},
 		{
+			Key: "language_version", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["Go"],
+			Value:   langVersions["Go"][0],
+		},
+		{
 			Key: "framework", Label: "framework     ", Kind: KindSelect,
 			Options: backendFrameworksByLang["Go"],
 			Value:   "Fiber",
+		},
+		{
+			Key: "framework_version", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber"),
+			Value:   compatibleFrameworkVersions("Go", langVersions["Go"][0], "Fiber")[0],
 		},
 		{
 			Key: "technologies", Label: "technologies  ", Kind: KindMultiSelect,
@@ -165,7 +185,21 @@ func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
 	f = setFieldValue(f, "responsibility", s.Responsibility)
 	if s.Language != "" {
 		f = setFieldValue(f, "language", s.Language)
-		// update framework options based on language
+		// Update language_version options for this language.
+		if vers, ok := langVersions[s.Language]; ok {
+			for i := range f {
+				if f[i].Key == "language_version" {
+					f[i].Options = vers
+					f[i].SelIdx = 0
+					f[i].Value = vers[0]
+					if s.LanguageVersion != "" {
+						f = setFieldValue(f, "language_version", s.LanguageVersion)
+					}
+					break
+				}
+			}
+		}
+		// Update framework options based on language.
 		if opts, ok := backendFrameworksByLang[s.Language]; ok {
 			for i := range f {
 				if f[i].Key == "framework" {
@@ -177,6 +211,27 @@ func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
 					}
 					break
 				}
+			}
+		}
+		// Update framework_version options based on language + language_version + framework.
+		lang := s.Language
+		langVer := s.LanguageVersion
+		fw := s.Framework
+		if fw == "" {
+			if opts, ok := backendFrameworksByLang[lang]; ok && len(opts) > 0 {
+				fw = opts[0]
+			}
+		}
+		fwVers := compatibleFrameworkVersions(lang, langVer, fw)
+		for i := range f {
+			if f[i].Key == "framework_version" {
+				f[i].Options = fwVers
+				f[i].SelIdx = 0
+				f[i].Value = fwVers[0]
+				if s.FrameworkVersion != "" {
+					f = setFieldValue(f, "framework_version", s.FrameworkVersion)
+				}
+				break
 			}
 		}
 	}
@@ -203,7 +258,9 @@ func serviceDefFromFields(fields []Field) manifest.ServiceDef {
 		Name:             fieldGet(fields, "name"),
 		Responsibility:   fieldGet(fields, "responsibility"),
 		Language:         fieldGet(fields, "language"),
+		LanguageVersion:  fieldGet(fields, "language_version"),
 		Framework:        fieldGet(fields, "framework"),
+		FrameworkVersion: fieldGet(fields, "framework_version"),
 		PatternTag:       fieldGet(fields, "pattern_tag"),
 		Technologies:     techs,
 		HealthcheckPath:  fieldGet(fields, "healthcheck_path"),

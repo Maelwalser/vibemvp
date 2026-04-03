@@ -5,8 +5,10 @@ package manifest
 // FrontendTechConfig describes the technology stack choices for the frontend.
 type FrontendTechConfig struct {
 	Language           string `json:"language"`
+	LanguageVersion    string `json:"language_version,omitempty"`
 	Platform           string `json:"platform"`
 	Framework          string `json:"framework"`
+	FrameworkVersion   string `json:"framework_version,omitempty"`
 	MetaFramework      string `json:"meta_framework,omitempty"`
 	PackageManager     string `json:"package_manager"`
 	Styling            string `json:"styling"`

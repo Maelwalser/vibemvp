@@ -22,6 +22,11 @@ func defaultFETechFields() []Field {
 			Value:   "TypeScript",
 		},
 		{
+			Key: "language_version", Label: "lang version  ", Kind: KindSelect,
+			Options: langVersions["TypeScript"],
+			Value:   langVersions["TypeScript"][0],
+		},
+		{
 			Key: "platform", Label: "platform      ", Kind: KindSelect,
 			Options: []string{
 				"Web (SPA)", "Web (SSR/SSG)", "Mobile (cross-platform)",
@@ -33,6 +38,11 @@ func defaultFETechFields() []Field {
 			Key: "framework", Label: "framework     ", Kind: KindSelect,
 			Options: frontendFrameworksByLang["TypeScript"],
 			Value:   "React",
+		},
+		{
+			Key: "framework_version", Label: "fw version    ", Kind: KindSelect,
+			Options: compatibleFrameworkVersions("TypeScript", langVersions["TypeScript"][0], "React"),
+			Value:   compatibleFrameworkVersions("TypeScript", langVersions["TypeScript"][0], "React")[0],
 		},
 		{
 			Key: "meta_framework", Label: "meta_framework", Kind: KindSelect,
@@ -571,6 +581,13 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	lang := fieldGet(fe.techFields, "language")
 	platform := fieldGet(fe.techFields, "platform")
 
+	// language_version ← language
+	if vers, ok := langVersions[lang]; ok {
+		fe.setTechFieldOptions("language_version", vers)
+	} else {
+		fe.setTechFieldOptions("language_version", []string{"latest"})
+	}
+
 	// framework ← language
 	if opts, ok := frontendFrameworksByLang[lang]; ok {
 		fe.setTechFieldOptions("framework", opts)
@@ -579,6 +596,10 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	}
 
 	framework := fieldGet(fe.techFields, "framework")
+	langVer := fieldGet(fe.techFields, "language_version")
+
+	// framework_version ← language + language_version + framework
+	fe.setTechFieldOptions("framework_version", compatibleFrameworkVersions(lang, langVer, framework))
 
 	// meta_framework ← framework
 	if opts, ok := frontendMetaframeworksByFramework[framework]; ok {

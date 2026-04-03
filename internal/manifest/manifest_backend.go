@@ -7,7 +7,9 @@ type ServiceDef struct {
 	Name             string             `json:"name"`
 	Responsibility   string             `json:"responsibility"`
 	Language         string             `json:"language"`
+	LanguageVersion  string             `json:"language_version,omitempty"`
 	Framework        string             `json:"framework"`
+	FrameworkVersion string             `json:"framework_version,omitempty"`
 	PatternTag       PatternTag         `json:"pattern_tag,omitempty"` // hybrid only
 	Technologies     []string           `json:"technologies,omitempty"`
 	HealthcheckPath  string             `json:"healthcheck_path,omitempty"`
@@ -150,8 +152,10 @@ type BackendPillar struct {
 	BackendLinter string            `json:"backend_linter,omitempty"`
 
 	// Legacy monolith fields kept for backward compatibility.
-	ComputeEnv    ComputeEnv `json:"compute_env,omitempty"`
-	CloudProvider string     `json:"cloud_provider,omitempty"`
-	Language      string     `json:"language,omitempty"`
-	Framework     string     `json:"framework,omitempty"`
+	ComputeEnv      ComputeEnv `json:"compute_env,omitempty"`
+	CloudProvider   string     `json:"cloud_provider,omitempty"`
+	Language        string     `json:"language,omitempty"`
+	LanguageVersion string     `json:"language_version,omitempty"`
+	Framework       string     `json:"framework,omitempty"`
+	FrameworkVersion string    `json:"framework_version,omitempty"`
 }

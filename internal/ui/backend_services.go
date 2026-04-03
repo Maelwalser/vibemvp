@@ -72,7 +72,7 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 // isServiceFieldHidden returns true when a service form field should be hidden for the current arch.
 func (be BackendEditor) isServiceFieldHidden(key string) bool {
 	arch := be.currentArch()
-	if arch == "monolith" && (key == "language" || key == "framework" || key == "service_discovery") {
+	if arch == "monolith" && (key == "language" || key == "language_version" || key == "framework" || key == "framework_version" || key == "service_discovery") {
 		return true
 	}
 	if arch != "hybrid" && key == "pattern_tag" {
@@ -122,6 +122,8 @@ func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cm
 			f.CyclePrev()
 			if f.Key == "language" {
 				be.updateServiceFrameworkOptions(ed)
+			} else if f.Key == "language_version" || f.Key == "framework" {
+				be.updateServiceVersionOptions(ed)
 			}
 		}
 	case "i", "a":
@@ -150,11 +152,36 @@ func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
 	if !ok {
 		opts = []string{"Other"}
 	}
+	langVers, hasVers := langVersions[lang]
 	for i := range ed.form {
-		if ed.form[i].Key == "framework" {
+		switch ed.form[i].Key {
+		case "framework":
 			ed.form[i].Options = opts
 			ed.form[i].SelIdx = 0
 			ed.form[i].Value = opts[0]
+		case "language_version":
+			if hasVers {
+				ed.form[i].Options = langVers
+				ed.form[i].SelIdx = 0
+				ed.form[i].Value = langVers[0]
+			}
+		}
+	}
+	be.updateServiceVersionOptions(ed)
+}
+
+// updateServiceVersionOptions refreshes the framework_version dropdown based
+// on the currently selected language, language_version, and framework.
+func (be *BackendEditor) updateServiceVersionOptions(ed *beListEditor) {
+	lang := fieldGet(ed.form, "language")
+	langVer := fieldGet(ed.form, "language_version")
+	fw := fieldGet(ed.form, "framework")
+	fwVers := compatibleFrameworkVersions(lang, langVer, fw)
+	for i := range ed.form {
+		if ed.form[i].Key == "framework_version" {
+			ed.form[i].Options = fwVers
+			ed.form[i].SelIdx = 0
+			ed.form[i].Value = fwVers[0]
 			break
 		}
 	}
@@ -251,20 +278,27 @@ func (be *BackendEditor) updateEnvOrchestratorOptions() {
 	}
 }
 
-// updateEnvMonolithOptions refreshes the monolith_fw and be_linter dropdowns
-// to match the currently selected monolith_lang.
+// updateEnvMonolithOptions refreshes the monolith_fw, monolith_lang_ver, and
+// be_linter dropdowns to match the currently selected monolith_lang.
 func (be *BackendEditor) updateEnvMonolithOptions() {
 	lang := fieldGet(be.EnvFields, "monolith_lang")
 	fwOpts, ok := backendFrameworksByLang[lang]
 	if !ok {
 		fwOpts = []string{"Other"}
 	}
+	langVers, hasVers := langVersions[lang]
 	lintOpts, ok := backendLintersByLang[lang]
 	if !ok {
 		lintOpts = []string{"Custom", "None"}
 	}
 	for i := range be.EnvFields {
 		switch be.EnvFields[i].Key {
+		case "monolith_lang_ver":
+			if hasVers {
+				be.EnvFields[i].Options = langVers
+				be.EnvFields[i].SelIdx = 0
+				be.EnvFields[i].Value = langVers[0]
+			}
 		case "monolith_fw":
 			be.EnvFields[i].Options = fwOpts
 			be.EnvFields[i].SelIdx = 0
@@ -273,6 +307,24 @@ func (be *BackendEditor) updateEnvMonolithOptions() {
 			be.EnvFields[i].Options = lintOpts
 			be.EnvFields[i].SelIdx = len(lintOpts) - 1
 			be.EnvFields[i].Value = lintOpts[len(lintOpts)-1]
+		}
+	}
+	be.updateEnvMonolithVersionOptions()
+}
+
+// updateEnvMonolithVersionOptions refreshes the monolith_fw_ver dropdown based
+// on the currently selected monolith_lang, monolith_lang_ver, and monolith_fw.
+func (be *BackendEditor) updateEnvMonolithVersionOptions() {
+	lang := fieldGet(be.EnvFields, "monolith_lang")
+	langVer := fieldGet(be.EnvFields, "monolith_lang_ver")
+	fw := fieldGet(be.EnvFields, "monolith_fw")
+	fwVers := compatibleFrameworkVersions(lang, langVer, fw)
+	for i := range be.EnvFields {
+		if be.EnvFields[i].Key == "monolith_fw_ver" {
+			be.EnvFields[i].Options = fwVers
+			be.EnvFields[i].SelIdx = 0
+			be.EnvFields[i].Value = fwVers[0]
+			break
 		}
 	}
 }

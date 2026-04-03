@@ -39,7 +39,7 @@ func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 		f := &fe.techFields[fe.techFormIdx]
 		if f.Kind == KindSelect {
 			f.CyclePrev()
-			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" || f.Key == "language_version" {
 				fe.updateFEDependentOptions()
 			}
 		}
@@ -67,7 +67,7 @@ func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea
 			f.Value = f.Options[fe.dd.OptIdx]
 		}
 		fe.dd.Open = false
-		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
+		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" || f.Key == "language_version" {
 			fe.updateFEDependentOptions()
 		}
 		if f.PrepareCustomEntry() {
