@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vibe-menu/internal/realize/agent"
+	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 	"github.com/vibe-menu/internal/realize/memory"
 	"github.com/vibe-menu/internal/realize/output"
@@ -175,7 +176,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 				return fmt.Errorf("task %s: agent failed after %d attempts: %w", r.task.ID, attempt+1, err)
 			}
 			if isRateLimitError(err) {
-				wait := time.Duration(attempt+1) * 60 * time.Second
+				wait := time.Duration(attempt+1) * config.RateLimitBackoffBase * time.Second
 				r.log("[%s] rate limited — waiting %s before retry", r.task.ID, wait)
 				select {
 				case <-time.After(wait):

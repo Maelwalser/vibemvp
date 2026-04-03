@@ -1,5 +1,13 @@
 package orchestrator
 
+import (
+	"strings"
+
+	"github.com/vibe-menu/internal/manifest"
+	"github.com/vibe-menu/internal/realize/agent"
+	"github.com/vibe-menu/internal/realize/dag"
+)
+
 // modelSpec holds the version-specific and default model IDs for one provider tier.
 type modelSpec struct {
 	// byVersion maps specific version strings to model IDs.
@@ -68,4 +76,109 @@ func resolveModelID(provider, tier, version string) string {
 		return id
 	}
 	return spec.fallback
+}
+
+// ── Provider selection ────────────────────────────────────────────────────────
+
+// resolveAgent returns a task-specific agent if the manifest has a provider
+// assignment for the task's section, otherwise returns the default agent.
+func resolveAgent(taskID string, providers manifest.ProviderAssignments, def agent.Agent, verbose bool) agent.Agent {
+	pa, ok := providerFor(taskID, providers)
+	if !ok || pa.Credential == "" {
+		return def
+	}
+	model := resolveModelID(pa.Provider, pa.Model, pa.Version)
+	switch pa.Provider {
+	case "Claude":
+		return agent.NewClaudeAgentWithKey(model, defaultMaxTokens, verbose, pa.Credential)
+	case "ChatGPT":
+		return agent.NewOpenAIAgent("https://api.openai.com", pa.Credential, model, defaultMaxTokens, verbose)
+	case "Gemini":
+		return agent.NewGeminiAgent(pa.Credential, model, defaultMaxTokens, verbose)
+	case "Mistral":
+		return agent.NewOpenAIAgent("https://api.mistral.ai", pa.Credential, model, defaultMaxTokens, verbose)
+	case "Llama":
+		return agent.NewOpenAIAgent("https://api.groq.com/openai", pa.Credential, model, defaultMaxTokens, verbose)
+	default:
+		return def
+	}
+}
+
+// providerFor returns the ProviderAssignment for the section that owns taskID.
+// Task IDs follow "<section>.<name>" or just "<section>".
+func providerFor(taskID string, providers manifest.ProviderAssignments) (manifest.ProviderAssignment, bool) {
+	if providers == nil {
+		return manifest.ProviderAssignment{}, false
+	}
+	sectionID := taskID
+	if dot := strings.Index(taskID, "."); dot >= 0 {
+		sectionID = taskID[:dot]
+	}
+	pa, ok := providers[sectionID]
+	return pa, ok
+}
+
+// describeProvider returns a human-readable model label for dry-run output.
+// For manifest-configured providers it shows the provider name/tier; for
+// default-agent tasks it shows the tier-selected model.
+func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind) string {
+	if kind == dag.TaskKindDependencyResolution {
+		return "(package manager — no LLM)"
+	}
+	pa, ok := providerFor(taskID, providers)
+	if !ok || pa.Credential == "" {
+		return tierForKind(kind)
+	}
+	s := pa.Provider
+	if pa.Model != "" {
+		s += " " + pa.Model
+	}
+	if pa.Version != "" {
+		s += " " + pa.Version
+	}
+	return s
+}
+
+// buildProviderAssignments constructs a per-section ProviderAssignments map from the
+// manifest's ConfiguredProviders registry and per-section SectionModels overrides.
+//
+// SectionModels values are formatted as "Provider · Tier" (e.g. "Claude · Sonnet").
+// Sections with no override or "default" are omitted; the orchestrator falls back to
+// its default agent for those.
+func buildProviderAssignments(m *manifest.Manifest) manifest.ProviderAssignments {
+	if len(m.ConfiguredProviders) == 0 {
+		return nil
+	}
+
+	sections := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
+	result := make(manifest.ProviderAssignments)
+
+	for _, section := range sections {
+		sectionModel, ok := m.Realize.SectionModels[section]
+		if !ok || sectionModel == "" || sectionModel == "default" {
+			continue
+		}
+
+		// Parse "Provider · Tier" format.
+		parts := strings.SplitN(sectionModel, " · ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		provLabel, tier := parts[0], parts[1]
+
+		pa, exists := m.ConfiguredProviders[provLabel]
+		if !exists || pa.Credential == "" {
+			continue
+		}
+
+		// Use the configured provider's credentials with the specified tier.
+		pa.Model = tier
+		pa.Version = "" // use the fallback version for that tier
+		result[section] = pa
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }

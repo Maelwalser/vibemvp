@@ -8,7 +8,7 @@ type ServiceDef struct {
 	Responsibility   string             `json:"responsibility"`
 	Language         string             `json:"language"`
 	Framework        string             `json:"framework"`
-	PatternTag       string             `json:"pattern_tag,omitempty"` // hybrid only
+	PatternTag       PatternTag         `json:"pattern_tag,omitempty"` // hybrid only
 	Technologies     []string           `json:"technologies,omitempty"`
 	HealthcheckPath  string             `json:"healthcheck_path,omitempty"`
 	ErrorFormat      string             `json:"error_format,omitempty"`
@@ -30,7 +30,7 @@ type CommLink struct {
 	Direction          string   `json:"direction"`
 	Protocol           string   `json:"protocol"`
 	Trigger            string   `json:"trigger,omitempty"`
-	SyncAsync          string   `json:"sync_async"`
+	SyncAsync          SyncAsyncMode `json:"sync_async"`
 	ResiliencePatterns []string `json:"resilience_patterns,omitempty"`
 }
 
@@ -79,7 +79,7 @@ type PolicyRule struct {
 
 // AuthConfig describes authentication and identity settings.
 type AuthConfig struct {
-	Strategy     string       `json:"strategy"`
+	Strategy     AuthStrategy `json:"strategy"`
 	Provider     string       `json:"provider"`
 	AuthzModel   string       `json:"authz_model"`
 	TokenStorage string       `json:"token_storage"`

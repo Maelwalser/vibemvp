@@ -32,6 +32,28 @@ func prevEditableIdx(fields []Field, from int) int {
 	return -1
 }
 
+// NavigateDropdown moves a dropdown option cursor based on a vim key.
+// Returns the new index within [0, n-1]. Safe to call with n==0.
+func NavigateDropdown(key string, idx, n int) int {
+	switch key {
+	case "j", "down":
+		if idx < n-1 {
+			return idx + 1
+		}
+	case "k", "up":
+		if idx > 0 {
+			return idx - 1
+		}
+	case "g":
+		return 0
+	case "G":
+		if n > 0 {
+			return n - 1
+		}
+	}
+	return idx
+}
+
 // NavigateTab advances or retreats the active tab index based on a key string.
 // Returns the new tab index clamped to [0, maxTabs-1].
 // Handles "h", "left" (decrement) and "l", "right" (increment).

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 )
 
@@ -36,7 +37,7 @@ func TestIsHighValue(t *testing.T) {
 }
 
 func TestBuildExcerpts_TruncatesLargeFiles(t *testing.T) {
-	longContent := strings.Repeat("x", maxFileChars+100)
+	longContent := strings.Repeat("x", config.MaxFileChars+100)
 	files := []dag.GeneratedFile{
 		{Path: "types.go", Content: longContent},
 	}
@@ -131,7 +132,7 @@ func TestSharedMemory_TotalBudgetCap(t *testing.T) {
 	mem := New()
 
 	// Create many upstream tasks each with content near the budget.
-	chunkSize := maxTotalChars / 3
+	chunkSize := config.MaxTotalChars / 3
 	for i := 0; i < 10; i++ {
 		id := strings.Repeat("a", i+1)
 		mem.Record(
@@ -160,8 +161,8 @@ func TestSharedMemory_TotalBudgetCap(t *testing.T) {
 			total += len(f.Content)
 		}
 	}
-	if total > maxTotalChars+100 { // allow small overhead from truncation notices
-		t.Errorf("total shared context %d exceeds budget %d", total, maxTotalChars)
+	if total > config.MaxTotalChars+100 { // allow small overhead from truncation notices
+		t.Errorf("total shared context %d exceeds budget %d", total, config.MaxTotalChars)
 	}
 }
 
