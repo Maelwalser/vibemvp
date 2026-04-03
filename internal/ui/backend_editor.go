@@ -1744,6 +1744,15 @@ func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cm
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterServiceFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveServiceForm()
 		ed.itemView = beListViewList
@@ -1893,6 +1902,15 @@ func (be BackendEditor) updateCommForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterCommFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveCommForm()
 		ed.itemView = beListViewList
@@ -2033,6 +2051,15 @@ func (be BackendEditor) updateEventForm(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 	case "i", "a":
 		if ed.form[ed.formIdx].CanEditAsText() {
 			return be.enterEventFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveEventForm()
@@ -2647,6 +2674,15 @@ func (be BackendEditor) updateJobsForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if be.jobsFormIdx < n && be.jobsForm[be.jobsFormIdx].CanEditAsText() {
 			return be.enterJobsFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveJobsForm()
 		be.jobsSubView = beViewList
@@ -2946,6 +2982,15 @@ func (be BackendEditor) updateAuthRoleForm(key tea.KeyMsg) (BackendEditor, tea.C
 		if be.authRoleFormIdx < n && be.authRoleForm[be.authRoleFormIdx].Kind == KindText {
 			return be.enterAuthRoleFormInsert()
 		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
+		}
 	case "b", "esc":
 		be.saveAuthRoleForm()
 		be.authSubView = beAuthViewRoleList
@@ -3054,6 +3099,15 @@ func (be BackendEditor) updateAuthPermForm(key tea.KeyMsg) (BackendEditor, tea.C
 	case "enter", "i", "a":
 		if be.authPermFormIdx < n && be.authPermForm[be.authPermFormIdx].Kind == KindText {
 			return be.enterAuthPermFormInsert()
+		}
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 		}
 	case "b", "esc":
 		be.saveAuthPermForm()
