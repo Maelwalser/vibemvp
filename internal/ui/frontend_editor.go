@@ -91,11 +91,14 @@ var feStateMgmtByFramework = map[string][]string{
 	"UIKit":                       {"None"},
 }
 
+// feDataFetchingByFramework defines the maximum set of data-fetching options
+// each framework supports. Protocol-based filtering narrows this further at
+// runtime via dataFetchingForContext.
 var feDataFetchingByFramework = map[string][]string{
-	"React":                       {"TanStack Query", "SWR", "Apollo Client", "tRPC client", "RTK Query", "Native fetch"},
-	"Vue":                         {"TanStack Query", "Apollo Client", "Native fetch"},
-	"Svelte":                      {"TanStack Query", "SWR", "Native fetch"},
-	"Angular":                     {"Apollo Client", "Native fetch"},
+	"React":                       {"TanStack Query", "SWR", "Apollo Client", "tRPC client", "gRPC-web client", "Connect client", "RTK Query", "Native fetch"},
+	"Vue":                         {"TanStack Query", "Apollo Client", "gRPC-web client", "Connect client", "Native fetch"},
+	"Svelte":                      {"TanStack Query", "SWR", "gRPC-web client", "Native fetch"},
+	"Angular":                     {"Apollo Client", "gRPC-web client", "Connect client", "Native fetch"},
 	"Solid":                       {"TanStack Query", "Native fetch"},
 	"Qwik":                        {"Native fetch"},
 	"HTMX":                        {"Native fetch"},
@@ -104,6 +107,79 @@ var feDataFetchingByFramework = map[string][]string{
 	"KMP (Compose Multiplatform)": {"Native fetch"},
 	"SwiftUI":                     {"Native fetch"},
 	"UIKit":                       {"Native fetch"},
+}
+
+// dataFetchingForContext filters the framework's maximum data-fetching options
+// down to those relevant given the backend protocols and service frameworks.
+// When no backend context is configured every framework-supported option is shown.
+func dataFetchingForContext(framework string, backendProtocols, backendSvcFrameworks []string) []string {
+	allOpts, ok := feDataFetchingByFramework[framework]
+	if !ok {
+		return []string{"Native fetch"}
+	}
+	// No backend context yet — return the full framework list.
+	if len(backendProtocols) == 0 && len(backendSvcFrameworks) == 0 {
+		return allOpts
+	}
+
+	hasProtocol := func(needle string) bool {
+		for _, p := range backendProtocols {
+			if strings.EqualFold(p, needle) {
+				return true
+			}
+		}
+		return false
+	}
+	hasFramework := func(needle string) bool {
+		for _, fw := range backendSvcFrameworks {
+			if strings.EqualFold(fw, needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Determine which protocol-specific tools to include.
+	wantTRPC := hasProtocol("trpc") || hasFramework("trpc")
+	wantGraphQL := hasProtocol("graphql")
+	wantREST := hasProtocol("rest (http)") || hasProtocol("rest")
+	wantGRPC := hasProtocol("grpc")
+
+	// If none of the above are detected, treat as REST (safe default).
+	if !wantTRPC && !wantGraphQL && !wantREST && !wantGRPC {
+		wantREST = true
+	}
+
+	// Build the allowed set from the framework's maximum list, preserving order.
+	allowed := make(map[string]bool)
+	if wantREST {
+		allowed["TanStack Query"] = true
+		allowed["SWR"] = true
+		allowed["RTK Query"] = true
+	}
+	if wantGraphQL {
+		allowed["Apollo Client"] = true
+	}
+	if wantTRPC {
+		allowed["tRPC client"] = true
+	}
+	if wantGRPC {
+		allowed["gRPC-web client"] = true
+		allowed["Connect client"] = true
+	}
+	// "Native fetch" is always available.
+	allowed["Native fetch"] = true
+
+	var filtered []string
+	for _, opt := range allOpts {
+		if allowed[opt] {
+			filtered = append(filtered, opt)
+		}
+	}
+	if len(filtered) == 0 {
+		return []string{"Native fetch"}
+	}
+	return filtered
 }
 
 var feFormHandlingByFramework = map[string][]string{
@@ -260,7 +336,8 @@ func defaultFETechFields() []Field {
 			Key: "data_fetching", Label: "data_fetching ", Kind: KindSelect,
 			Options: []string{
 				"TanStack Query", "SWR", "Apollo Client",
-				"tRPC client", "RTK Query", "Native fetch",
+				"tRPC client", "gRPC-web client", "Connect client",
+				"RTK Query", "Native fetch",
 			},
 			Value: "TanStack Query",
 		},
@@ -538,7 +615,9 @@ type FrontendEditor struct {
 	assetFormIdx int
 
 	// Cross-editor data
-	availableAuthRoles []string // from BackendEditor auth roles
+	availableAuthRoles   []string // from BackendEditor auth roles
+	backendProtocols     []string // comm-link protocols (REST (HTTP), GraphQL, gRPC, tRPC, …)
+	backendSvcFrameworks []string // service frameworks (tRPC, NestJS, …)
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	ddOpen   bool
@@ -564,6 +643,18 @@ func newFrontendEditor() FrontendEditor {
 // SetAuthRoles sets the available auth role options for page forms.
 func (fe *FrontendEditor) SetAuthRoles(roles []string) {
 	fe.availableAuthRoles = roles
+}
+
+// SetBackendProtocols updates the backend protocol/framework context used to
+// filter the data_fetching options. Triggers a re-evaluation of dependent fields.
+func (fe *FrontendEditor) SetBackendProtocols(protocols, svcFrameworks []string) {
+	if stringSlicesEqual(fe.backendProtocols, protocols) &&
+		stringSlicesEqual(fe.backendSvcFrameworks, svcFrameworks) {
+		return
+	}
+	fe.backendProtocols = protocols
+	fe.backendSvcFrameworks = svcFrameworks
+	fe.updateFEDependentOptions()
 }
 
 // Language returns the frontend language selected in the Tech sub-tab.
@@ -1169,12 +1260,8 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 		fe.setTechFieldOptions("state_mgmt", []string{"None"})
 	}
 
-	// data_fetching ← framework
-	if opts, ok := feDataFetchingByFramework[framework]; ok {
-		fe.setTechFieldOptions("data_fetching", opts)
-	} else {
-		fe.setTechFieldOptions("data_fetching", []string{"Native fetch"})
-	}
+	// data_fetching ← framework + backend protocols/frameworks
+	fe.setTechFieldOptions("data_fetching", dataFetchingForContext(framework, fe.backendProtocols, fe.backendSvcFrameworks))
 
 	// form_handling ← framework
 	if opts, ok := feFormHandlingByFramework[framework]; ok {

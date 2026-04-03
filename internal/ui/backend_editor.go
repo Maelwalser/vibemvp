@@ -3465,6 +3465,27 @@ func (be BackendEditor) ArchPattern() string {
 	return be.currentArch()
 }
 
+// ServiceFrameworks returns the unique set of frameworks used across all configured
+// backend services (e.g. "tRPC", "NestJS"). For monolith arch the monolith framework
+// is included instead of the service list.
+func (be BackendEditor) ServiceFrameworks() []string {
+	seen := make(map[string]bool)
+	var fws []string
+	add := func(fw string) {
+		if fw != "" && !seen[fw] {
+			seen[fw] = true
+			fws = append(fws, fw)
+		}
+	}
+	if be.currentArch() == "monolith" {
+		add(fieldGet(be.EnvFields, "monolith_fw"))
+	}
+	for _, item := range be.serviceEditor.items {
+		add(fieldGet(item, "framework"))
+	}
+	return fws
+}
+
 // CommProtocols returns the unique set of protocols used across all communication links.
 func (be BackendEditor) CommProtocols() []string {
 	seen := make(map[string]bool)

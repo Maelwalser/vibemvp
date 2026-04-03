@@ -369,6 +369,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 	case "frontend":
 		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
+		m.frontendEditor.SetBackendProtocols(m.backendEditor.CommProtocols(), m.backendEditor.ServiceFrameworks())
 		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 	case "infrastructure":
 		m.infraEditor, cmd = m.infraEditor.Update(msg)
