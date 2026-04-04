@@ -68,6 +68,10 @@ type ContractsEditor struct {
 	extIdx       int
 	extForm      []Field
 	extFormIdx   int
+	// External API interactions sub-list
+	extIntIdx     int
+	extIntForm    []Field
+	extIntFormIdx int
 
 	// Cross-editor reference data (set by model.go before each Update)
 	availableDomains     []string               // from DataTabEditor.domainNames()
@@ -199,6 +203,10 @@ func (ce ContractsEditor) HintLine() string {
 		case ceViewList:
 			return hintBar("j/k", "navigate", "a", "add provider", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
 		case ceViewForm:
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "I", "interactions", "b/Esc", "back")
+		case ceViewSubList:
+			return hintBar("j/k", "navigate", "a", "add", "d", "delete", "Enter", "edit", "b/Esc", "back")
+		case ceViewSubForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
 	}
@@ -232,42 +240,6 @@ func (ce ContractsEditor) dtoNamesForProtocol(protocol string) []string {
 	return names
 }
 
-// refreshExtDTOOptions updates the request_dto and response_dto option lists
-// in the ext form to match the currently selected protocol, preserving the
-// current selection when it is still valid.
-func (ce *ContractsEditor) refreshExtDTOOptions() {
-	proto := fieldGet(ce.extForm, "protocol")
-	opts := ce.dtoNamesForProtocol(proto)
-	placeholder := placeholderFor(opts, "(no matching DTOs)")
-	for i := range ce.extForm {
-		key := ce.extForm[i].Key
-		if key != "request_dto" && key != "response_dto" {
-			continue
-		}
-		f := &ce.extForm[i]
-		prev := f.Value
-		f.Options = opts
-		// Try to preserve current selection.
-		found := false
-		for j, o := range opts {
-			if o == prev {
-				f.SelIdx = j
-				f.Value = o
-				found = true
-				break
-			}
-		}
-		if !found {
-			f.SelIdx = 0
-			if len(opts) > 0 {
-				f.Value = opts[0]
-			} else {
-				f.Value = placeholder
-			}
-		}
-	}
-}
-
 // activeCEFieldPtr returns a pointer to the currently focused field that supports dropdown.
 func (ce *ContractsEditor) activeCEFieldPtr() *Field {
 	switch ce.activeTab {
@@ -296,9 +268,17 @@ func (ce *ContractsEditor) activeCEFieldPtr() *Field {
 			return &ce.versioningFields[ce.verFormIdx]
 		}
 	case contractsTabExternal:
-		visible := ce.visibleExtFormFields()
-		if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
-			return ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+		switch ce.extSubView {
+		case ceViewForm:
+			visible := ce.visibleExtFormFields()
+			if ce.extFormIdx < len(visible) {
+				return ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			}
+		case ceViewSubForm:
+			visible := ce.visibleExtIntFormFields()
+			if ce.extIntFormIdx < len(visible) {
+				return ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+			}
 		}
 	}
 	return nil
@@ -367,8 +347,11 @@ func (ce ContractsEditor) updateDropdown(key tea.KeyMsg) (ContractsEditor, tea.C
 			ce.saveEPForm()
 		}
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm {
+		switch ce.extSubView {
+		case ceViewForm:
 			ce.saveExtForm()
+		case ceViewSubForm:
+			ce.saveExtIntForm()
 		}
 	}
 	return ce, nil
@@ -468,10 +451,16 @@ func (ce *ContractsEditor) advanceField(delta int) {
 			ce.verFormIdx = (ce.verFormIdx + delta + n) % n
 		}
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm {
+		switch ce.extSubView {
+		case ceViewForm:
 			n := len(ce.visibleExtFormFields())
 			if n > 0 {
 				ce.extFormIdx = (ce.extFormIdx + delta + n) % n
+			}
+		case ceViewSubForm:
+			n := len(ce.visibleExtIntFormFields())
+			if n > 0 {
+				ce.extIntFormIdx = (ce.extIntFormIdx + delta + n) % n
 			}
 		}
 	}
@@ -504,11 +493,22 @@ func (ce *ContractsEditor) saveInput() {
 			ce.versioningFields[ce.verFormIdx].SaveTextInput(val)
 		}
 	case contractsTabExternal:
-		visible := ce.visibleExtFormFields()
-		if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
-			f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
-			if f != nil && f.CanEditAsText() {
-				f.SaveTextInput(val)
+		switch ce.extSubView {
+		case ceViewForm:
+			visible := ce.visibleExtFormFields()
+			if ce.extFormIdx < len(visible) {
+				f := ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+				if f != nil && f.CanEditAsText() {
+					f.SaveTextInput(val)
+				}
+			}
+		case ceViewSubForm:
+			visible := ce.visibleExtIntFormFields()
+			if ce.extIntFormIdx < len(visible) {
+				f := ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+				if f != nil && f.CanEditAsText() {
+					f.SaveTextInput(val)
+				}
 			}
 		}
 	}
@@ -531,8 +531,11 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 	case contractsTabVersioning:
 		n = len(ce.versioningFields)
 	case contractsTabExternal:
-		if ce.extSubView == ceViewForm {
+		switch ce.extSubView {
+		case ceViewForm:
 			n = len(ce.visibleExtFormFields())
+		case ceViewSubForm:
+			n = len(ce.visibleExtIntFormFields())
 		}
 	}
 	for range n {
@@ -559,9 +562,17 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 				f = &ce.versioningFields[ce.verFormIdx]
 			}
 		case contractsTabExternal:
-			visible := ce.visibleExtFormFields()
-			if ce.extSubView == ceViewForm && ce.extFormIdx < len(visible) {
-				f = ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			switch ce.extSubView {
+			case ceViewForm:
+				visible := ce.visibleExtFormFields()
+				if ce.extFormIdx < len(visible) {
+					f = ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+				}
+			case ceViewSubForm:
+				visible := ce.visibleExtIntFormFields()
+				if ce.extIntFormIdx < len(visible) {
+					f = ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+				}
 			}
 		}
 		if f == nil {

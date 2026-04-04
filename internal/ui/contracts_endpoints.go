@@ -227,6 +227,10 @@ func (ce ContractsEditor) updateExternal(key tea.KeyMsg) (ContractsEditor, tea.C
 		return ce.updateExtList(key)
 	case ceViewForm:
 		return ce.updateExtForm(key)
+	case ceViewSubList:
+		return ce.updateExtSubList(key)
+	case ceViewSubForm:
+		return ce.updateExtSubForm(key)
 	}
 	return ce, nil
 }
@@ -245,7 +249,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "a":
 		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
 		ce.extIdx = len(ce.externalAPIs) - 1
-		ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
+		ce.extForm = defaultExternalAPIFormFields()
 		existing := make([]string, 0, len(ce.externalAPIs)-1)
 		for i, api := range ce.externalAPIs {
 			if i != ce.extIdx {
@@ -253,7 +257,6 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			}
 		}
 		ce.extForm = setFieldValue(ce.extForm, "provider", uniqueName("api", existing))
-		ce.refreshExtDTOOptions()
 		ce.extFormIdx = 0
 		ce.extSubView = ceViewForm
 		return ce.tryEnterInsert()
@@ -267,7 +270,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "enter":
 		if n > 0 {
 			api := ce.externalAPIs[ce.extIdx]
-			ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
+			ce.extForm = defaultExternalAPIFormFields()
 			ce.extForm = setFieldValue(ce.extForm, "provider", api.Provider)
 			ce.extForm = setFieldValue(ce.extForm, "responsibility", api.Responsibility)
 			if api.Protocol != "" {
@@ -275,26 +278,11 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			}
 			ce.extForm = setFieldValue(ce.extForm, "auth_mechanism", api.AuthMechanism)
 			ce.extForm = setFieldValue(ce.extForm, "failure_strategy", api.FailureStrategy)
-			ce.extForm = setFieldValue(ce.extForm, "request_dto", api.RequestDTO)
-			ce.extForm = setFieldValue(ce.extForm, "response_dto", api.ResponseDTO)
 			// REST / shared
 			ce.extForm = setFieldValue(ce.extForm, "base_url", api.BaseURL)
-			if api.HTTPMethod != "" {
-				ce.extForm = setFieldValue(ce.extForm, "http_method", api.HTTPMethod)
-			}
-			if api.ContentType != "" {
-				ce.extForm = setFieldValue(ce.extForm, "content_type", api.ContentType)
-			}
 			ce.extForm = setFieldValue(ce.extForm, "rate_limit", api.RateLimit)
 			ce.extForm = setFieldValue(ce.extForm, "webhook_endpoint", api.WebhookEndpoint)
-			// GraphQL
-			if api.GQLOperation != "" {
-				ce.extForm = setFieldValue(ce.extForm, "gql_operation", api.GQLOperation)
-			}
 			// gRPC
-			if api.GRPCStreamType != "" {
-				ce.extForm = setFieldValue(ce.extForm, "grpc_stream_type", api.GRPCStreamType)
-			}
 			if api.TLSMode != "" {
 				ce.extForm = setFieldValue(ce.extForm, "tls_mode", api.TLSMode)
 			}
@@ -314,8 +302,6 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 			if api.SOAPVersion != "" {
 				ce.extForm = setFieldValue(ce.extForm, "soap_version", api.SOAPVersion)
 			}
-			// Filter DTO options to match the saved protocol.
-			ce.refreshExtDTOOptions()
 			ce.extFormIdx = 0
 			ce.extSubView = ceViewForm
 		}
@@ -364,6 +350,11 @@ func (ce ContractsEditor) updateExtForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 				return ce.tryEnterInsert()
 			}
 		}
+	case "I":
+		ce.saveExtForm()
+		ce.extIntIdx = 0
+		ce.extSubView = ceViewSubList
+		return ce, nil
 	case "b", "esc":
 		ce.saveExtForm()
 		ce.extSubView = ceViewList
@@ -382,18 +373,11 @@ func (ce *ContractsEditor) saveExtForm() {
 	api.Protocol = fieldGet(ce.extForm, "protocol")
 	api.AuthMechanism = fieldGet(ce.extForm, "auth_mechanism")
 	api.FailureStrategy = fieldGet(ce.extForm, "failure_strategy")
-	api.RequestDTO = fieldGet(ce.extForm, "request_dto")
-	api.ResponseDTO = fieldGet(ce.extForm, "response_dto")
 	// REST / shared
 	api.BaseURL = fieldGet(ce.extForm, "base_url")
-	api.HTTPMethod = fieldGet(ce.extForm, "http_method")
-	api.ContentType = fieldGet(ce.extForm, "content_type")
 	api.RateLimit = fieldGet(ce.extForm, "rate_limit")
 	api.WebhookEndpoint = fieldGet(ce.extForm, "webhook_endpoint")
-	// GraphQL
-	api.GQLOperation = fieldGet(ce.extForm, "gql_operation")
 	// gRPC
-	api.GRPCStreamType = fieldGet(ce.extForm, "grpc_stream_type")
 	api.TLSMode = fieldGet(ce.extForm, "tls_mode")
 	// WebSocket
 	api.WSSubprotocol = fieldGet(ce.extForm, "ws_subprotocol")
@@ -403,6 +387,149 @@ func (ce *ContractsEditor) saveExtForm() {
 	api.RetryPolicy = fieldGet(ce.extForm, "retry_policy")
 	// SOAP
 	api.SOAPVersion = fieldGet(ce.extForm, "soap_version")
+}
+
+func (ce *ContractsEditor) saveExtIntForm() {
+	if ce.extIdx >= len(ce.externalAPIs) {
+		return
+	}
+	api := &ce.externalAPIs[ce.extIdx]
+	if ce.extIntIdx >= len(api.Interactions) {
+		return
+	}
+	it := &api.Interactions[ce.extIntIdx]
+	it.Name = fieldGet(ce.extIntForm, "name")
+	it.Path = fieldGet(ce.extIntForm, "path")
+	it.RequestDTO = fieldGet(ce.extIntForm, "request_dto")
+	it.ResponseDTO = fieldGet(ce.extIntForm, "response_dto")
+	it.HTTPMethod = fieldGet(ce.extIntForm, "http_method")
+	it.GQLOperation = fieldGet(ce.extIntForm, "gql_operation")
+	it.GRPCStreamType = fieldGet(ce.extIntForm, "grpc_stream_type")
+	it.WSDirection = fieldGet(ce.extIntForm, "ws_direction")
+}
+
+func (ce ContractsEditor) updateExtSubList(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	if ce.extIdx >= len(ce.externalAPIs) {
+		return ce, nil
+	}
+	interactions := ce.externalAPIs[ce.extIdx].Interactions
+	n := len(interactions)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && ce.extIntIdx < n-1 {
+			ce.extIntIdx++
+		}
+	case "k", "up":
+		if ce.extIntIdx > 0 {
+			ce.extIntIdx--
+		}
+	case "a":
+		proto := ce.externalAPIs[ce.extIdx].Protocol
+		if proto == "" {
+			proto = "REST"
+		}
+		opts := ce.dtoNamesForProtocol(proto)
+		ce.externalAPIs[ce.extIdx].Interactions = append(
+			ce.externalAPIs[ce.extIdx].Interactions,
+			manifest.ExternalAPIInteraction{},
+		)
+		ce.extIntIdx = len(ce.externalAPIs[ce.extIdx].Interactions) - 1
+		ce.extIntForm = defaultExtInteractionFormFields(opts)
+		ce.refreshExtIntDTOOptions()
+		ce.extIntFormIdx = 0
+		ce.extSubView = ceViewSubForm
+		return ce.tryEnterInsert()
+	case "d":
+		if n > 0 {
+			ce.externalAPIs[ce.extIdx].Interactions = append(
+				ce.externalAPIs[ce.extIdx].Interactions[:ce.extIntIdx],
+				ce.externalAPIs[ce.extIdx].Interactions[ce.extIntIdx+1:]...,
+			)
+			if ce.extIntIdx > 0 && ce.extIntIdx >= len(ce.externalAPIs[ce.extIdx].Interactions) {
+				ce.extIntIdx = len(ce.externalAPIs[ce.extIdx].Interactions) - 1
+			}
+		}
+	case "enter", "i":
+		if n > 0 {
+			it := interactions[ce.extIntIdx]
+			proto := ce.externalAPIs[ce.extIdx].Protocol
+			if proto == "" {
+				proto = "REST"
+			}
+			opts := ce.dtoNamesForProtocol(proto)
+			ce.extIntForm = defaultExtInteractionFormFields(opts)
+			ce.extIntForm = setFieldValue(ce.extIntForm, "name", it.Name)
+			ce.extIntForm = setFieldValue(ce.extIntForm, "path", it.Path)
+			ce.extIntForm = setFieldValue(ce.extIntForm, "request_dto", it.RequestDTO)
+			ce.extIntForm = setFieldValue(ce.extIntForm, "response_dto", it.ResponseDTO)
+			if it.HTTPMethod != "" {
+				ce.extIntForm = setFieldValue(ce.extIntForm, "http_method", it.HTTPMethod)
+			}
+			if it.GQLOperation != "" {
+				ce.extIntForm = setFieldValue(ce.extIntForm, "gql_operation", it.GQLOperation)
+			}
+			if it.GRPCStreamType != "" {
+				ce.extIntForm = setFieldValue(ce.extIntForm, "grpc_stream_type", it.GRPCStreamType)
+			}
+			if it.WSDirection != "" {
+				ce.extIntForm = setFieldValue(ce.extIntForm, "ws_direction", it.WSDirection)
+			}
+			ce.refreshExtIntDTOOptions()
+			ce.extIntFormIdx = 0
+			ce.extSubView = ceViewSubForm
+		}
+	case "b", "esc":
+		ce.extSubView = ceViewForm
+	}
+	return ce, nil
+}
+
+func (ce ContractsEditor) updateExtSubForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
+	visible := ce.visibleExtIntFormFields()
+	n := len(visible)
+	switch key.String() {
+	case "j", "down":
+		if ce.extIntFormIdx < n-1 {
+			ce.extIntFormIdx++
+		}
+	case "k", "up":
+		if ce.extIntFormIdx > 0 {
+			ce.extIntFormIdx--
+		}
+	case "enter", " ":
+		if ce.extIntFormIdx < n {
+			f := ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+			if f != nil && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
+				ce.dd.Open = true
+				if f.Kind == KindMultiSelect {
+					ce.dd.OptIdx = f.DDCursor
+				} else {
+					ce.dd.OptIdx = f.SelIdx
+				}
+			} else {
+				return ce.tryEnterInsert()
+			}
+		}
+	case "H", "shift+left":
+		if ce.extIntFormIdx < n {
+			f := ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+			if f != nil && f.Kind == KindSelect {
+				f.CyclePrev()
+			}
+		}
+	case "i", "a":
+		if ce.extIntFormIdx < n {
+			f := ce.extIntFormFieldByKey(visible[ce.extIntFormIdx].Key)
+			if f != nil && f.CanEditAsText() {
+				return ce.tryEnterInsert()
+			}
+		}
+	case "b", "esc":
+		ce.saveExtIntForm()
+		ce.extSubView = ceViewSubList
+	}
+	ce.saveExtIntForm()
+	return ce, nil
 }
 
 func (ce ContractsEditor) viewExternal(w int) []string {
@@ -425,6 +552,9 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 				if api.AuthMechanism != "" {
 					subtitle += " · " + api.AuthMechanism
 				}
+				if len(api.Interactions) > 0 {
+					subtitle += fmt.Sprintf(" · %d interaction(s)", len(api.Interactions))
+				}
 				lines = append(lines, renderListItem(w, i == ce.extIdx, "  ▶ ", name, subtitle))
 			}
 		}
@@ -439,10 +569,71 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 		if proto == "" {
 			proto = "REST"
 		}
+		intCount := 0
+		if ce.extIdx < len(ce.externalAPIs) {
+			intCount = len(ce.externalAPIs[ce.extIdx].Interactions)
+		}
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider)+" "+StyleSectionDesc.Render("["+proto+"]"), "")
+		intHint := fmt.Sprintf("  I: interactions (%d)", intCount)
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(provider)+" "+StyleSectionDesc.Render("["+proto+"]")+StyleSectionDesc.Render(intHint), "")
 		visible := ce.visibleExtFormFields()
 		lines = append(lines, renderFormFields(w, visible, ce.extFormIdx, ce.internalMode == ModeInsert, ce.formInput, ce.dd.Open, ce.dd.OptIdx)...)
+		return lines
+
+	case ceViewSubList:
+		provider := ""
+		if ce.extIdx < len(ce.externalAPIs) {
+			provider = ce.externalAPIs[ce.extIdx].Provider
+		}
+		proto := ""
+		if ce.extIdx < len(ce.externalAPIs) {
+			proto = ce.externalAPIs[ce.extIdx].Protocol
+		}
+		if proto == "" {
+			proto = "REST"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← "+provider+" ["+proto+"] — Interactions — a: add  d: delete  Enter: edit"), "")
+		if ce.extIdx >= len(ce.externalAPIs) {
+			return lines
+		}
+		interactions := ce.externalAPIs[ce.extIdx].Interactions
+		if len(interactions) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no interactions yet — press 'a' to add one)"))
+		} else {
+			for i, it := range interactions {
+				name := it.Name
+				if name == "" {
+					name = fmt.Sprintf("(interaction #%d)", i+1)
+				}
+				subtitle := it.Path
+				if it.HTTPMethod != "" && it.Path != "" {
+					subtitle = it.HTTPMethod + " " + it.Path
+				} else if it.HTTPMethod != "" {
+					subtitle = it.HTTPMethod
+				} else if it.GQLOperation != "" {
+					subtitle = it.GQLOperation
+				} else if it.GRPCStreamType != "" {
+					subtitle = it.GRPCStreamType
+				}
+				lines = append(lines, renderListItem(w, i == ce.extIntIdx, "  ▷ ", name, subtitle))
+			}
+		}
+		return lines
+
+	case ceViewSubForm:
+		provider := ""
+		if ce.extIdx < len(ce.externalAPIs) {
+			provider = ce.externalAPIs[ce.extIdx].Provider
+		}
+		name := fieldGet(ce.extIntForm, "name")
+		if name == "" {
+			name = "(new interaction)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← "+provider+" ← ")+StyleFieldKey.Render(name), "")
+		visible := ce.visibleExtIntFormFields()
+		lines = append(lines, renderFormFields(w, visible, ce.extIntFormIdx, ce.internalMode == ModeInsert, ce.formInput, ce.dd.Open, ce.dd.OptIdx)...)
 		return lines
 	}
 	return nil
@@ -498,6 +689,10 @@ func (ce ContractsEditor) View(w, h int) string {
 			extLines = appendViewport(extLines, 2, ce.extIdx, h-ceHeaderH)
 		case ceViewForm:
 			extLines = appendViewport(extLines, 2, ce.extFormIdx, h-ceHeaderH)
+		case ceViewSubList:
+			extLines = appendViewport(extLines, 2, ce.extIntIdx, h-ceHeaderH)
+		case ceViewSubForm:
+			extLines = appendViewport(extLines, 2, ce.extIntFormIdx, h-ceHeaderH)
 		}
 		lines = append(lines, extLines...)
 	}

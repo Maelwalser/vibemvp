@@ -210,9 +210,11 @@ func defaultNetworkingFields() []Field {
 			Value:   "Let's Encrypt",
 		},
 		{
-			Key: "reverse_proxy", Label: "reverse_proxy ", Kind: KindSelect,
-			Options: []string{"Nginx", "Caddy", "Traefik", "Cloudflare Tunnel", "Cloud LB"},
-			Value:   "Caddy", SelIdx: 1,
+			Key:     "reverse_proxy",
+			Label:   "reverse_proxy ",
+			Kind:    KindSelect,
+			Options: allReverseProxyOptions,
+			Value:   "Nginx",
 		},
 		{
 			Key: "cdn", Label: "cdn           ", Kind: KindSelect,
@@ -440,6 +442,51 @@ func (ie *InfraEditor) SetCloudProvider(cp string) {
 	ie.networkingFields = applyCloudProviderToFields(ie.networkingFields, cp)
 	ie.cicdFields = applyCloudProviderToFields(ie.cicdFields, cp)
 	ie.obsFields = applyCloudProviderToFields(ie.obsFields, cp)
+}
+
+// reverseProxyByOrchestrator maps orchestrator → recommended reverse proxy options.
+var reverseProxyByOrchestrator = map[string][]string{
+	"K8s (managed)":  {"Nginx Ingress", "Traefik", "Istio", "Cloud LB"},
+	"K3s":            {"Traefik (built-in)", "Nginx", "Caddy"},
+	"Docker Compose": {"Nginx", "Caddy", "Traefik"},
+	"Cloud Run":      {"Cloud LB (managed)"},
+	"ECS":            {"ALB (managed)", "Nginx"},
+	"Nomad":          {"Traefik", "Nginx", "Caddy"},
+	"None":           {"Nginx", "Caddy", "Traefik", "Cloudflare Tunnel", "Cloud LB"},
+}
+
+// allReverseProxyOptions is the full set shown when no orchestrator is configured.
+var allReverseProxyOptions = []string{
+	"Nginx", "Caddy", "Traefik", "Nginx Ingress", "Traefik (built-in)",
+	"Istio", "Cloud LB", "Cloud LB (managed)", "ALB (managed)", "Cloudflare Tunnel",
+}
+
+// applyOrchestratorToNetworking narrows the reverse_proxy options in the
+// Networking tab to those appropriate for the given orchestrator.
+func (ie *InfraEditor) applyOrchestratorToNetworking(orch string) {
+	opts, ok := reverseProxyByOrchestrator[orch]
+	if !ok {
+		opts = allReverseProxyOptions
+	}
+	for i := range ie.networkingFields {
+		if ie.networkingFields[i].Key != "reverse_proxy" {
+			continue
+		}
+		ie.networkingFields[i].Options = opts
+		found := false
+		for j, o := range opts {
+			if o == ie.networkingFields[i].Value {
+				ie.networkingFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			ie.networkingFields[i].Value = opts[0]
+			ie.networkingFields[i].SelIdx = 0
+		}
+		break
+	}
 }
 
 // applyOrchestratorToCICD narrows the deploy_strategy options in the CI/CD tab

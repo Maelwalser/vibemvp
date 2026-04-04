@@ -406,6 +406,13 @@ func defaultMessagingFields() []Field {
 			Options: []string{"At-most-once", "At-least-once", "Exactly-once"},
 			Value:   "At-least-once",
 		},
+		{
+			Key:     "environment",
+			Label:   "environment   ",
+			Kind:    KindSelect,
+			Options: []string{"(no environments configured)"},
+			Value:   "(no environments configured)",
+		},
 	}
 }
 

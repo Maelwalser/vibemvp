@@ -55,6 +55,7 @@ type MessagingConfig struct {
 	Deployment    string `json:"deployment"`
 	Serialization string `json:"serialization"`
 	Delivery      string `json:"delivery"`
+	Environment   string `json:"environment,omitempty"`
 }
 
 // EventDef describes a single entry in the event catalog.

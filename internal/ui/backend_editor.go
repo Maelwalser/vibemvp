@@ -310,7 +310,8 @@ func (be *BackendEditor) applyStackConfigNamesToServices() {
 }
 
 // SetEnvironmentNames injects environment names from the infra tab so that
-// the monolith env tab and service forms can show an environment selector dropdown.
+// the monolith env tab, service forms, and messaging broker config can show
+// an environment selector dropdown.
 func (be *BackendEditor) SetEnvironmentNames(names []string) {
 	be.environmentNames = names
 	// Refresh the monolith shared environment dropdown in the env tab.
@@ -320,6 +321,8 @@ func (be *BackendEditor) SetEnvironmentNames(names []string) {
 	for _, item := range be.serviceEditor.items {
 		be.applyEnvNamesToServiceFields(item)
 	}
+	// Refresh environment dropdown in the messaging broker config.
+	be.applyEnvNamesToServiceFields(be.MessagingFields)
 }
 
 // SetOrchestrator injects the primary orchestrator from infra for narrowing
@@ -455,11 +458,16 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	tabs := subTabsForArch(arch)
 	for _, t := range tabs {
 		if t == beTabMessaging {
+			env := fieldGet(be.MessagingFields, "environment")
+			if env == "(no environments configured)" {
+				env = ""
+			}
 			mc := manifest.MessagingConfig{
 				BrokerTech:    fieldGet(be.MessagingFields, "broker_tech"),
 				Deployment:    fieldGet(be.MessagingFields, "deployment"),
 				Serialization: fieldGet(be.MessagingFields, "serialization"),
 				Delivery:      fieldGet(be.MessagingFields, "delivery"),
+				Environment:   env,
 			}
 			bp.Messaging = &mc
 			bp.Events = be.Events
@@ -630,6 +638,9 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.MessagingFields = setFieldValue(be.MessagingFields, "deployment", bp.Messaging.Deployment)
 		be.MessagingFields = setFieldValue(be.MessagingFields, "serialization", bp.Messaging.Serialization)
 		be.MessagingFields = setFieldValue(be.MessagingFields, "delivery", bp.Messaging.Delivery)
+		if bp.Messaging.Environment != "" {
+			be.MessagingFields = setFieldValue(be.MessagingFields, "environment", bp.Messaging.Environment)
+		}
 	}
 
 	// Event catalog.
