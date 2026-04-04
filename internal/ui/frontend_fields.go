@@ -737,5 +737,28 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 		fe.setTechFieldOptions("bundle_opt", []string{"None"})
 	}
 
+	// realtime ← backend comm-link protocols / frameworks
+	hasWS, hasSSE := false, false
+	for _, p := range fe.backendProtocols {
+		if strings.Contains(p, "WebSocket") {
+			hasWS = true
+		}
+		if strings.Contains(p, "SSE") {
+			hasSSE = true
+		}
+	}
+	for _, fw := range fe.backendSvcFrameworks {
+		// tRPC supports subscriptions via WebSocket
+		if strings.EqualFold(fw, "tRPC") {
+			hasWS = true
+		}
+	}
+	if hasWS {
+		fe.setTechFieldOptions("realtime", []string{"WebSocket", "SSE", "Polling", "None"})
+	} else if hasSSE {
+		fe.setTechFieldOptions("realtime", []string{"SSE", "WebSocket", "Polling", "None"})
+	}
+	// else: keep static options with "None" default
+
 }
 
