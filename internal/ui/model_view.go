@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading…"
@@ -64,7 +65,6 @@ func (m Model) renderBaseView() string {
 
 func (m Model) renderRealizeFullScreen() string {
 	w, h := m.width, m.height
-	// Reserve 1 line at the bottom for the hint bar.
 	contentH := h - 1
 	if contentH < 1 {
 		contentH = 1
@@ -74,43 +74,85 @@ func (m Model) renderRealizeFullScreen() string {
 	return content + "\n" + hint
 }
 
+// renderHeader renders the top application bar with editorial typography.
+//
+//	VIBEMENU  ── 01  SECTION.MANIFEST  ──────────────────  02/08
 func (m Model) renderHeader(w int) string {
 	sec := m.sections[m.activeSection]
 
-	// Left segment: animated deco + section ID.
-	deco := StyleHeaderDeco.Render(headerDecoFrames[AnimFrame])
-	sectionLabel := StyleSectionTitle.Render(sec.ID + ".manifest")
+	// Left: VIBEMENU wordmark + section label.
+	wordmark := StyleHeaderTitle.Render("VIBEMENU")
+	divL := StyleHeaderDeco.Render("  ──  ")
+	idx := StyleHeaderDeco.Render(fmt.Sprintf("%02d", m.activeSection+1))
+	sectionLabel := StyleSectionTitle.Render("  " + strings.ToUpper(sec.ID) + ".MANIFEST")
 	modMark := ""
 	if m.modified {
 		modMark = StyleHeaderMod.Render(" [+]")
 	}
-	leftSeg := " " + deco + " " + sectionLabel + modMark
+	leftSeg := " " + wordmark + divL + idx + sectionLabel + modMark
 
-	// Right segment: position counter + reverse deco.
-	revDeco := StyleHeaderDeco.Render(headerDecoFrames[1-AnimFrame])
-	posLabel := StyleHeaderTitle.Render(fmt.Sprintf(" %02d/%02d ", m.activeSection+1, len(m.sections)))
-	rightSeg := posLabel + revDeco + " "
+	// Right: position counter.
+	pos := StyleHeaderTitle.Render(fmt.Sprintf("%02d/%02d", m.activeSection+1, len(m.sections)))
+	rightSeg := pos + " "
 
 	leftW := lipgloss.Width(leftSeg)
 	rightW := lipgloss.Width(rightSeg)
-	gap := w - leftW - rightW
-	if gap < 1 {
-		gap = 1
+	gap := w - leftW - rightW - 2
+	if gap < 2 {
+		gap = 2
 	}
-
-	// Fill mid with a thin dotted rule that fades away from both sides.
-	mid := StyleHeaderDeco.Render(strings.Repeat("·", gap))
+	mid := StyleHeaderDeco.Render("  " + strings.Repeat("─", gap))
 
 	line := leftSeg + mid + rightSeg
 	return StyleHeaderBar.Width(w).Render(line)
 }
 
+// renderContent renders the main editor area with an ASCII art side panel.
+//
+// Panel sizing strategy:
+//   - Always show the panel when the terminal is ≥ 120 columns wide.
+//   - Give the art as much horizontal space as possible up to its natural width.
+//   - If the available space is narrower than the art, center-crop horizontally
+//     so the most interesting content (the center of symmetric art) stays visible.
+//   - Never crop vertically — art is shown top-to-bottom and leaves the lower
+//     portion of the panel empty if shorter than the content area.
+//   - Below 120 columns the panel is hidden entirely.
 func (m Model) renderContent(w int) string {
 	ch := m.contentHeight()
+
+	const minFormW = 72  // minimum columns to keep the form usable
+	const minArtW = 36   // minimum art panel width worth showing
+	const minTermW = 120 // minimum terminal width to attempt the panel
+
+	artW := 0
+	art := SectionAsciiArt(m.activeSection)
+	if natW := ArtNaturalWidth(art); natW > 0 && w >= minTermW {
+		available := w - minFormW - 1 // 1 for │
+		artW = natW
+		if artW > available {
+			artW = available // center-crop will handle the rest
+		}
+		if artW < minArtW {
+			artW = 0 // not enough room to be useful
+		}
+	}
+
+	if artW > 0 {
+		contentW := w - artW - 1
+		var leftContent string
+		if e := m.activeEditor(); e != nil {
+			leftContent = e.View(contentW, ch)
+		} else {
+			sec := m.sections[m.activeSection]
+			leftContent = m.renderFieldList(contentW, ch, sec)
+		}
+		return withSidePanel(leftContent, art, contentW, artW, ch)
+	}
+
+	// No panel — render the editor at full width.
 	if e := m.activeEditor(); e != nil {
 		return e.View(w, ch)
 	}
-	// Fallback: generic field list for sections without a delegated editor.
 	sec := m.sections[m.activeSection]
 	return m.renderFieldList(w, ch, sec)
 }
@@ -191,14 +233,12 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 	return fillTildes(lines, h)
 }
 
+// renderTabBar renders the main section tab bar at the bottom of the content area.
 func (m Model) renderTabBar(w int) string {
 	sep := StyleTabSep.Render("│")
 	sepW := lipgloss.Width(sep)
 	n := len(m.sections)
 
-	// buildTabs renders labels as tabs. If the natural width fits within w,
-	// it distributes any extra space evenly among the tabs so the bar fills
-	// the full terminal width. Returns (rendered, fits).
 	buildTabs := func(labels []string) (string, bool) {
 		var parts []string
 		for i, lbl := range labels {
@@ -216,7 +256,6 @@ func (m Model) renderTabBar(w int) string {
 		if extra == 0 {
 			return strings.Join(parts, sep), true
 		}
-		// Distribute extra space: add padding inside each tab's right side.
 		perTab := extra / n
 		rem := extra % n
 		_ = sepW
@@ -245,7 +284,7 @@ func (m Model) renderTabBar(w int) string {
 		return tabs
 	}
 
-	// Level 2: icon only (first word of Abbr, e.g. "⚡").
+	// Level 2: icon only (first word of Abbr).
 	iconLabels := make([]string, n)
 	for i, s := range m.sections {
 		parts := strings.Fields(s.Abbr)
@@ -268,11 +307,12 @@ func (m Model) renderTabBar(w int) string {
 	return tabs
 }
 
-
+// renderStatusLine renders the vim-style status bar.
+//
+//	[NRM]  SECTION  ──────────────────────────────────────  02/08
 func (m Model) renderStatusLine(w int) string {
 	glyphs := modeSpinFrames[AnimFrame]
 
-	// Mode badge — background changes per mode; powerline glyphs flank the label.
 	var modeStyle lipgloss.Style
 	var modeText string
 	switch m.activeMode() {
@@ -286,16 +326,16 @@ func (m Model) renderStatusLine(w int) string {
 		modeStyle = StyleCommandMode
 		modeText = "CMD"
 	}
-	// Build:  <left-glyph> NRM <right-glyph>  where glyphs use powerline PUA codepoints.
 	modeLabel := modeStyle.Render(glyphs[0] + " " + modeText + " " + glyphs[1])
 
-	// Right segment: section ID + position counter.
+	// Right segment: section + position counter.
 	sec := m.sections[m.activeSection]
+	sectionName := strings.ToUpper(sec.ID)
 	pos := fmt.Sprintf("%02d/%02d", m.activeSection+1, len(m.sections))
-	rightSeg := StyleStatusRight.Render("  " + sec.ID + "  ") +
+	rightSeg := StyleStatusRight.Render("  " + sectionName + "  ") +
 		StyleStatusSegmentPos.Render(pos + " ")
 
-	// Centre: status message (OK/err) or empty.
+	// Centre: status message.
 	msg := ""
 	if m.cmd.status != "" {
 		if m.cmd.isErr {
@@ -324,8 +364,6 @@ func (m Model) renderCmdLine(w int) string {
 		return StyleCmdLine.Render(":"+m.cmd.buffer) + cursor
 	}
 
-	// Delegate hint line to the active sub-editor, with a fallback for the
-	// generic field-list renderer (which has no delegated editor).
 	var line string
 	if e := m.activeEditor(); e != nil {
 		line = e.HintLine()
@@ -343,7 +381,7 @@ func (m Model) renderCmdLine(w int) string {
 			sep := StyleHelpDesc.Render("  │  ")
 			line = "  " + strings.Join(hints, sep)
 		case ModeInsert:
-			line = StyleInsertMode.Render(" ▷ INSERT ◁ ") + StyleHelpDesc.Render("  Esc: normal  │  Tab: next field")
+			line = StyleInsertMode.Render(" ── INSERT ── ") + StyleHelpDesc.Render("  Esc: normal  │  Tab: next field")
 		}
 	}
 
