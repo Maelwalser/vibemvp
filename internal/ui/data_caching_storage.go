@@ -104,6 +104,27 @@ func (dt DataTabEditor) updateCachingForm(key tea.KeyMsg) (DataTabEditor, tea.Cm
 
 // ── Governance update ─────────────────────────────────────────────────────────
 
+// complianceAutoUpgrade upgrades pii_encryption from "None" to "Field-level AES-256"
+// when HIPAA, GDPR, or PCI-DSS is selected in compliance_frameworks.
+func (dt DataTabEditor) complianceAutoUpgrade() DataTabEditor {
+	selected := fieldGetSelectedSlice(dt.governanceFields, "compliance_frameworks")
+	sensitive := false
+	for _, f := range selected {
+		if f == "HIPAA" || f == "GDPR" || f == "PCI-DSS" {
+			sensitive = true
+			break
+		}
+	}
+	if !sensitive {
+		return dt
+	}
+	pii := fieldGet(dt.governanceFields, "pii_encryption")
+	if pii == "None" {
+		dt.governanceFields = setFieldValue(dt.governanceFields, "pii_encryption", "Field-level AES-256")
+	}
+	return dt
+}
+
 func (dt DataTabEditor) updateGovernance(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	if !dt.govEnabled {
 		if key.String() == "a" {

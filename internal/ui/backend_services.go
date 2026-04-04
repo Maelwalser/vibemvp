@@ -197,6 +197,42 @@ func (be *BackendEditor) updateServiceVersionOptions(ed *beListEditor) {
 	}
 }
 
+// updateServiceErrorFormatOptions refreshes the error_format dropdown based on
+// the technologies currently selected for the service being edited.
+func (be *BackendEditor) updateServiceErrorFormatOptions(ed *beListEditor) {
+	var techs []string
+	for _, f := range ed.form {
+		if f.Key == "technologies" {
+			for _, idx := range f.SelectedIdxs {
+				if idx < len(f.Options) {
+					techs = append(techs, f.Options[idx])
+				}
+			}
+			break
+		}
+	}
+	newOpts := errorFormatOptsForTechs(techs)
+	for i := range ed.form {
+		if ed.form[i].Key == "error_format" {
+			current := ed.form[i].Value
+			ed.form[i].Options = newOpts
+			found := false
+			for j, opt := range newOpts {
+				if opt == current {
+					ed.form[i].SelIdx = j
+					found = true
+					break
+				}
+			}
+			if !found {
+				ed.form[i].SelIdx = len(newOpts) - 1
+				ed.form[i].Value = newOpts[len(newOpts)-1]
+			}
+			break
+		}
+	}
+}
+
 // serviceDiscoveryByOrchestrator maps orchestrator → valid service discovery options.
 var serviceDiscoveryByOrchestrator = map[string][]string{
 	"K3s":            {"Kubernetes DNS", "Consul", "Static config"},
