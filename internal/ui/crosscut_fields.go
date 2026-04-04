@@ -127,6 +127,17 @@ func apiOptionsForProtocols(protocols []string) []string {
 	return []string{"Bruno", "Hurl", "Postman/Newman", "REST Client", "None"}
 }
 
+// integrationOptionsForArchPattern returns integration-testing tool options
+// based on the selected backend architecture pattern.
+func integrationOptionsForArchPattern(archPattern string) []string {
+	switch archPattern {
+	case "microservices", "event-driven", "hybrid":
+		return []string{"Testcontainers", "Docker Compose", "None"}
+	default: // monolith, modular-monolith, or unset
+		return []string{"In-memory fakes", "Docker Compose", "Testcontainers", "None"}
+	}
+}
+
 // contractOptionsForArchPattern returns contract-testing tool options based on
 // the selected backend architecture pattern.
 func contractOptionsForArchPattern(archPattern string) []string {
@@ -155,7 +166,12 @@ func feTestingOptionsForLang(lang string) []string {
 // computeTestingFields builds testing Field definitions filtered to the given
 // backend languages, protocols, arch pattern, and frontend tech. Existing values
 // are preserved when the option is still available; otherwise the first option is selected.
-func computeTestingFields(backendLangs, backendProtocols []string, backendArchPattern, frontendLang, frontendFramework string, existing []Field) []Field {
+// prevArchPattern is the arch pattern before this update; arch-sensitive fields are reset
+// to their new default when the arch pattern changes.
+func computeTestingFields(backendLangs, backendProtocols []string, backendArchPattern, prevArchPattern, frontendLang, frontendFramework string, existing []Field) []Field {
+	archChanged := prevArchPattern != backendArchPattern && prevArchPattern != ""
+	// Keys whose default depends on arch pattern; reset when arch changes.
+	archSensitive := map[string]bool{"integration": true, "contract": true}
 	unitOpts := unitOptionsForLanguages(backendLangs)
 	e2eOpts := e2eOptionsForFrontend(frontendLang, frontendFramework)
 	loadOpts := loadOptionsForLanguages(backendLangs)
@@ -169,7 +185,7 @@ func computeTestingFields(backendLangs, backendProtocols []string, backendArchPa
 		opts       []string
 	}{
 		{"unit", "unit          ", unitOpts},
-		{"integration", "integration   ", []string{"Testcontainers", "Docker Compose", "In-memory fakes", "None"}},
+		{"integration", "integration   ", integrationOptionsForArchPattern(backendArchPattern)},
 		{"e2e", "e2e           ", e2eOpts},
 		{"fe_testing", "fe_testing    ", feTestOpts},
 		{"api", "api           ", apiOpts},
@@ -187,8 +203,9 @@ func computeTestingFields(backendLangs, backendProtocols []string, backendArchPa
 	for _, t := range template {
 		selIdx := 0
 		val := t.opts[0]
-		// Preserve current value when still valid.
-		if prev, ok := existingVals[t.key]; ok {
+		// Preserve current value when still valid, unless this is an arch-sensitive
+		// field and the arch pattern just changed (reset to arch-appropriate default).
+		if prev, ok := existingVals[t.key]; ok && !(archChanged && archSensitive[t.key]) {
 			for i, o := range t.opts {
 				if o == prev {
 					selIdx = i
@@ -197,7 +214,7 @@ func computeTestingFields(backendLangs, backendProtocols []string, backendArchPa
 				}
 			}
 		}
-		// Default contract to "None".
+		// Default contract to "None" on first load (no existing value) for monolith patterns.
 		if t.key == "contract" && val == t.opts[0] && existingVals[t.key] == "" {
 			for i, o := range t.opts {
 				if o == "None" {
@@ -220,7 +237,7 @@ func computeTestingFields(backendLangs, backendProtocols []string, backendArchPa
 }
 
 func defaultTestingFields() []Field {
-	return computeTestingFields(nil, nil, "", "", "", nil)
+	return computeTestingFields(nil, nil, "", "", "", "", nil)
 }
 
 // linterOptionsForLanguages returns the deduplicated set of linter options for
@@ -420,12 +437,13 @@ func (cc *CrossCutEditor) SetTestingContext(backendLangs, backendProtocols []str
 		cc.frontendFramework == frontendFramework {
 		return
 	}
+	prevArchPattern := cc.backendArchPattern
 	cc.backendLangs = backendLangs
 	cc.backendProtocols = backendProtocols
 	cc.backendArchPattern = backendArchPattern
 	cc.frontendLang = frontendLang
 	cc.frontendFramework = frontendFramework
-	cc.testingFields = computeTestingFields(backendLangs, backendProtocols, backendArchPattern, frontendLang, frontendFramework, cc.testingFields)
+	cc.testingFields = computeTestingFields(backendLangs, backendProtocols, backendArchPattern, prevArchPattern, frontendLang, frontendFramework, cc.testingFields)
 	cc.updateLinterOptions(backendLangs)
 	cc.updateFELinterOptions(frontendLang)
 }

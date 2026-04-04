@@ -464,6 +464,91 @@ func commFieldsFromLink(l manifest.CommLink) []Field {
 	return f
 }
 
+// brokerDeploymentOptions returns deployment options specific to the broker
+// technology and the configured cloud provider.
+func brokerDeploymentOptions(brokerTech, cloudProvider string) []string {
+	switch cloudProvider {
+	case "AWS":
+		switch brokerTech {
+		case "Kafka":
+			return []string{"AWS MSK (managed)", "Self-hosted (EC2/K8s)"}
+		case "RabbitMQ":
+			return []string{"Amazon MQ", "Self-hosted"}
+		case "Redis Streams":
+			return []string{"ElastiCache", "Self-hosted"}
+		case "NATS":
+			return []string{"Synadia Cloud", "Self-hosted"}
+		case "AWS SQS/SNS":
+			return []string{"AWS SQS/SNS (managed)"}
+		default:
+			return []string{"Managed (cloud)", "Self-hosted"}
+		}
+	case "GCP":
+		switch brokerTech {
+		case "Kafka":
+			return []string{"Confluent Cloud", "Self-hosted"}
+		case "NATS":
+			return []string{"Synadia Cloud", "Self-hosted"}
+		case "Google Pub/Sub":
+			return []string{"Google Pub/Sub (managed)"}
+		default:
+			return []string{"Managed (cloud)", "Self-hosted"}
+		}
+	case "Azure":
+		switch brokerTech {
+		case "Kafka":
+			return []string{"Confluent Cloud", "Self-hosted"}
+		case "NATS":
+			return []string{"Synadia Cloud", "Self-hosted"}
+		case "RabbitMQ":
+			return []string{"Azure Service Bus (managed)", "Self-hosted"}
+		case "Azure Service Bus":
+			return []string{"Azure Service Bus (managed)"}
+		default:
+			return []string{"Managed (cloud)", "Self-hosted"}
+		}
+	case "":
+		// Cloud provider not yet configured — keep generic options.
+		return []string{"Managed (cloud)", "Self-hosted", "Embedded"}
+	default:
+		// Non-major cloud providers (Hetzner, Cloudflare, bare-metal, etc.)
+		switch brokerTech {
+		case "NATS":
+			return []string{"Synadia Cloud", "Self-hosted", "Embedded"}
+		default:
+			return []string{"Self-hosted", "Embedded"}
+		}
+	}
+}
+
+// refreshMessagingDeploymentOptions re-derives the deployment field's Options
+// from the current broker_tech value and the cached cloud provider.
+func (be *BackendEditor) refreshMessagingDeploymentOptions() {
+	brokerTech := fieldGet(be.MessagingFields, "broker_tech")
+	opts := brokerDeploymentOptions(brokerTech, be.cloudProvider)
+	for i := range be.MessagingFields {
+		if be.MessagingFields[i].Key != "deployment" {
+			continue
+		}
+		prev := be.MessagingFields[i].Value
+		be.MessagingFields[i].Options = opts
+		// Keep current value when still valid; otherwise reset to first option.
+		found := false
+		for j, o := range opts {
+			if o == prev {
+				be.MessagingFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found {
+			be.MessagingFields[i].SelIdx = 0
+			be.MessagingFields[i].Value = opts[0]
+		}
+		break
+	}
+}
+
 func defaultMessagingFields() []Field {
 	return []Field{
 		{

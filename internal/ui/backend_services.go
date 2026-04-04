@@ -578,6 +578,9 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 			f := &be.MessagingFields[be.activeField]
 			if f.Kind == KindSelect {
 				f.CyclePrev()
+				if f.Key == "broker_tech" {
+					be.refreshMessagingDeploymentOptions()
+				}
 			}
 		}
 	case "a":

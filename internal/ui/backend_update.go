@@ -265,7 +265,8 @@ func (be *BackendEditor) applyDropdown() bool {
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.dd.OptIdx < len(f.Options) {
 		f.SelIdx = be.dd.OptIdx
 		f.Value = f.Options[be.dd.OptIdx]
-		if be.activeTab() == beTabEnv {
+		switch be.activeTab() {
+		case beTabEnv:
 			switch f.Key {
 			case "monolith_lang":
 				be.updateEnvMonolithOptions()
@@ -275,6 +276,10 @@ func (be *BackendEditor) applyDropdown() bool {
 				be.updateEnvOrchestratorOptions()
 			case "orchestrator":
 				be.updateServiceDiscoveryOptions()
+			}
+		case beTabMessaging:
+			if f.Key == "broker_tech" {
+				be.refreshMessagingDeploymentOptions()
 			}
 		}
 	}

@@ -200,6 +200,7 @@ type BackendEditor struct {
 	dtoProtocols       []string // unique DTO serialisation protocols from ContractsEditor
 	environmentNames   []string // InfraPillar environment names for service env dropdowns
 	orchestrator       string   // Primary orchestrator from InfraPillar for service discovery
+	cloudProvider      string   // Primary cloud provider from InfraPillar for messaging deployment options
 
 	// Vim motion state
 	countBuf string
@@ -490,6 +491,16 @@ func (be *BackendEditor) SetEnvironmentNames(names []string) {
 	}
 	// Refresh environment dropdown in the messaging broker config.
 	be.applyEnvNamesToServiceFields(be.MessagingFields)
+}
+
+// SetMessagingCloudProvider injects the primary cloud provider from infra so
+// that the messaging deployment dropdown shows cloud-specific managed options.
+func (be *BackendEditor) SetMessagingCloudProvider(cp string) {
+	if be.cloudProvider == cp {
+		return
+	}
+	be.cloudProvider = cp
+	be.refreshMessagingDeploymentOptions()
 }
 
 // SetOrchestrator injects the primary orchestrator from infra for narrowing

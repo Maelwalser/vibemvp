@@ -90,7 +90,7 @@ func (cc *CrossCutEditor) disableActiveTab() {
 	switch cc.activeTab {
 	case ccTabTesting:
 		cc.testingEnabled = false
-		cc.testingFields = computeTestingFields(cc.backendLangs, cc.backendProtocols, cc.backendArchPattern, cc.frontendLang, cc.frontendFramework, nil)
+		cc.testingFields = computeTestingFields(cc.backendLangs, cc.backendProtocols, cc.backendArchPattern, "", cc.frontendLang, cc.frontendFramework, nil)
 		cc.testFormIdx = 0
 	case ccTabDocs:
 		cc.docsEnabled = false
