@@ -152,7 +152,7 @@ func (dt DataTabEditor) updateGovList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		dt.governances = append(dt.governances, manifest.DataGovernanceConfig{})
 		dt.govIdx = len(dt.governances) - 1
 		dbAliases := dt.dbNames()
-		dt.govForm = defaultGovFormFields(dbAliases)
+		dt.govForm = defaultGovFormFields(dbAliases, dt.cloudProvider)
 		existing := make([]string, 0, len(dt.governances)-1)
 		for i, g := range dt.governances {
 			if i != dt.govIdx {
@@ -172,7 +172,7 @@ func (dt DataTabEditor) updateGovList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter":
 		if n > 0 {
-			dt.govForm = govFormFromDef(dt.governances[dt.govIdx], dt.dbNames())
+			dt.govForm = govFormFromDef(dt.governances[dt.govIdx], dt.dbNames(), dt.cloudProvider)
 			dt.govForm = dt.withRefreshedGovOptions(dt.govForm)
 			dt.govFormIdx = 0
 			dt.govSubView = govViewForm

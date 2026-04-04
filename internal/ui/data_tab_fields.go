@@ -181,6 +181,25 @@ func (dt *DataTabEditor) SetServiceNames(names []string) {
 	dt.serviceNames = names
 }
 
+// archivalStorageByProvider maps infra cloud_provider → valid archival storage options.
+var archivalStorageByProvider = map[string][]string{
+	"AWS":         {"S3 Glacier", "S3 Glacier Deep Archive", "None"},
+	"GCP":         {"GCS Archive", "GCS Coldline", "None"},
+	"Azure":       {"Azure Archive", "Azure Cool", "None"},
+	"Cloudflare":  {"None"},
+	"Hetzner":     {"On-premise", "None"},
+	"Self-hosted": {"On-premise", "None"},
+}
+
+// archivalStorageOptionsFor returns the archival storage options for the given
+// cloud provider, falling back to all options when unset or unrecognised.
+func archivalStorageOptionsFor(provider string) []string {
+	if opts, ok := archivalStorageByProvider[provider]; ok {
+		return opts
+	}
+	return []string{"S3 Glacier", "GCS Archive", "Azure Archive", "On-premise", "None"}
+}
+
 // fsStorageByProvider maps infra cloud_provider → valid file storage technologies.
 var fsStorageByProvider = map[string][]string{
 	"AWS":         {"S3", "MinIO", "Local disk"},
@@ -201,36 +220,43 @@ func fsStorageOptionsFor(provider string) []string {
 }
 
 // SetCloudProvider updates the infra cloud provider and narrows the technology
-// options in the active FS form (if open) and any re-opened forms thereafter.
+// options in the active FS form (if open) and the archival storage options in
+// the active governance form (if open), and any re-opened forms thereafter.
 func (dt *DataTabEditor) SetCloudProvider(provider string) {
 	if dt.cloudProvider == provider {
 		return
 	}
 	dt.cloudProvider = provider
-	if len(dt.fsForm) == 0 {
-		return
-	}
-	newOpts := fsStorageOptionsFor(provider)
-	for i := range dt.fsForm {
-		if dt.fsForm[i].Key != "technology" {
-			continue
-		}
-		current := dt.fsForm[i].DisplayValue()
-		dt.fsForm[i].Options = newOpts
-		found := false
-		for j, opt := range newOpts {
-			if opt == current {
-				dt.fsForm[i].SelIdx = j
-				dt.fsForm[i].Value = opt
-				found = true
-				break
+
+	// Refresh FS form technology options.
+	if len(dt.fsForm) > 0 {
+		newOpts := fsStorageOptionsFor(provider)
+		for i := range dt.fsForm {
+			if dt.fsForm[i].Key != "technology" {
+				continue
 			}
+			current := dt.fsForm[i].DisplayValue()
+			dt.fsForm[i].Options = newOpts
+			found := false
+			for j, opt := range newOpts {
+				if opt == current {
+					dt.fsForm[i].SelIdx = j
+					dt.fsForm[i].Value = opt
+					found = true
+					break
+				}
+			}
+			if !found {
+				dt.fsForm[i].SelIdx = 0
+				dt.fsForm[i].Value = newOpts[0]
+			}
+			break
 		}
-		if !found {
-			dt.fsForm[i].SelIdx = 0
-			dt.fsForm[i].Value = newOpts[0]
-		}
-		break
+	}
+
+	// Refresh governance form archival storage options.
+	if dt.govSubView == govViewForm {
+		dt.govForm = dt.withRefreshedGovOptions(dt.govForm)
 	}
 }
 
@@ -418,6 +444,8 @@ func (dt DataTabEditor) withRefreshedGovOptions(form []Field) []Field {
 		migrationOpts = []string{"N/A"}
 	}
 
+	archivalOpts := archivalStorageOptionsFor(dt.cloudProvider)
+
 	// Also refresh the databases multiselect options from current DB aliases.
 	dbAliases := dt.dbNames()
 
@@ -437,6 +465,8 @@ func (dt DataTabEditor) withRefreshedGovOptions(form []Field) []Field {
 			newForm[i] = preserveSelectOption(newForm[i], migrationOpts)
 		case "search_tech":
 			newForm[i] = preserveSelectOption(newForm[i], searchOpts)
+		case "archival_storage":
+			newForm[i] = preserveSelectOption(newForm[i], archivalOpts)
 		}
 	}
 	return newForm
@@ -485,8 +515,9 @@ func refreshMultiSelectOptions(f Field, opts []string, placeholder string) Field
 	return f
 }
 
-func defaultGovFormFields(dbAliases []string) []Field {
+func defaultGovFormFields(dbAliases []string, cloudProvider string) []Field {
 	dbPlaceholder := placeholderFor(dbAliases, "(no databases configured)")
+	archivalOpts := archivalStorageOptionsFor(cloudProvider)
 	return []Field{
 		{Key: "name", Label: "policy name   ", Kind: KindText},
 		{
@@ -520,8 +551,9 @@ func defaultGovFormFields(dbAliases []string) []Field {
 		},
 		{
 			Key: "archival_storage", Label: "archival      ", Kind: KindSelect,
-			Options: []string{"S3 Glacier", "GCS Archive", "Azure Archive", "On-premise", "None"},
-			Value:   "None", SelIdx: 4,
+			Options: archivalOpts,
+			Value:   archivalOpts[len(archivalOpts)-1],
+			SelIdx:  len(archivalOpts) - 1,
 		},
 		{
 			Key: "migration_tool", Label: "migration     ", Kind: KindSelect,
@@ -541,8 +573,8 @@ func defaultGovFormFields(dbAliases []string) []Field {
 	}
 }
 
-func govFormFromDef(def manifest.DataGovernanceConfig, dbAliases []string) []Field {
-	f := defaultGovFormFields(dbAliases)
+func govFormFromDef(def manifest.DataGovernanceConfig, dbAliases []string, cloudProvider string) []Field {
+	f := defaultGovFormFields(dbAliases, cloudProvider)
 	f = setFieldValue(f, "name", def.Name)
 	if len(def.Databases) > 0 {
 		f = restoreMultiSelectValue(f, "databases", strings.Join(def.Databases, ", "))
