@@ -796,6 +796,7 @@ func (ie *InfraEditor) saveEnvForm() {
 	// Keep networking/cicd/obs options in sync with primary env's settings.
 	ie.SetCloudProvider(ie.primaryCloudProvider())
 	ie.applyOrchestratorToCICD(ie.PrimaryOrchestrator())
+	ie.applyOrchestratorToNetworking(ie.PrimaryOrchestrator())
 }
 
 func (ie InfraEditor) viewEnvTab(w int) []string {

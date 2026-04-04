@@ -323,10 +323,7 @@ func defaultVersioningFields() []Field {
 	}
 }
 
-func defaultExternalAPIFormFields(dtoOptions []string) []Field {
-	if dtoOptions == nil {
-		dtoOptions = []string{}
-	}
+func defaultExternalAPIFormFields() []Field {
 	return []Field{
 		// ── Common ──────────────────────────────────────────────────────────────
 		{Key: "provider", Label: "provider      ", Kind: KindText},
@@ -346,46 +343,13 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 			Options: []string{"Circuit Breaker", "Retry with backoff", "Fallback value", "Timeout + fail", "None"},
 			Value:   "Circuit Breaker",
 		},
-		{Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
-			Options: dtoOptions,
-			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
-		},
-		{Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
-			Options: dtoOptions,
-			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
-		},
 
-		// ── REST ────────────────────────────────────────────────────────────────
+		// ── REST / GraphQL / gRPC / WebSocket / SOAP ────────────────────────────
 		{Key: "base_url", Label: "base_url      ", Kind: KindText},
-		{
-			Key: "http_method", Label: "http_method   ", Kind: KindSelect,
-			Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "Any"},
-			Value:   "GET",
-		},
-		{
-			Key: "content_type", Label: "content_type  ", Kind: KindSelect,
-			Options: []string{"JSON", "XML", "Form Data", "Multipart"},
-			Value:   "JSON",
-		},
 		{Key: "rate_limit", Label: "rate_limit    ", Kind: KindText},
 		{Key: "webhook_endpoint", Label: "webhook_path  ", Kind: KindText},
 
-		// ── GraphQL ─────────────────────────────────────────────────────────────
-		// base_url shared with REST
-		{
-			Key: "gql_operation", Label: "gql_operation ", Kind: KindSelect,
-			Options: []string{"Query", "Mutation", "Subscription"},
-			Value:   "Query",
-		},
-		// rate_limit shared with REST
-
 		// ── gRPC ────────────────────────────────────────────────────────────────
-		// base_url shared with REST (used as endpoint address)
-		{
-			Key: "grpc_stream_type", Label: "stream_type   ", Kind: KindSelect,
-			Options: []string{"Unary", "Server streaming", "Client streaming", "Bidirectional"},
-			Value:   "Unary",
-		},
 		{
 			Key: "tls_mode", Label: "tls_mode      ", Kind: KindSelect,
 			Options: []string{"TLS", "mTLS", "Insecure"},
@@ -393,7 +357,6 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 		},
 
 		// ── WebSocket ───────────────────────────────────────────────────────────
-		// base_url shared (ws:// / wss://)
 		{Key: "ws_subprotocol", Label: "subprotocol   ", Kind: KindText},
 		{
 			Key: "message_format", Label: "message_format", Kind: KindSelect,
@@ -402,7 +365,6 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 		},
 
 		// ── Webhook (inbound) ───────────────────────────────────────────────────
-		// webhook_endpoint shared with REST (our inbound path)
 		{Key: "hmac_header", Label: "hmac_header   ", Kind: KindText, Value: "X-Hub-Signature-256"},
 		{
 			Key: "retry_policy", Label: "retry_policy  ", Kind: KindSelect,
@@ -411,11 +373,55 @@ func defaultExternalAPIFormFields(dtoOptions []string) []Field {
 		},
 
 		// ── SOAP ────────────────────────────────────────────────────────────────
-		// base_url shared (WSDL URL)
 		{
 			Key: "soap_version", Label: "soap_version  ", Kind: KindSelect,
 			Options: []string{"1.1", "1.2"},
 			Value:   "1.1",
+		},
+	}
+}
+
+// defaultExtInteractionFormFields returns the form fields for a single
+// interaction/call on an external API. Protocol-specific fields are filtered
+// by visibleExtIntFormFields before rendering.
+func defaultExtInteractionFormFields(dtoOptions []string) []Field {
+	if dtoOptions == nil {
+		dtoOptions = []string{}
+	}
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{Key: "path", Label: "path          ", Kind: KindText},
+		{Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
+		},
+		{Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
+		},
+		// ── REST ────────────────────────────────────────────────────────────────
+		{
+			Key: "http_method", Label: "http_method   ", Kind: KindSelect,
+			Options: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
+			Value:   "GET",
+		},
+		// ── GraphQL ─────────────────────────────────────────────────────────────
+		{
+			Key: "gql_operation", Label: "gql_operation ", Kind: KindSelect,
+			Options: []string{"Query", "Mutation", "Subscription"},
+			Value:   "Query",
+		},
+		// ── gRPC ────────────────────────────────────────────────────────────────
+		{
+			Key: "grpc_stream_type", Label: "stream_type   ", Kind: KindSelect,
+			Options: []string{"Unary", "Server streaming", "Client streaming", "Bidirectional"},
+			Value:   "Unary",
+		},
+		// ── WebSocket ───────────────────────────────────────────────────────────
+		{
+			Key: "ws_direction", Label: "ws_direction  ", Kind: KindSelect,
+			Options: []string{"Send", "Receive", "Bidirectional"},
+			Value:   "Send",
 		},
 	}
 }
@@ -430,11 +436,6 @@ func (ce ContractsEditor) visibleExtFormFields() []Field {
 	var visible []Field
 	for _, f := range ce.extForm {
 		switch f.Key {
-		// REST-only
-		case "http_method", "content_type":
-			if proto != "REST" {
-				continue
-			}
 		case "rate_limit":
 			if proto != "REST" && proto != "GraphQL" {
 				continue
@@ -443,13 +444,8 @@ func (ce ContractsEditor) visibleExtFormFields() []Field {
 			if proto != "REST" && proto != "Webhook" {
 				continue
 			}
-		// GraphQL-only
-		case "gql_operation":
-			if proto != "GraphQL" {
-				continue
-			}
 		// gRPC-only
-		case "grpc_stream_type", "tls_mode":
+		case "tls_mode":
 			if proto != "gRPC" {
 				continue
 			}
@@ -479,6 +475,98 @@ func (ce ContractsEditor) visibleExtFormFields() []Field {
 	return visible
 }
 
+// visibleExtIntFormFields returns only the interaction form fields relevant to
+// the parent external API's protocol.
+func (ce ContractsEditor) visibleExtIntFormFields() []Field {
+	if len(ce.extIntForm) == 0 {
+		return nil
+	}
+	proto := ""
+	if ce.extIdx < len(ce.externalAPIs) {
+		proto = ce.externalAPIs[ce.extIdx].Protocol
+	}
+	if proto == "" {
+		proto = "REST"
+	}
+	var visible []Field
+	for _, f := range ce.extIntForm {
+		switch f.Key {
+		case "path":
+			if proto == "Webhook" {
+				continue
+			}
+		case "http_method":
+			if proto != "REST" {
+				continue
+			}
+		case "gql_operation":
+			if proto != "GraphQL" {
+				continue
+			}
+		case "grpc_stream_type":
+			if proto != "gRPC" {
+				continue
+			}
+		case "ws_direction":
+			if proto != "WebSocket" {
+				continue
+			}
+		}
+		visible = append(visible, f)
+	}
+	return visible
+}
+
+// extIntFormFieldByKey returns a pointer to the interaction form field with the given key.
+func (ce *ContractsEditor) extIntFormFieldByKey(key string) *Field {
+	for i := range ce.extIntForm {
+		if ce.extIntForm[i].Key == key {
+			return &ce.extIntForm[i]
+		}
+	}
+	return nil
+}
+
+// refreshExtIntDTOOptions updates the request_dto and response_dto option lists
+// in the interaction form to match the parent API's protocol.
+func (ce *ContractsEditor) refreshExtIntDTOOptions() {
+	if ce.extIdx >= len(ce.externalAPIs) {
+		return
+	}
+	proto := ce.externalAPIs[ce.extIdx].Protocol
+	if proto == "" {
+		proto = "REST"
+	}
+	opts := ce.dtoNamesForProtocol(proto)
+	placeholder := placeholderFor(opts, "(no matching DTOs)")
+	for i := range ce.extIntForm {
+		key := ce.extIntForm[i].Key
+		if key != "request_dto" && key != "response_dto" {
+			continue
+		}
+		f := &ce.extIntForm[i]
+		prev := f.Value
+		f.Options = opts
+		found := false
+		for j, o := range opts {
+			if o == prev {
+				f.SelIdx = j
+				f.Value = o
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.SelIdx = 0
+			if len(opts) > 0 {
+				f.Value = opts[0]
+			} else {
+				f.Value = placeholder
+			}
+		}
+	}
+}
+
 // extFormFieldByKey returns a pointer to the ext form field with the given key.
 func (ce *ContractsEditor) extFormFieldByKey(key string) *Field {
 	for i := range ce.extForm {
@@ -489,10 +577,9 @@ func (ce *ContractsEditor) extFormFieldByKey(key string) *Field {
 	return nil
 }
 
-// updateExtDependentFields refreshes protocol-filtered DTO options and clamps
-// extFormIdx to the visible field range after a protocol change.
+// updateExtDependentFields clamps extFormIdx to the visible field range after a
+// protocol change.
 func (ce *ContractsEditor) updateExtDependentFields() {
-	ce.refreshExtDTOOptions()
 	visible := ce.visibleExtFormFields()
 	if len(visible) > 0 && ce.extFormIdx >= len(visible) {
 		ce.extFormIdx = len(visible) - 1
