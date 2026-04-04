@@ -120,6 +120,10 @@ func (fe FrontendEditor) updateA11ySEO(key tea.KeyMsg) (FrontendEditor, tea.Cmd)
 	case "enter", " ":
 		f := &fe.a11yFields[fe.a11yFormIdx]
 		if f.Kind == KindSelect {
+			if f.Key == "seo_render_strategy" {
+				fe.a11yFields = refreshSEORenderOptions(fe.a11yFields, fe.Platform(), fieldGet(fe.techFields, "meta_framework"))
+				f = &fe.a11yFields[fe.a11yFormIdx]
+			}
 			fe.dd.Open = true
 			fe.dd.OptIdx = f.SelIdx
 		} else {

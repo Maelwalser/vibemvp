@@ -36,8 +36,13 @@ func LoadRecentPaths() []string {
 }
 
 // RecordRecentPath prepends path to the persisted recent list.
+// The path is converted to an absolute path so it remains valid
+// regardless of the working directory when the app is next launched.
 // Silently ignores any I/O errors.
 func RecordRecentPath(path string) {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	existing := LoadRecentPaths()
 	filtered := make([]string, 0, len(existing))
 	for _, p := range existing {

@@ -92,6 +92,9 @@ func (be *BackendEditor) toggleMultiSelectOption() {
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindMultiSelect {
 			ed.form[ed.formIdx].ToggleMultiSelect(be.dd.OptIdx)
 			ed.form[ed.formIdx].DDCursor = be.dd.OptIdx
+			if ed.form[ed.formIdx].Key == "technologies" {
+				be.updateServiceErrorFormatOptions(ed)
+			}
 		}
 		return
 	}

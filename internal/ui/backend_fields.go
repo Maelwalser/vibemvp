@@ -41,6 +41,41 @@ var backendLintersByLang = map[string][]string{
 	"Other":           {"Custom", "None"},
 }
 
+// errorFormatByProtocol maps a technology/protocol name to the error formats
+// that are idiomatic for it. Used to narrow the error_format dropdown based on
+// the technologies selected for a service.
+var errorFormatByProtocol = map[string][]string{
+	"REST":      {"RFC 7807 (Problem Details)", "Custom JSON envelope"},
+	"GraphQL":   {"GraphQL spec errors", "Custom extensions"},
+	"gRPC":      {"gRPC status codes", "google.rpc.Status"},
+	"WebSocket": {"Custom JSON envelope"},
+	"SSE":       {"Custom JSON envelope"},
+	"tRPC":      {"tRPC error format"},
+}
+
+// errorFormatOptsForTechs derives the appropriate error_format option list from
+// the selected technologies. Options from each matching protocol are unioned in
+// encounter order; "Platform default" is always appended as the last option.
+// If no protocol matches, the static default set is returned.
+func errorFormatOptsForTechs(techs []string) []string {
+	seen := map[string]bool{"Platform default": true}
+	var opts []string
+	for _, tech := range techs {
+		if formats, ok := errorFormatByProtocol[tech]; ok {
+			for _, f := range formats {
+				if !seen[f] {
+					seen[f] = true
+					opts = append(opts, f)
+				}
+			}
+		}
+	}
+	if len(opts) == 0 {
+		return []string{"RFC 7807 (Problem Details)", "Custom JSON envelope", "Platform default"}
+	}
+	return append(opts, "Platform default")
+}
+
 // ── field definitions ─────────────────────────────────────────────────────────
 // Default field slices and manifest serialization helpers for BackendEditor.
 
@@ -231,6 +266,35 @@ func serviceFieldsFromDef(s manifest.ServiceDef) []Field {
 	}
 	if s.Environment != "" {
 		f = setFieldValue(f, "environment", s.Environment)
+	}
+	// Restore technologies selections and narrow error_format options accordingly.
+	if len(s.Technologies) > 0 {
+		for i := range f {
+			if f[i].Key != "technologies" {
+				continue
+			}
+			f[i].SelectedIdxs = nil
+			for _, tech := range s.Technologies {
+				for j, opt := range f[i].Options {
+					if opt == tech {
+						f[i].SelectedIdxs = append(f[i].SelectedIdxs, j)
+						break
+					}
+				}
+			}
+			break
+		}
+		errOpts := errorFormatOptsForTechs(s.Technologies)
+		for i := range f {
+			if f[i].Key == "error_format" {
+				f[i].Options = errOpts
+				break
+			}
+		}
+	}
+	// Restore error_format value (must happen after options are set).
+	if s.ErrorFormat != "" {
+		f = setFieldValue(f, "error_format", s.ErrorFormat)
 	}
 	// Restore health_deps selections — options are populated dynamically later
 	// via SetDBSourceAliases; store names in Value for lazy restoration.

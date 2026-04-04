@@ -886,6 +886,10 @@ func (ce ContractsEditor) visibleEPFields() []Field {
 			if proto != "WebSocket message" {
 				continue
 			}
+		case "pagination":
+			if proto == "WebSocket message" || proto == "gRPC" || proto == "Event" {
+				continue
+			}
 		}
 		visible = append(visible, f)
 	}

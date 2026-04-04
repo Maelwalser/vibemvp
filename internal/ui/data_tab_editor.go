@@ -350,6 +350,7 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		dt.dd.Open = false
 		return dt, nil
 	}
+	fieldKey := f.Key
 	dt.dd.OptIdx = NavigateDropdown(key.String(), dt.dd.OptIdx, len(f.Options))
 	switch key.String() {
 	case " ":
@@ -395,6 +396,9 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 			f.DDCursor = dt.dd.OptIdx
 		}
 		dt.dd.Open = false
+	}
+	if fieldKey == "compliance_frameworks" {
+		dt = dt.complianceAutoUpgrade()
 	}
 	return dt, nil
 }
