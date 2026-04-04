@@ -50,6 +50,11 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	} else if be.authSubView == beAuthViewPermForm {
 		be.saveAuthPermForm()
 	}
+	// If strategy changed and the cursor now sits on a hidden auth field, advance it.
+	if be.authSubView == beAuthViewConfig && be.activeField < len(be.AuthFields) &&
+		be.isAuthFieldHidden(be.AuthFields[be.activeField].Key) {
+		be.activeField = be.nextAuthFieldIdx(+1)
+	}
 	return be, nil
 }
 
