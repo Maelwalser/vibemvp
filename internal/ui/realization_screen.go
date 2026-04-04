@@ -12,8 +12,8 @@ import (
 	"github.com/vibe-menu/internal/realize/orchestrator"
 )
 
-// spinnerFrames is a braille dot animation.
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// spinnerFrames is a matrix-style 12-frame braille spinner.
+var spinnerFrames = MatrixSpinnerFrames[:]
 
 // ── message types ─────────────────────────────────────────────────────────────
 
@@ -241,34 +241,97 @@ func (s RealizationScreen) HintLine() string {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
+// realizeHeaderBar renders a single-line bordered title bar for the realize screen.
+func realizeHeaderBar(appName string, done bool, err error, w int) string {
+	var stateTag string
+	switch {
+	case done && err != nil:
+		stateTag = styleRealizeErr.Render(" ✗ FAILED ")
+	case done:
+		stateTag = styleRealizeDone.Render(" ✓ DONE ")
+	default:
+		stateTag = styleRealizeSpinner.Render(" ▶ REALIZE ")
+	}
+
+	appTag := styleRealizeAppName.Render(" " + appName + " ")
+
+	innerW := w - 2 // subtract left + right border char
+	if innerW < 10 {
+		innerW = 10
+	}
+
+	stateW := len([]rune(stateTag))   // approximate; lipgloss.Width is accurate
+	appW   := len([]rune(appTag))
+	_ = stateW
+	_ = appW
+
+	stateRendW := lipgloss.Width(stateTag)
+	appRendW   := lipgloss.Width(appTag)
+	dashCount  := innerW - stateRendW - appRendW - 2
+	if dashCount < 1 {
+		dashCount = 1
+	}
+
+	dashes := styleRealizeStatus.Render(strings.Repeat("─", dashCount))
+	bar := styleRealizeStatus.Render("╭") +
+		stateTag +
+		dashes +
+		appTag +
+		styleRealizeStatus.Render("╮")
+	return bar
+}
+
+// logPrefix returns a short colored prefix and icon for the given log kind.
+func logPrefix(k logKind) string {
+	switch k {
+	case logStart:
+		return styleLogStart.Render("›")
+	case logDone:
+		return styleLogDone.Render("✓")
+	case logVerify:
+		return styleLogVerify.Render("⚑")
+	case logError:
+		return styleLogError.Render("✗")
+	case logSkip:
+		return styleLogSkip.Render("∅")
+	case logWave:
+		return styleLogWave.Render("≋")
+	default:
+		return styleLogInfo.Render("·")
+	}
+}
+
 func (s RealizationScreen) View(w, h int) string {
-	// Status line: spinner + app name + state
+	lines := make([]string, 0, h)
+
+	// Row 0: decorated header bar.
+	lines = append(lines, realizeHeaderBar(s.appName, s.done, s.err, w))
+
+	// Row 1: spinner + app name + state — the live status row.
 	var statusLine string
 	if s.done {
 		if s.err != nil {
-			statusLine = styleRealizeErr.Render("✗") + "  " +
+			statusLine = styleRealizeErr.Render("  ✗") + "  " +
 				styleRealizeAppName.Render(s.appName) + "  " +
 				styleRealizeStatus.Render("failed")
 		} else {
-			statusLine = styleRealizeDone.Render("✓") + "  " +
+			statusLine = styleRealizeDone.Render("  ✓") + "  " +
 				styleRealizeAppName.Render(s.appName) + "  " +
 				styleRealizeStatus.Render("complete")
 		}
 	} else {
-		spin := styleRealizeSpinner.Render(spinnerFrames[s.frame])
-		statusLine = spin + "  " +
+		spin := styleRealizeSpinner.Render(spinnerFrames[s.frame%len(spinnerFrames)])
+		wave := styleRealizeStatus.Render(sineWaveFrames[s.frame%16])
+		statusLine = "  " + spin + "  " +
 			styleRealizeAppName.Render(s.appName) + "  " +
-			styleRealizeStatus.Render("realizing…")
+			styleRealizeStatus.Render("realizing…  ") +
+			wave
 	}
-
-	lines := []string{
-		"  " + statusLine,
-		"",
-	}
+	lines = append(lines, statusLine, "")
 
 	// Log area: fill remaining height with the most recent entries.
-	// Reserve 2 lines for the header above.
-	logH := h - 2
+	// Reserve 3 lines for header + status + blank.
+	logH := h - 3
 	if logH < 0 {
 		logH = 0
 	}
@@ -278,7 +341,7 @@ func (s RealizationScreen) View(w, h int) string {
 		start = len(s.logs) - logH
 	}
 
-	maxTextW := w - 5 // 4 chars line-number + 1 space
+	maxTextW := w - 7 // 4 chars line-number + 1 prefix icon + 2 spaces
 	if maxTextW < 10 {
 		maxTextW = 10
 	}
@@ -286,10 +349,12 @@ func (s RealizationScreen) View(w, h int) string {
 	for i, entry := range s.logs[start:] {
 		lineNo := start + i + 1
 		num := StyleLineNum.Render(fmt.Sprintf("%3d ", lineNo))
+		prefix := logPrefix(entry.kind) + " "
 
 		t := entry.text
-		if len(t) > maxTextW {
-			t = t[:maxTextW-1] + "…"
+		if len([]rune(t)) > maxTextW {
+			runes := []rune(t)
+			t = string(runes[:maxTextW-1]) + "…"
 		}
 
 		var colored string
@@ -310,7 +375,7 @@ func (s RealizationScreen) View(w, h int) string {
 			colored = styleLogInfo.Render(t)
 		}
 
-		lines = append(lines, num+colored)
+		lines = append(lines, num+prefix+colored)
 	}
 
 	return fillTildes(lines, h)

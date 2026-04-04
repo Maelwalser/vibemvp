@@ -76,24 +76,32 @@ func (m Model) renderRealizeFullScreen() string {
 
 func (m Model) renderHeader(w int) string {
 	sec := m.sections[m.activeSection]
+
+	// Left segment: animated deco + section ID.
+	deco := StyleHeaderDeco.Render(headerDecoFrames[AnimFrame])
+	sectionLabel := StyleSectionTitle.Render(sec.ID + ".manifest")
 	modMark := ""
 	if m.modified {
 		modMark = StyleHeaderMod.Render(" [+]")
 	}
+	leftSeg := " " + deco + " " + sectionLabel + modMark
 
-	deco := StyleHeaderDeco.Render(headerDecoFrames[AnimFrame])
-	title := deco + " " + StyleSectionTitle.Render(sec.ID+".manifest") + modMark
+	// Right segment: position counter + reverse deco.
+	revDeco := StyleHeaderDeco.Render(headerDecoFrames[1-AnimFrame])
+	posLabel := StyleHeaderTitle.Render(fmt.Sprintf(" %02d/%02d ", m.activeSection+1, len(m.sections)))
+	rightSeg := posLabel + revDeco + " "
 
-	counter := StyleHeaderDeco.Render(headerDecoFrames[1-AnimFrame]) + " " +
-		StyleHeaderTitle.Render(fmt.Sprintf("[%02d/%02d]", m.activeSection+1, len(m.sections)))
-
-	titleW := lipgloss.Width(title)
-	counterW := lipgloss.Width(counter)
-	gap := w - titleW - counterW - 2
+	leftW := lipgloss.Width(leftSeg)
+	rightW := lipgloss.Width(rightSeg)
+	gap := w - leftW - rightW
 	if gap < 1 {
 		gap = 1
 	}
-	line := " " + title + strings.Repeat(" ", gap) + counter + " "
+
+	// Fill mid with a thin dotted rule that fades away from both sides.
+	mid := StyleHeaderDeco.Render(strings.Repeat("·", gap))
+
+	line := leftSeg + mid + rightSeg
 	return StyleHeaderBar.Width(w).Render(line)
 }
 
@@ -262,39 +270,51 @@ func (m Model) renderTabBar(w int) string {
 
 
 func (m Model) renderStatusLine(w int) string {
-	spin := modeSpinFrames[AnimFrame]
-	var modeLabel string
+	glyphs := modeSpinFrames[AnimFrame]
+
+	// Mode badge — background changes per mode; powerline glyphs flank the label.
+	var modeStyle lipgloss.Style
+	var modeText string
 	switch m.activeMode() {
 	case ModeNormal:
-		modeLabel = StyleNormalMode.Render(spin[0] + " NRM " + spin[1])
+		modeStyle = StyleNormalMode
+		modeText = "NRM"
 	case ModeInsert:
-		modeLabel = StyleInsertMode.Render(spin[0] + " INS " + spin[1])
+		modeStyle = StyleInsertMode
+		modeText = "INS"
 	case ModeCommand:
-		modeLabel = StyleCommandMode.Render(spin[0] + " CMD " + spin[1])
+		modeStyle = StyleCommandMode
+		modeText = "CMD"
 	}
+	// Build:  <left-glyph> NRM <right-glyph>  where glyphs use powerline PUA codepoints.
+	modeLabel := modeStyle.Render(glyphs[0] + " " + modeText + " " + glyphs[1])
 
+	// Right segment: section ID + position counter.
 	sec := m.sections[m.activeSection]
 	pos := fmt.Sprintf("%02d/%02d", m.activeSection+1, len(m.sections))
-	right := StyleStatusRight.Render(fmt.Sprintf("  %s.manifest  %s  ▪ ", sec.ID, pos))
+	rightSeg := StyleStatusRight.Render("  " + sec.ID + "  ") +
+		StyleStatusSegmentPos.Render(pos + " ")
 
+	// Centre: status message (OK/err) or empty.
 	msg := ""
 	if m.cmd.status != "" {
 		if m.cmd.isErr {
-			msg = StyleMsgErr.Render("✗ " + m.cmd.status)
+			msg = StyleMsgErr.Render(" ✗ " + m.cmd.status + " ")
 		} else {
-			msg = StyleMsgOK.Render("✓ " + m.cmd.status)
+			msg = StyleMsgOK.Render(" ✓ " + m.cmd.status + " ")
 		}
 	}
 
 	leftW := lipgloss.Width(modeLabel)
-	rightW := lipgloss.Width(right)
+	rightW := lipgloss.Width(rightSeg)
 	msgW := lipgloss.Width(msg)
 	gapW := w - leftW - rightW - msgW
 	if gapW < 1 {
 		gapW = 1
 	}
 
-	line := modeLabel + strings.Repeat(" ", gapW/2) + msg + StyleStatusLine.Render(strings.Repeat(" ", gapW-gapW/2)) + right
+	line := modeLabel + StyleStatusLine.Render(strings.Repeat(" ", gapW/2)) + msg +
+		StyleStatusLine.Render(strings.Repeat(" ", gapW-gapW/2)) + rightSeg
 	return line
 }
 
