@@ -608,6 +608,53 @@ var feImageOptByPlatform = map[string][]string{
 	"Desktop":                 {"None"},
 }
 
+// webOnlyTechFields is the set of tech field keys that are only meaningful for
+// web platforms (SPA / SSR/SSG). They are hidden for mobile and desktop targets.
+var webOnlyTechFields = map[string]bool{
+	"meta_framework": true,
+	"styling":        true,
+	"component_lib":  true,
+	"pwa_support":    true,
+	"image_opt":      true,
+	"bundle_opt":     true,
+}
+
+// visibleTechFields returns the subset of techFields that are relevant to the
+// currently selected language, framework, and platform.
+//
+// Two rules are applied in order:
+//  1. Web-only fields (styling, component_lib, pwa_support, image_opt,
+//     bundle_opt, meta_framework) are hidden for mobile/desktop platforms.
+//  2. Any remaining field whose options list has been narrowed to exactly
+//     ["None"] by updateFEDependentOptions is hidden — it carries no
+//     information and would confuse the realization agent.
+func (fe FrontendEditor) visibleTechFields() []Field {
+	platform := fieldGet(fe.techFields, "platform")
+	isWeb := platform == "Web (SPA)" || platform == "Web (SSR/SSG)"
+	var visible []Field
+	for _, f := range fe.techFields {
+		if webOnlyTechFields[f.Key] && !isWeb {
+			continue
+		}
+		if len(f.Options) == 1 && f.Options[0] == "None" {
+			continue
+		}
+		visible = append(visible, f)
+	}
+	return visible
+}
+
+// techFieldByKey returns a pointer to the tech field with the given key in the
+// authoritative techFields slice (not the visible projection).
+func (fe *FrontendEditor) techFieldByKey(key string) *Field {
+	for i := range fe.techFields {
+		if fe.techFields[i].Key == key {
+			return &fe.techFields[i]
+		}
+	}
+	return nil
+}
+
 // ── Runtime field population ──────────────────────────────────────────────────
 
 // setTechFieldOptions updates a tech field's options, preserving the current
@@ -737,5 +784,10 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 		fe.setTechFieldOptions("bundle_opt", []string{"None"})
 	}
 
+	// Clamp techFormIdx to visible field count so a platform switch from web to
+	// mobile/desktop never leaves the cursor on a now-hidden field index.
+	if n := len(fe.visibleTechFields()); fe.techFormIdx >= n && n > 0 {
+		fe.techFormIdx = n - 1
+	}
 }
 

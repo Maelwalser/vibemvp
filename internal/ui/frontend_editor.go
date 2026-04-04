@@ -595,7 +595,7 @@ func (fe FrontendEditor) updateInsert(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 func (fe *FrontendEditor) advanceField(delta int) {
 	switch fe.activeTab {
 	case feTabTech:
-		n := len(fe.techFields)
+		n := len(fe.visibleTechFields())
 		if n > 0 {
 			fe.techFormIdx = (fe.techFormIdx + delta + n) % n
 		}
@@ -660,8 +660,12 @@ func (fe *FrontendEditor) saveInput() {
 	val := fe.formInput.Value()
 	switch fe.activeTab {
 	case feTabTech:
-		if fe.techFormIdx < len(fe.techFields) && fe.techFields[fe.techFormIdx].CanEditAsText() {
-			fe.techFields[fe.techFormIdx].SaveTextInput(val)
+		visible := fe.visibleTechFields()
+		if fe.techFormIdx < len(visible) {
+			f := fe.techFieldByKey(visible[fe.techFormIdx].Key)
+			if f != nil && f.CanEditAsText() {
+				f.SaveTextInput(val)
+			}
 		}
 	case feTabTheme:
 		if fe.themeFormIdx < len(fe.themeFields) {
@@ -718,7 +722,7 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	n := 0
 	switch fe.activeTab {
 	case feTabTech:
-		n = len(fe.techFields)
+		n = len(fe.visibleTechFields())
 	case feTabTheme:
 		n = len(fe.themeFields)
 	case feTabComponents:
@@ -746,8 +750,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 		var f *Field
 		switch fe.activeTab {
 		case feTabTech:
-			if fe.techFormIdx < len(fe.techFields) {
-				f = &fe.techFields[fe.techFormIdx]
+			visible := fe.visibleTechFields()
+			if fe.techFormIdx < len(visible) {
+				f = fe.techFieldByKey(visible[fe.techFormIdx].Key)
 			}
 		case feTabTheme:
 			if fe.themeFormIdx < len(fe.themeFields) {
