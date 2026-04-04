@@ -134,6 +134,63 @@ func (fe *FrontendEditor) SetBackendProtocols(protocols, svcFrameworks []string)
 	fe.updateFEDependentOptions()
 }
 
+// SetBackendAuthStrategy updates the auth_flow field options to match the backend auth strategy.
+// JWT → redirect/magic-link flows; Session-based → modal login; API Key → not applicable.
+func (fe *FrontendEditor) SetBackendAuthStrategy(strategies []string) {
+	opts := authFlowOptionsFor(strategies)
+	for i, f := range fe.techFields {
+		if f.Key != "auth_flow" {
+			continue
+		}
+		// Only update when the option set actually changes.
+		if stringSlicesEqual(f.Options, opts) {
+			return
+		}
+		fe.techFields[i].Options = opts
+		fe.techFields[i].SelIdx = 0
+		fe.techFields[i].Value = opts[0]
+		return
+	}
+}
+
+// authFlowOptionsFor derives the appropriate auth_flow options from the backend strategy list.
+func authFlowOptionsFor(strategies []string) []string {
+	hasJWT, hasSession, hasOAuth, hasAPIKey := false, false, false, false
+	for _, s := range strategies {
+		switch {
+		case strings.Contains(s, "JWT"):
+			hasJWT = true
+		case strings.Contains(s, "Session"):
+			hasSession = true
+		case strings.Contains(s, "OAuth") || strings.Contains(s, "OIDC"):
+			hasOAuth = true
+		case strings.Contains(s, "API Key"):
+			hasAPIKey = true
+		}
+	}
+
+	// No strategy configured — return all options.
+	if !hasJWT && !hasSession && !hasOAuth && !hasAPIKey && len(strategies) == 0 {
+		return []string{"Redirect (OAuth/OIDC)", "Modal login", "Magic link", "Passwordless", "Social only"}
+	}
+
+	var opts []string
+	if hasOAuth || hasJWT {
+		opts = append(opts, "Redirect (OAuth/OIDC)", "Magic link", "Passwordless", "Social only")
+	}
+	if hasSession {
+		opts = append(opts, "Modal login")
+	}
+	if hasAPIKey && !hasJWT && !hasSession && !hasOAuth {
+		opts = append(opts, "Not applicable (API Key only)")
+	}
+	if len(opts) == 0 {
+		// Fallback for unrecognised strategies (e.g. mTLS / None).
+		opts = []string{"Redirect (OAuth/OIDC)", "Modal login", "Magic link", "Passwordless", "Social only"}
+	}
+	return opts
+}
+
 // SetAvailableEndpoints updates the endpoint name list for component forms.
 func (fe *FrontendEditor) SetAvailableEndpoints(endpoints []string) {
 	fe.availableEndpoints = endpoints

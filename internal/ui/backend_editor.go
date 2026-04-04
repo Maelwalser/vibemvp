@@ -918,6 +918,22 @@ func (be BackendEditor) ServiceFrameworks() []string {
 	return fws
 }
 
+// AuthStrategy returns the selected backend auth strategies for cross-editor use.
+func (be BackendEditor) AuthStrategy() []string {
+	raw := fieldGetMulti(be.AuthFields, "strategy")
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ", ")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 // CommProtocols returns the unique set of protocols used across all communication links.
 func (be BackendEditor) CommProtocols() []string {
 	seen := make(map[string]bool)
