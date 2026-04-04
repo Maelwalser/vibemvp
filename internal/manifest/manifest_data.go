@@ -139,7 +139,7 @@ type CachingConfig struct {
 type FileStorageDef struct {
 	Technology   string `json:"technology"`
 	Purpose      string `json:"purpose,omitempty"`
-	Service      string `json:"service,omitempty"`
+	Environment  string `json:"environment,omitempty"`
 	Access       string `json:"access"`
 	MaxSize      string `json:"max_size,omitempty"`
 	Domains      string `json:"domains,omitempty"`

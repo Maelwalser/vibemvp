@@ -69,6 +69,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 			update: func(m *Model, msg tea.Msg) tea.Cmd {
 				m.dataTabEditor.SetMigrationContext(m.backendEditor.Languages())
 				m.dataTabEditor.SetServiceNames(m.backendEditor.ServiceNames())
+				m.dataTabEditor.SetCloudProvider(m.infraEditor.PrimaryCloudProvider())
 				m.dataTabEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				m.dataTabEditor.SetDTONames(m.contractsEditor.DTONames())
 				var cmd tea.Cmd
@@ -115,6 +116,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 				m.backendEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				m.backendEditor.SetOrchestrator(m.infraEditor.PrimaryOrchestrator())
 				m.dataTabEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
+				m.dataTabEditor.SetCloudProvider(m.infraEditor.PrimaryCloudProvider())
 				return cmd
 			},
 		},

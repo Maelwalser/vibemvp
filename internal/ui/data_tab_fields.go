@@ -25,7 +25,7 @@ func defaultCachingFields() []Field {
 		},
 		{
 			Key: "strategy", Label: "strategy      ", Kind: KindMultiSelect,
-			Options: []string{"Cache-aside", "Read-through", "Write-through", "Write-behind"},
+			Options: []string{"Cache-aside", "Read-through", "Write-through", "Write-behind", "CDN purge"},
 		},
 		{
 			Key: "invalidation", Label: "invalidation  ", Kind: KindSelect,
@@ -181,6 +181,59 @@ func (dt *DataTabEditor) SetServiceNames(names []string) {
 	dt.serviceNames = names
 }
 
+// fsStorageByProvider maps infra cloud_provider → valid file storage technologies.
+var fsStorageByProvider = map[string][]string{
+	"AWS":         {"S3", "MinIO", "Local disk"},
+	"GCP":         {"GCS", "MinIO", "Local disk"},
+	"Azure":       {"Azure Blob", "MinIO", "Local disk"},
+	"Cloudflare":  {"Cloudflare R2", "S3", "Local disk"},
+	"Hetzner":     {"MinIO", "S3", "Local disk"},
+	"Self-hosted": {"MinIO", "Local disk"},
+}
+
+// fsStorageOptionsFor returns the technology options for the given cloud provider,
+// falling back to all options when the provider is unset or unrecognised.
+func fsStorageOptionsFor(provider string) []string {
+	if opts, ok := fsStorageByProvider[provider]; ok {
+		return opts
+	}
+	return []string{"S3", "GCS", "Azure Blob", "MinIO", "Cloudflare R2", "Local disk"}
+}
+
+// SetCloudProvider updates the infra cloud provider and narrows the technology
+// options in the active FS form (if open) and any re-opened forms thereafter.
+func (dt *DataTabEditor) SetCloudProvider(provider string) {
+	if dt.cloudProvider == provider {
+		return
+	}
+	dt.cloudProvider = provider
+	if len(dt.fsForm) == 0 {
+		return
+	}
+	newOpts := fsStorageOptionsFor(provider)
+	for i := range dt.fsForm {
+		if dt.fsForm[i].Key != "technology" {
+			continue
+		}
+		current := dt.fsForm[i].DisplayValue()
+		dt.fsForm[i].Options = newOpts
+		found := false
+		for j, opt := range newOpts {
+			if opt == current {
+				dt.fsForm[i].SelIdx = j
+				dt.fsForm[i].Value = opt
+				found = true
+				break
+			}
+		}
+		if !found {
+			dt.fsForm[i].SelIdx = 0
+			dt.fsForm[i].Value = newOpts[0]
+		}
+		break
+	}
+}
+
 // SetMigrationContext updates the backend languages used to filter migration tool
 // options. Refreshes the active governance form if it is open.
 func (dt *DataTabEditor) SetMigrationContext(langs []string) {
@@ -203,9 +256,38 @@ func (dt *DataTabEditor) SetDTONames(names []string) {
 }
 
 // SetEnvironmentNames injects environment names from the infra tab so that
-// database forms show an environment selector dropdown.
+// database forms and file storage forms show an environment selector dropdown.
 func (dt *DataTabEditor) SetEnvironmentNames(names []string) {
 	dt.dbEditor.SetEnvironmentNames(names)
+	if stringSlicesEqual(dt.environmentNames, names) {
+		return
+	}
+	dt.environmentNames = names
+	if len(dt.fsForm) == 0 {
+		return
+	}
+	opts, defaultVal := noneOrPlaceholder(names, "(no environments configured)")
+	for i := range dt.fsForm {
+		if dt.fsForm[i].Key != "environment" {
+			continue
+		}
+		current := dt.fsForm[i].DisplayValue()
+		dt.fsForm[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				dt.fsForm[i].SelIdx = j
+				dt.fsForm[i].Value = opt
+				found = true
+				break
+			}
+		}
+		if !found {
+			dt.fsForm[i].SelIdx = 0
+			dt.fsForm[i].Value = defaultVal
+		}
+		break
+	}
 }
 
 // ── Governance form fields ─────────────────────────────────────────────────────
@@ -638,18 +720,74 @@ func (dt DataTabEditor) withRefreshedCachingDBs() DataTabEditor {
 	return dt
 }
 
-func defaultFSFormFields(serviceOptions, domainOptions []string) []Field {
+// strategyOptionsForLayer returns the valid caching strategy options for a given layer.
+// CDN caching only supports read-oriented and CDN-specific strategies;
+// application-level and dedicated cache do not expose CDN purge.
+func strategyOptionsForLayer(layer string) []string {
+	switch layer {
+	case "CDN":
+		return []string{"Cache-aside", "Read-through", "CDN purge"}
+	case "Application-level", "Dedicated cache":
+		return []string{"Cache-aside", "Read-through", "Write-through", "Write-behind"}
+	default:
+		return []string{"Cache-aside", "Read-through", "Write-through", "Write-behind", "CDN purge"}
+	}
+}
+
+// withRefreshedCachingStrategies returns a copy of the DataTabEditor with the
+// strategy multiselect options filtered to those valid for the currently selected layer.
+// Existing selections that are no longer valid are dropped.
+func (dt DataTabEditor) withRefreshedCachingStrategies() DataTabEditor {
+	layer := fieldGet(dt.cachingForm, "layer")
+	validOpts := strategyOptionsForLayer(layer)
+
+	newFields := make([]Field, len(dt.cachingForm))
+	copy(newFields, dt.cachingForm)
+	for i := range newFields {
+		if newFields[i].Key != "strategy" {
+			continue
+		}
+		oldOpts := newFields[i].Options
+		newFields[i].Options = validOpts
+		// Re-map selected indices, dropping any that are no longer valid
+		newSelected := make([]int, 0, len(newFields[i].SelectedIdxs))
+		for _, oldIdx := range newFields[i].SelectedIdxs {
+			if oldIdx >= len(oldOpts) {
+				continue
+			}
+			oldVal := oldOpts[oldIdx]
+			for j, opt := range validOpts {
+				if opt == oldVal {
+					newSelected = append(newSelected, j)
+					break
+				}
+			}
+		}
+		newFields[i].SelectedIdxs = newSelected
+		// Clamp DDCursor
+		if newFields[i].DDCursor >= len(validOpts) {
+			newFields[i].DDCursor = 0
+		}
+		break
+	}
+	dt.cachingForm = newFields
+	return dt
+}
+
+func defaultFSFormFields(domainOptions []string, cloudProvider string, environmentNames []string) []Field {
+	techOpts := fsStorageOptionsFor(cloudProvider)
+	envOpts, envDefault := noneOrPlaceholder(environmentNames, "(no environments configured)")
 	return []Field{
 		{
 			Key: "technology", Label: "technology    ", Kind: KindSelect,
-			Options: []string{"S3", "GCS", "Azure Blob", "MinIO", "Cloudflare R2", "Local disk"},
-			Value:   "S3",
+			Options: techOpts,
+			Value:   techOpts[0],
 		},
 		{Key: "purpose", Label: "purpose       ", Kind: KindText},
 		{
-			Key: "service", Label: "service       ", Kind: KindSelect,
-			Options: serviceOptions,
-			Value:   placeholderFor(serviceOptions, "(no services configured)"),
+			Key: "environment", Label: "environment   ", Kind: KindSelect,
+			Options: envOpts,
+			Value:   envDefault,
 		},
 		{
 			Key: "access", Label: "access        ", Kind: KindSelect,
@@ -678,11 +816,11 @@ func defaultFSFormFields(serviceOptions, domainOptions []string) []Field {
 	}
 }
 
-func fsFormFromDef(def manifest.FileStorageDef, serviceOptions, domainOptions []string) []Field {
-	f := defaultFSFormFields(serviceOptions, domainOptions)
+func fsFormFromDef(def manifest.FileStorageDef, domainOptions []string, cloudProvider string, environmentNames []string) []Field {
+	f := defaultFSFormFields(domainOptions, cloudProvider, environmentNames)
 	f = setFieldValue(f, "technology", def.Technology)
 	f = setFieldValue(f, "purpose", def.Purpose)
-	f = setFieldValue(f, "service", def.Service)
+	f = setFieldValue(f, "environment", def.Environment)
 	if def.Access != "" {
 		f = setFieldValue(f, "access", def.Access)
 	}
@@ -711,7 +849,7 @@ func fsDefFromForm(fields []Field) manifest.FileStorageDef {
 	return manifest.FileStorageDef{
 		Technology:   fieldGet(fields, "technology"),
 		Purpose:      fieldGet(fields, "purpose"),
-		Service:      fieldGet(fields, "service"),
+		Environment:  fieldGet(fields, "environment"),
 		Access:       fieldGet(fields, "access"),
 		MaxSize:      fieldGet(fields, "max_size"),
 		Domains:      fieldGetMulti(fields, "domains"),

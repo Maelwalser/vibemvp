@@ -65,6 +65,7 @@ func (dt DataTabEditor) updateCachingForm(key tea.KeyMsg) (DataTabEditor, tea.Cm
 	// Refresh dynamic options
 	dt = dt.withRefreshedCachingEntities()
 	dt = dt.withRefreshedCachingDBs()
+	dt = dt.withRefreshedCachingStrategies()
 	switch key.String() {
 	case "j", "down":
 		dt.cachingFormIdx = nextCachingFormIdx(dt.cachingForm, dt.cachingFormIdx)
@@ -256,7 +257,7 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 	case "a":
 		dt.fileStorages = append(dt.fileStorages, manifest.FileStorageDef{})
 		dt.fsIdx = len(dt.fileStorages) - 1
-		dt.fsForm = defaultFSFormFields(dt.serviceNames, dt.domainNames())
+		dt.fsForm = defaultFSFormFields(dt.domainNames(), dt.cloudProvider, dt.environmentNames)
 		existing := make([]string, 0, len(dt.fileStorages)-1)
 		for i, fs := range dt.fileStorages {
 			if i != dt.fsIdx {
@@ -275,7 +276,7 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		}
 	case "enter":
 		if n > 0 {
-			dt.fsForm = fsFormFromDef(dt.fileStorages[dt.fsIdx], dt.serviceNames, dt.domainNames())
+			dt.fsForm = fsFormFromDef(dt.fileStorages[dt.fsIdx], dt.domainNames(), dt.cloudProvider, dt.environmentNames)
 			dt.fsFormIdx = 0
 			dt.fsSubView = fsViewForm
 		}
@@ -351,6 +352,7 @@ func (dt DataTabEditor) viewCaching(w int) []string {
 	case cachingViewForm:
 		dt = dt.withRefreshedCachingEntities()
 		dt = dt.withRefreshedCachingDBs()
+		dt = dt.withRefreshedCachingStrategies()
 		name := fieldGet(dt.cachingForm, "name")
 		if name == "" {
 			name = "(new strategy)"

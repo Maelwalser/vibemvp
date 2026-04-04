@@ -72,6 +72,55 @@ func seoRenderOptions(platform, metaFramework string) []string {
 	return []string{"SSR", "SSG", "Prerender", "None"}
 }
 
+// metaFrameworkSupportsSSRSSG returns true when the given meta-framework can
+// perform server-side or static-site rendering, making "Instant (SSR/SSG)" a
+// valid page loading strategy.
+func metaFrameworkSupportsSSRSSG(metaFramework string) bool {
+	switch metaFramework {
+	case "Next.js", "Nuxt", "SvelteKit", "Remix", "Astro":
+		return true
+	}
+	return false
+}
+
+// loadingOptions returns the valid page loading strategy options given the
+// current meta-framework selection.
+func loadingOptions(metaFramework string) []string {
+	if metaFrameworkSupportsSSRSSG(metaFramework) {
+		return []string{"Skeleton", "Spinner", "Progressive", "Instant (SSR/SSG)"}
+	}
+	return []string{"Skeleton", "Spinner", "Progressive"}
+}
+
+// refreshLoadingOptions rebuilds the Options (and clamps SelIdx/Value) for the
+// loading field inside the supplied page form field slice.
+func refreshLoadingOptions(fields []Field, metaFramework string) []Field {
+	opts := loadingOptions(metaFramework)
+	updated := make([]Field, len(fields))
+	copy(updated, fields)
+	for i, f := range updated {
+		if f.Key != "loading" {
+			continue
+		}
+		f.Options = opts
+		found := false
+		for j, o := range opts {
+			if o == f.Value {
+				f.SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.SelIdx = 0
+			f.Value = opts[0]
+		}
+		updated[i] = f
+		break
+	}
+	return updated
+}
+
 // refreshSEORenderOptions rebuilds the Options (and clamps SelIdx/Value) for the
 // seo_render_strategy field inside the supplied a11y field slice.
 func refreshSEORenderOptions(fields []Field, platform, metaFramework string) []Field {
@@ -284,7 +333,7 @@ func defaultFEThemeFields() []Field {
 	}
 }
 
-func defaultPageFormFields(authRoleOptions, linkedPageOptions, assetNameOptions, componentNameOptions []string) []Field {
+func defaultPageFormFields(metaFramework string, authRoleOptions, linkedPageOptions, assetNameOptions, componentNameOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "route", Label: "route         ", Kind: KindText},
@@ -309,8 +358,8 @@ func defaultPageFormFields(authRoleOptions, linkedPageOptions, assetNameOptions,
 		{Key: "description", Label: "description   ", Kind: KindText},
 		{Key: "core_actions", Label: "core_actions  ", Kind: KindText},
 		{
-			Key: "loading", Label: "loading       ", Kind: KindSelect,
-			Options: []string{"Skeleton", "Spinner", "Progressive", "Instant (SSR/SSG)"},
+			Key:     "loading", Label: "loading       ", Kind: KindSelect,
+			Options: loadingOptions(metaFramework),
 			Value:   "Skeleton",
 		},
 		{
@@ -854,6 +903,10 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	} else {
 		fe.setTechFieldOptions("meta_framework", []string{"None"})
 	}
+
+	// loading ← meta_framework (Instant (SSR/SSG) only valid when meta-framework supports it)
+	metaFramework := fieldGet(fe.techFields, "meta_framework")
+	fe.pageForm = refreshLoadingOptions(fe.pageForm, metaFramework)
 
 	// meta_tag_injection ← framework
 	fe.a11yFields = refreshMetaTagOptions(fe.a11yFields, framework)

@@ -28,7 +28,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	case "a":
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
-		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames(), fe.componentNames())
+		fe.pageForm = defaultPageFormFields(fieldGet(fe.techFields, "meta_framework"), fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames(), fe.componentNames())
 		existing := make([]string, 0, len(fe.pages)-1)
 		for i, p := range fe.pages {
 			if i != fe.pageIdx {
@@ -58,7 +58,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 					otherRoutes = append(otherRoutes, pg.Route)
 				}
 			}
-			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes, fe.assetNames(), fe.componentNames())
+			fe.pageForm = defaultPageFormFields(fieldGet(fe.techFields, "meta_framework"), fe.availableAuthRoles, otherRoutes, fe.assetNames(), fe.componentNames())
 			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
 			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
 			if p.Purpose != "" {

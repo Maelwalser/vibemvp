@@ -134,6 +134,12 @@ func (ie InfraEditor) PrimaryOrchestrator() string {
 	return ""
 }
 
+// PrimaryCloudProvider returns the cloud_provider of the first environment,
+// for use by other editors that need to narrow their options by cloud provider.
+func (ie InfraEditor) PrimaryCloudProvider() string {
+	return ie.primaryCloudProvider()
+}
+
 // primaryCloudProvider returns the cloud_provider of the first environment for
 // narrowing networking/cicd/obs option lists.
 func (ie InfraEditor) primaryCloudProvider() string {
@@ -298,7 +304,7 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 		return ie, nil
 	}
 
-	if ie.dd.Open {
+	if ie.dd.Open && ie.activeTab != infraTabEnvironments {
 		return ie.updateInfraDropdown(key)
 	}
 
