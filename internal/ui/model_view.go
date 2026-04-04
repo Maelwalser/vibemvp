@@ -46,6 +46,9 @@ func (m Model) View() string {
 }
 
 func (m Model) renderBaseView() string {
+	if m.realize.show {
+		return m.renderRealizeFullScreen()
+	}
 	var b strings.Builder
 	w := m.width
 	b.WriteString(m.renderHeader(w))
@@ -57,6 +60,18 @@ func (m Model) renderBaseView() string {
 	b.WriteString("\n")
 	b.WriteString(m.renderCmdLine(w))
 	return b.String()
+}
+
+func (m Model) renderRealizeFullScreen() string {
+	w, h := m.width, m.height
+	// Reserve 1 line at the bottom for the hint bar.
+	contentH := h - 1
+	if contentH < 1 {
+		contentH = 1
+	}
+	content := m.realize.screen.View(w, contentH)
+	hint := m.realize.screen.HintLine()
+	return content + "\n" + hint
 }
 
 func (m Model) renderHeader(w int) string {
