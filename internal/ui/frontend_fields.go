@@ -600,6 +600,21 @@ var feBundleOptByLanguage = map[string][]string{
 	"Swift":      {"None"},
 }
 
+var i18nLibByFramework = map[string][]string{
+	"React":                       {"react-i18next", "next-intl", "LinguiJS", "i18next", "Custom", "None"},
+	"Vue":                         {"vue-i18n", "i18next", "Custom", "None"},
+	"Svelte":                      {"svelte-i18n", "i18next", "Custom", "None"},
+	"Angular":                     {"@angular/localize", "ngx-translate", "Custom", "None"},
+	"Solid":                       {"i18next", "Custom", "None"},
+	"Qwik":                        {"i18next", "Custom", "None"},
+	"HTMX":                        {"i18next", "Custom", "None"},
+	"Flutter":                     {"flutter_localizations", "Custom", "None"},
+	"Jetpack Compose":             {"Android Localization", "Custom", "None"},
+	"KMP (Compose Multiplatform)": {"Lyricist", "Custom", "None"},
+	"SwiftUI":                     {"Swift Localization", "Custom", "None"},
+	"UIKit":                       {"Swift Localization", "Custom", "None"},
+}
+
 var feImageOptByPlatform = map[string][]string{
 	"Web (SPA)":               {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
 	"Web (SSR/SSG)":           {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
@@ -630,6 +645,31 @@ func (fe *FrontendEditor) setTechFieldOptions(key string, opts []string) {
 		if !found && len(opts) > 0 {
 			fe.techFields[i].SelIdx = 0
 			fe.techFields[i].Value = opts[0]
+		}
+		return
+	}
+}
+
+// setI18nFieldOptions updates an i18n field's options, preserving the current
+// value when it is still valid, or resetting to the first option otherwise.
+func (fe *FrontendEditor) setI18nFieldOptions(key string, opts []string) {
+	for i := range fe.i18nFields {
+		if fe.i18nFields[i].Key != key {
+			continue
+		}
+		current := fe.i18nFields[i].Value
+		fe.i18nFields[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				fe.i18nFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			fe.i18nFields[i].SelIdx = 0
+			fe.i18nFields[i].Value = opts[0]
 		}
 		return
 	}
@@ -759,6 +799,13 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 		fe.setTechFieldOptions("realtime", []string{"SSE", "WebSocket", "Polling", "None"})
 	}
 	// else: keep static options with "None" default
+
+	// translation_strategy ← framework
+	if opts, ok := i18nLibByFramework[framework]; ok {
+		fe.setI18nFieldOptions("translation_strategy", opts)
+	} else {
+		fe.setI18nFieldOptions("translation_strategy", []string{"i18next", "Custom", "None"})
+	}
 
 }
 
