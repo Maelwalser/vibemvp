@@ -74,10 +74,17 @@ if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; th
   info "Verifying checksum…"
   curl -fsSL "$CHECKSUM_URL" -o "${TMPDIR}/checksums.txt" 2>/dev/null || true
   if [ -s "${TMPDIR}/checksums.txt" ]; then
-    (cd "$TMPDIR" && grep "${TARBALL}" checksums.txt | \
-      (command -v sha256sum >/dev/null 2>&1 && sha256sum --check --status || shasum -a 256 --check --status)) \
-      || err "Checksum verification failed — download may be corrupted."
-    ok "Checksum verified"
+    CHECKSUM_LINE=$(grep "${TARBALL}" "${TMPDIR}/checksums.txt" || true)
+    if [ -n "$CHECKSUM_LINE" ]; then
+      if command -v sha256sum >/dev/null 2>&1; then
+        echo "$CHECKSUM_LINE" | (cd "$TMPDIR" && sha256sum --check --status) \
+          || err "Checksum verification failed — download may be corrupted."
+      else
+        echo "$CHECKSUM_LINE" | (cd "$TMPDIR" && shasum -a 256 --check --status) \
+          || err "Checksum verification failed — download may be corrupted."
+      fi
+      ok "Checksum verified"
+    fi
   fi
 fi
 
