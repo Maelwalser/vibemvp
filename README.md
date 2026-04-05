@@ -24,28 +24,9 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and a Tokyo 
 
 ## Installation
 
-**Requirements:** Go 1.26.1+
-
-```bash
-git clone <repo-url>
-cd ui
-go build ./cmd/agent   # TUI editor
-go build ./cmd/realize # Code generation engine
 ```
 
 ---
-
-## Quick Start
-
-```bash
-# Launch the TUI
-./agent
-
-# Fill in the sections, then save with :w or Ctrl+S
-# A manifest.json is written to the current directory
-
-# Generate code from the manifest
-./realize --manifest manifest.json --output ./output
 ```
 
 ---
