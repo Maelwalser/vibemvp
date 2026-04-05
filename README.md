@@ -1,28 +1,25 @@
-# VibeMenu
-                                                                            
+# VibeMenu                                                                     
 What vibe is on the menu today?
+
+<img width="1900" height="1140" alt="Pasted image" src="https://github.com/user-attachments/assets/4c636af3-6a08-4acb-b7f1-07e6e4965c7e" />
+
 
 A TUI for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
 
-(Still in development, may have issues; TODO Final task in flow needs fixing)
 
----
+(Still in development, may have issues; TODO Final task in flow needs fixing)
 
 ## Table of Contents
 
 - [Installation](#installation)
-- [Quick Start](#quick-start)
 - [The TUI Editor](#the-tui-editor)
-  - [Key Bindings](#key-bindings)
   - [Sections Overview](#sections-overview)
 - [manifest.json Reference](#manifestjson-reference)
 - [Provider Configuration](#provider-configuration)
 - [Code Generation (`realize`)](#code-generation-realize)
-  - [CLI Flags](#cli-flags)
   - [Model Tiering](#model-tiering)
 - [Skills System](#skills-system)
 
----
 
 ## Installation
 
