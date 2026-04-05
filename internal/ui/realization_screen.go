@@ -72,6 +72,11 @@ var (
 	styleRealizeStatus = lipgloss.NewStyle().
 				Foreground(lipgloss.Color(clrComment))
 
+	styleProgressFill  = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue))
+	styleProgressEmpty = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
+	styleProgressLabel = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
+	styleProgressDone  = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen))
+
 	styleLogStart = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(clrCyan))
 
@@ -104,14 +109,16 @@ var (
 
 // RealizationScreen is shown in the content area while the realize agent runs.
 type RealizationScreen struct {
-	appName   string
-	logs      []logEntry
-	done      bool
-	err       error
-	frame     int
-	logCh     chan string
-	cancelFn  context.CancelFunc
-	wantsQuit bool
+	appName    string
+	logs       []logEntry
+	done       bool
+	err        error
+	frame      int
+	logCh      chan string
+	cancelFn   context.CancelFunc
+	wantsQuit  bool
+	totalTasks int
+	doneTasks  int
 }
 
 func newRealizationScreen() RealizationScreen {
@@ -195,6 +202,7 @@ func (s RealizationScreen) Update(msg tea.Msg) (RealizationScreen, tea.Cmd) {
 	case realizeLogMsg:
 		text := string(m)
 		s.logs = append(s.logs, logEntry{text: text, kind: classifyLog(text)})
+		s.trackProgress(text)
 		return s, s.waitForLog()
 
 	case realizeDoneMsg:
@@ -237,6 +245,54 @@ func (s RealizationScreen) HintLine() string {
 		return hintBar("q", "quit")
 	}
 	return hintBar("Esc", "cancel")
+}
+
+// trackProgress extracts task count and completion events from log lines.
+func (s *RealizationScreen) trackProgress(text string) {
+	// "realize: starting N tasks across M wave(s)" → total
+	if s.totalTasks == 0 && strings.HasPrefix(text, "realize: starting ") {
+		var n int
+		if _, err := fmt.Sscanf(text, "realize: starting %d", &n); err == nil && n > 0 {
+			s.totalTasks = n
+		}
+		return
+	}
+	// "[taskID] done (N files)" or "[taskID] skipping (already completed)"
+	if strings.Contains(text, "] done (") ||
+		(strings.Contains(text, "] skipping") && strings.Contains(text, "already completed")) {
+		s.doneTasks++
+	}
+}
+
+// renderProgressBar renders a filled/empty block progress bar with a task counter.
+func renderProgressBar(done, total, w int) string {
+	label := fmt.Sprintf(" %d / %d tasks", done, total)
+	barW := w - len([]rune(label)) - 6 // 2 padding + "[" + "]" + 1 space
+	if barW < 4 {
+		barW = 4
+	}
+
+	filled := 0
+	if total > 0 {
+		filled = done * barW / total
+	}
+	if filled > barW {
+		filled = barW
+	}
+
+	fillStyle := styleProgressFill
+	if done >= total {
+		fillStyle = styleProgressDone
+	}
+
+	bar := fillStyle.Render(strings.Repeat("█", filled)) +
+		styleProgressEmpty.Render(strings.Repeat("░", barW-filled))
+
+	return "  " +
+		styleProgressEmpty.Render("[") +
+		bar +
+		styleProgressEmpty.Render("]") +
+		styleProgressLabel.Render(label)
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -327,11 +383,22 @@ func (s RealizationScreen) View(w, h int) string {
 			styleRealizeStatus.Render("realizing…  ") +
 			wave
 	}
-	lines = append(lines, statusLine, "")
+	lines = append(lines, statusLine)
+
+	// Progress bar — shown once the orchestrator reports total task count.
+	if s.totalTasks > 0 {
+		lines = append(lines, renderProgressBar(s.doneTasks, s.totalTasks, w))
+	}
+
+	lines = append(lines, "")
 
 	// Log area: fill remaining height with the most recent entries.
-	// Reserve 3 lines for header + status + blank.
-	logH := h - 3
+	// Reserve lines for header + status + blank (+ progress bar when visible).
+	reserved := 3
+	if s.totalTasks > 0 {
+		reserved = 4
+	}
+	logH := h - reserved
 	if logH < 0 {
 		logH = 0
 	}

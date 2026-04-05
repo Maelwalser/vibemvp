@@ -212,7 +212,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "realize: starting %d tasks across %d wave(s)\n",
+	o.log("realize: starting %d tasks across %d wave(s)",
 		len(d.Tasks), len(d.Levels()))
 
 	// Execute waves in order; tasks within each wave run in parallel.
