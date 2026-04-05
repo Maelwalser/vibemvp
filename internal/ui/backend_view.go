@@ -28,25 +28,25 @@ func (be BackendEditor) HintLine() string {
 	case beTabServices:
 		ed := be.serviceEditor
 		if ed.itemView == beListViewList {
-			return hintBar("j/k", "navigate", "a", "add service", "d", "delete", "Enter", "edit", "h/l", "sub-tab", "b", "change arch")
+			return hintBar("j/k", "navigate", "a", "add service", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab", "b", "change arch")
 		}
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back", "Tab", "next field")
 	case beTabComm:
 		ed := be.commEditor
 		if ed.itemView == beListViewList {
-			return hintBar("j/k", "navigate", "a", "add link", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add link", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		}
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	case beTabMessaging:
 		if be.eventEditor.itemView == beListViewForm {
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
-		return hintBar("j/k", "navigate", "Space", "cycle", "a", "add event", "d", "del event", "h/l", "sub-tab")
+		return hintBar("j/k", "navigate", "Space", "cycle", "a", "add event", "d", "del event", "u", "undo", "h/l", "sub-tab")
 	case beTabJobs:
 		if be.jobsSubView == beViewForm {
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
-		return hintBar("j/k", "navigate", "a", "add job queue", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		return hintBar("j/k", "navigate", "a", "add job queue", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 	case beTabAuth:
 		if !be.authEnabled {
 			return hintBar("a", "configure", "h/l", "sub-tab", "b", "change arch")
@@ -55,11 +55,11 @@ func (be BackendEditor) HintLine() string {
 		case beAuthViewConfig:
 			return hintBar("j/k", "navigate", "a/i/Enter", "edit", "r", "roles", "p", "permissions", "D", "reset", "h/l", "sub-tab")
 		case beAuthViewPermList:
-			return hintBar("j/k", "navigate", "a", "add perm", "d", "delete", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add perm", "d", "delete", "u", "undo", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
 		case beAuthViewPermForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "b/Esc", "back to list")
 		case beAuthViewRoleList:
-			return hintBar("j/k", "navigate", "a", "add role", "d", "delete", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add role", "d", "delete", "u", "undo", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
 		case beAuthViewRoleForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit text", "Space/Enter", "toggle perm", "b/Esc", "back to list")
 		}
@@ -73,7 +73,7 @@ func (be BackendEditor) HintLine() string {
 		if be.currentArch() != "monolith" {
 			ed := be.stackConfigEditor
 			if ed.itemView == beListViewList {
-				return hintBar("j/k", "navigate", "a", "add config", "d", "delete", "Enter", "edit", "h/l", "sub-tab", "b", "change arch")
+				return hintBar("j/k", "navigate", "a", "add config", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab", "b", "change arch")
 			}
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "b/Esc", "back", "Tab", "next field")
 		}

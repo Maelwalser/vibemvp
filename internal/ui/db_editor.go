@@ -39,6 +39,8 @@ type DBEditor struct {
 
 	width    int
 	envNames []string // injected from InfraPillar.Environments
+
+	undo UndoStack[[]manifest.DBSourceDef]
 }
 
 // SetEnvironmentNames injects environment names for the environment selector field
@@ -81,6 +83,7 @@ func (db DBEditor) HintLine() string {
 			StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),
 			StyleHelpKey.Render("a") + StyleHelpDesc.Render(" add database"),
 			StyleHelpKey.Render("d") + StyleHelpDesc.Render(" delete"),
+			StyleHelpKey.Render("u") + StyleHelpDesc.Render(" undo"),
 			StyleHelpKey.Render("Enter") + StyleHelpDesc.Render(" edit"),
 			StyleHelpKey.Render(":w") + StyleHelpDesc.Render(" save"),
 		}
@@ -214,14 +217,23 @@ func (db DBEditor) updateNormalList(key tea.KeyMsg) (DBEditor, tea.Cmd) {
 		if n > 0 {
 			db.srcIdx = n - 1
 		}
+	case "u":
+		if snap, ok := db.undo.Pop(); ok {
+			db.Sources = snap
+			if db.srcIdx >= len(db.Sources) && db.srcIdx > 0 {
+				db.srcIdx = len(db.Sources) - 1
+			}
+		}
 	case "d":
 		if n > 0 {
+			db.undo.Push(copySlice(db.Sources))
 			db.Sources = append(db.Sources[:db.srcIdx], db.Sources[db.srcIdx+1:]...)
 			if db.srcIdx >= len(db.Sources) && db.srcIdx > 0 {
 				db.srcIdx--
 			}
 		}
 	case "a":
+		db.undo.Push(copySlice(db.Sources))
 		db.Sources = append(db.Sources, manifest.DBSourceDef{
 			Type: manifest.DBPostgres,
 		})

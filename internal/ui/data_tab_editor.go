@@ -130,6 +130,12 @@ type DataTabEditor struct {
 	dd DropdownState
 
 	cBuf bool
+
+	// Per-subtab undo stacks (structural add/delete only)
+	domainsUndo UndoStack[[]manifest.DomainDef]
+	cachingUndo UndoStack[[]manifest.CachingConfig]
+	fsUndo      UndoStack[[]manifest.FileStorageDef]
+	govUndo     UndoStack[[]manifest.DataGovernanceConfig]
 }
 
 func newDataTabEditor() DataTabEditor {
@@ -256,7 +262,7 @@ func (dt DataTabEditor) HintLine() string {
 		}
 		switch dt.cachingSubView {
 		case cachingViewList:
-			return hintBar("j/k", "navigate", "a", "add strategy", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add strategy", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		case cachingViewForm:
 			return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "i/a", "edit", "b/Esc", "back")
 		}
@@ -269,7 +275,7 @@ func (dt DataTabEditor) HintLine() string {
 		}
 		switch dt.govSubView {
 		case govViewList:
-			return hintBar("j/k", "navigate", "a", "add policy", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add policy", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		case govViewForm:
 			return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "i/a", "edit", "b/Esc", "back")
 		}
@@ -284,7 +290,7 @@ func (dt DataTabEditor) domainHintLine() string {
 	}
 	switch dt.domainSubView {
 	case domainViewList:
-		return hintBar("j/k", "navigate", "a", "add domain", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		return hintBar("j/k", "navigate", "a", "add domain", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 	case domainViewForm:
 		return hintBar("j/k", "navigate", "i", "edit", "A", "attributes", "R", "relationships", "b", "back")
 	case domainViewAttrs:
@@ -306,7 +312,7 @@ func (dt DataTabEditor) fsHintLine() string {
 	}
 	switch dt.fsSubView {
 	case fsViewList:
-		return hintBar("j/k", "navigate", "a", "add storage", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		return hintBar("j/k", "navigate", "a", "add storage", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 	case fsViewForm:
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	}

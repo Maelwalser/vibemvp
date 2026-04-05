@@ -43,7 +43,15 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 		if ce.epIdx > 0 {
 			ce.epIdx--
 		}
+	case "u":
+		if snap, ok := ce.epsUndo.Pop(); ok {
+			ce.endpoints = snap
+			if ce.epIdx >= len(ce.endpoints) && ce.epIdx > 0 {
+				ce.epIdx = len(ce.endpoints) - 1
+			}
+		}
 	case "a":
+		ce.epsUndo.Push(copySlice(ce.endpoints))
 		ce.endpoints = append(ce.endpoints, manifest.EndpointDef{})
 		ce.epIdx = len(ce.endpoints) - 1
 		ce.epForm = defaultEndpointFormFields(ce.availableServices, ce.dtoNames(), ce.availableAuthRoles)
@@ -60,6 +68,7 @@ func (ce ContractsEditor) updateEPList(key tea.KeyMsg) (ContractsEditor, tea.Cmd
 		return ce.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			ce.epsUndo.Push(copySlice(ce.endpoints))
 			ce.endpoints = append(ce.endpoints[:ce.epIdx], ce.endpoints[ce.epIdx+1:]...)
 			if ce.epIdx > 0 && ce.epIdx >= len(ce.endpoints) {
 				ce.epIdx = len(ce.endpoints) - 1
@@ -267,7 +276,15 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		if ce.extIdx > 0 {
 			ce.extIdx--
 		}
+	case "u":
+		if snap, ok := ce.extUndo.Pop(); ok {
+			ce.externalAPIs = snap
+			if ce.extIdx >= len(ce.externalAPIs) && ce.extIdx > 0 {
+				ce.extIdx = len(ce.externalAPIs) - 1
+			}
+		}
 	case "a":
+		ce.extUndo.Push(copySlice(ce.externalAPIs))
 		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
 		ce.extIdx = len(ce.externalAPIs) - 1
 		ce.extForm = defaultExternalAPIFormFields()
@@ -283,6 +300,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		return ce.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			ce.extUndo.Push(copySlice(ce.externalAPIs))
 			ce.externalAPIs = append(ce.externalAPIs[:ce.extIdx], ce.externalAPIs[ce.extIdx+1:]...)
 			if ce.extIdx > 0 && ce.extIdx >= len(ce.externalAPIs) {
 				ce.extIdx = len(ce.externalAPIs) - 1

@@ -56,6 +56,9 @@ type InfraEditor struct {
 	// cloudProvider caches the last provider used to narrow networking/cicd/obs
 	// option lists, to avoid redundant field-slice rebuilds.
 	cloudProvider string
+
+	// Per-subtab undo stack (structural add/delete only)
+	envsUndo UndoStack[[]manifest.ServerEnvironmentDef]
 }
 
 func (ie InfraEditor) activeTabEnabled() bool {
@@ -293,7 +296,7 @@ func (ie InfraEditor) HintLine() string {
 		case envViewForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "b/Esc", "save & back", "h/l", "sub-tab")
 		default:
-			return hintBar("j/k", "navigate", "a", "add env", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add env", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		}
 	}
 	if !ie.activeTabEnabled() {
@@ -696,7 +699,15 @@ func (ie InfraEditor) updateEnvList(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 		if ie.envIdx > 0 {
 			ie.envIdx--
 		}
+	case "u":
+		if snap, ok := ie.envsUndo.Pop(); ok {
+			ie.envs = snap
+			if ie.envIdx >= len(ie.envs) && ie.envIdx > 0 {
+				ie.envIdx = len(ie.envs) - 1
+			}
+		}
 	case "a":
+		ie.envsUndo.Push(copySlice(ie.envs))
 		existing := make([]string, 0, len(ie.envs))
 		for _, e := range ie.envs {
 			existing = append(existing, e.Name)
@@ -718,6 +729,7 @@ func (ie InfraEditor) updateEnvList(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 		ie.SetCloudProvider(ie.primaryCloudProvider())
 	case "d":
 		if n > 0 {
+			ie.envsUndo.Push(copySlice(ie.envs))
 			ie.envs = append(ie.envs[:ie.envIdx], ie.envs[ie.envIdx+1:]...)
 			if ie.envIdx > 0 && ie.envIdx >= len(ie.envs) {
 				ie.envIdx = len(ie.envs) - 1

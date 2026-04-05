@@ -39,7 +39,15 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		if dt.domainIdx > 0 {
 			dt.domainIdx--
 		}
+	case "u":
+		if snap, ok := dt.domainsUndo.Pop(); ok {
+			dt.domains = snap
+			if dt.domainIdx >= len(dt.domains) && dt.domainIdx > 0 {
+				dt.domainIdx = len(dt.domains) - 1
+			}
+		}
 	case "a":
+		dt.domainsUndo.Push(copySlice(dt.domains))
 		dt.domains = append(dt.domains, manifest.DomainDef{})
 		dt.domainIdx = len(dt.domains) - 1
 		dt.domainForm = defaultDomainFormFields(dt.dbNames())
@@ -57,6 +65,7 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		return dt.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			dt.domainsUndo.Push(copySlice(dt.domains))
 			dt.domains = append(dt.domains[:dt.domainIdx], dt.domains[dt.domainIdx+1:]...)
 			if dt.domainIdx > 0 && dt.domainIdx >= len(dt.domains) {
 				dt.domainIdx = len(dt.domains) - 1

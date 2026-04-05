@@ -78,7 +78,15 @@ func (fe FrontendEditor) updateAssetList(key tea.KeyMsg) (FrontendEditor, tea.Cm
 		if fe.assetIdx > 0 {
 			fe.assetIdx--
 		}
+	case "u":
+		if snap, ok := fe.assetsUndo.Pop(); ok {
+			fe.assets = snap
+			if fe.assetIdx >= len(fe.assets) && fe.assetIdx > 0 {
+				fe.assetIdx = len(fe.assets) - 1
+			}
+		}
 	case "a":
+		fe.assetsUndo.Push(copySlice(fe.assets))
 		fe.assets = append(fe.assets, manifest.AssetDef{})
 		fe.assetIdx = len(fe.assets) - 1
 		fe.assetForm = newAssetForm(manifest.AssetDef{})
@@ -87,6 +95,7 @@ func (fe FrontendEditor) updateAssetList(key tea.KeyMsg) (FrontendEditor, tea.Cm
 		return fe.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			fe.assetsUndo.Push(copySlice(fe.assets))
 			fe.assets = append(fe.assets[:fe.assetIdx], fe.assets[fe.assetIdx+1:]...)
 			if fe.assetIdx > 0 && fe.assetIdx >= len(fe.assets) {
 				fe.assetIdx = len(fe.assets) - 1
