@@ -61,19 +61,20 @@ type archEnvGroup struct {
 
 // archDiagramData holds the raw render output plus metadata for colorization.
 type archDiagramData struct {
-	rawLines        []string
-	nodePositions   map[string]nodePos
-	edgeBoundsMap   map[string]edgeBounds
-	envGroups       []archEnvGroup
-	frontendNodes   []archNode
-	gatewayNodes    []archNode
-	serviceNodes    []archNode
-	brokerNodes     []archNode
-	dbNodes         []archNode
-	fsNodes         []archNode // file-storage nodes, stacked below dbNodes
-	extNodes        []archNode
-	selectedID      string
-	infoColorRanges []colorRange // priority-4 colors for the info panel
+	rawLines         []string
+	nodePositions    map[string]nodePos
+	edgeBoundsMap    map[string]edgeBounds
+	envGroups        []archEnvGroup
+	frontendNodes    []archNode
+	gatewayNodes     []archNode
+	serviceNodes     []archNode
+	brokerNodes      []archNode
+	dbNodes          []archNode
+	fsNodes          []archNode // file-storage nodes, stacked below dbNodes
+	extNodes         []archNode
+	selectedID       string
+	infoColorRanges  []colorRange // priority-4 colors for the info panel
+	labelColorRanges []colorRange // priority-2 colors for column/section header labels
 }
 
 // ── Screen state ──────────────────────────────────────────────────────────────
@@ -113,8 +114,15 @@ func (s ArchScreen) Open(mf *manifest.Manifest) ArchScreen {
 func (s ArchScreen) WantsQuit() bool { return s.wantsQuit }
 
 func (s ArchScreen) HintLine() string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).
-		Render("  h/l navigate · j/k cycle · H/L pan · g reset · q close")
+	hints := []string{
+		StyleHelpKey.Render("h/l") + StyleHelpDesc.Render(" navigate"),
+		StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" cycle"),
+		StyleHelpKey.Render("H/L") + StyleHelpDesc.Render(" pan"),
+		StyleHelpKey.Render("g") + StyleHelpDesc.Render(" reset"),
+		StyleHelpKey.Render("q") + StyleHelpDesc.Render(" close"),
+	}
+	sep := StyleHelpDesc.Render("  │  ")
+	return "  " + strings.Join(hints, sep)
 }
 
 func (s ArchScreen) Update(msg tea.Msg) (ArchScreen, tea.Cmd) {
@@ -1477,7 +1485,7 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 		infoPanelH = 3 + len(infoLines)
 	}
 
-	const headerRows = 3
+	const headerRows = 1
 	totalH := headerRows + mainH + infoPanelH + 4
 
 	totalW := col1X + col1W + margin
@@ -1493,22 +1501,33 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 
 	cv := newCanvas(totalW, totalH)
 
-	cv.writeStr(0, 0, "  Architecture Overview")
-	cv.hLine(0, 1, totalW-1)
-
 	yOff := headerRows
 
+	// Column header labels — colored amber via labelColorRanges.
+	var labelColorRanges []colorRange
+	addLabelRange := func(x, y int, text string) {
+		labelColorRanges = append(labelColorRanges, colorRange{
+			xStart: x, xEnd: x + len([]rune(text)),
+			yStart: y, yEnd: y + 1,
+			color: clrYellow, priority: 2,
+		})
+	}
+	labelRow := yOff - 1
 	if len(frontendNodes) > 0 {
-		cv.writeStr(col0X, yOff-1, "FRONTEND")
+		cv.writeStr(col0X, labelRow, "FRONTEND")
+		addLabelRange(col0X, labelRow, "FRONTEND")
 	}
 	if len(gatewayNodes) > 0 {
-		cv.writeStr(colGX, yOff-1, "API GATEWAY")
+		cv.writeStr(colGX, labelRow, "API GATEWAY")
+		addLabelRange(colGX, labelRow, "API GATEWAY")
 	}
 	if len(serviceNodes) > 0 {
-		cv.writeStr(col1X, yOff-1, "BACKEND LAYER")
+		cv.writeStr(col1X, labelRow, "BACKEND LAYER")
+		addLabelRange(col1X, labelRow, "BACKEND LAYER")
 	}
 	if len(brokerNodes) > 0 {
-		cv.writeStr(colBX, yOff-1, "MSG BROKER")
+		cv.writeStr(colBX, labelRow, "MSG BROKER")
+		addLabelRange(colBX, labelRow, "MSG BROKER")
 	}
 
 	// Step 1: compute positions
@@ -1525,18 +1544,21 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 	col4CurY := yOff
 	if len(dbNodes) > 0 {
 		cv.writeStr(col4X, col4CurY, "DATA SOURCES")
+		addLabelRange(col4X, col4CurY, "DATA SOURCES")
 		col4CurY++
 		computeColumnPositions(dbNodes, col4X, col4W, col4CurY, nodePositions)
 		col4CurY += columnHeight(dbNodes)
 	}
 	if len(fsNodes) > 0 {
 		cv.writeStr(col4X, col4CurY, "OBJECT STORAGE")
+		addLabelRange(col4X, col4CurY, "OBJECT STORAGE")
 		col4CurY++
 		computeColumnPositions(fsNodes, col4X, col4W, col4CurY, nodePositions)
 		col4CurY += columnHeight(fsNodes)
 	}
 	if len(extNodes) > 0 {
 		cv.writeStr(col4X, col4CurY, "EXTERNAL APIS")
+		addLabelRange(col4X, col4CurY, "EXTERNAL APIS")
 		col4CurY++
 		computeColumnPositions(extNodes, col4X, col4W, col4CurY, nodePositions)
 	}
@@ -1787,19 +1809,20 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 	}
 
 	return archDiagramData{
-		rawLines:        strings.Split(cv.render(), "\n"),
-		nodePositions:   nodePositions,
-		edgeBoundsMap:   edgeBoundsMap,
-		envGroups:       envGroups,
-		frontendNodes:   frontendNodes,
-		gatewayNodes:    gatewayNodes,
-		serviceNodes:    serviceNodes,
-		brokerNodes:     brokerNodes,
-		dbNodes:         dbNodes,
-		fsNodes:         fsNodes,
-		extNodes:        extNodes,
-		selectedID:      selectedID,
-		infoColorRanges: infoColorRanges,
+		rawLines:         strings.Split(cv.render(), "\n"),
+		nodePositions:    nodePositions,
+		edgeBoundsMap:    edgeBoundsMap,
+		envGroups:        envGroups,
+		frontendNodes:    frontendNodes,
+		gatewayNodes:     gatewayNodes,
+		serviceNodes:     serviceNodes,
+		brokerNodes:      brokerNodes,
+		dbNodes:          dbNodes,
+		fsNodes:          fsNodes,
+		extNodes:         extNodes,
+		selectedID:       selectedID,
+		infoColorRanges:  infoColorRanges,
+		labelColorRanges: labelColorRanges,
 	}
 }
 
@@ -2043,6 +2066,18 @@ func colorizeClipped(lines []string, data archDiagramData, scrollX, scrollY int)
 			yEnd:     eg.y + eg.h - scrollY,
 			color:    eg.color,
 			priority: 1,
+		})
+	}
+
+	// Label color ranges — priority 2 (column/section header labels)
+	for _, cr := range data.labelColorRanges {
+		ranges = append(ranges, colorRange{
+			xStart:   cr.xStart - scrollX,
+			xEnd:     cr.xEnd - scrollX,
+			yStart:   cr.yStart - scrollY,
+			yEnd:     cr.yEnd - scrollY,
+			color:    cr.color,
+			priority: cr.priority,
 		})
 	}
 
