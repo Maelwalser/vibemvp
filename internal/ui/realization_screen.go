@@ -17,7 +17,7 @@ var spinnerFrames = MatrixSpinnerFrames[:]
 
 // ── message types ─────────────────────────────────────────────────────────────
 
-type realizeLogMsg  string
+type realizeLogMsg string
 type realizeDoneMsg struct{ err error }
 type realizeTickMsg struct{}
 
@@ -124,13 +124,13 @@ func (s RealizationScreen) Start(manifestPath string, mf *manifest.Manifest) (Re
 	logCh := make(chan string, 512)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	s.logCh     = logCh
-	s.cancelFn  = cancel
-	s.appName   = mf.Realize.AppName
-	s.done      = false
-	s.err       = nil
-	s.logs      = nil
-	s.frame     = 0
+	s.logCh = logCh
+	s.cancelFn = cancel
+	s.appName = mf.Realize.AppName
+	s.done = false
+	s.err = nil
+	s.logs = nil
+	s.frame = 0
 	s.wantsQuit = false
 
 	opts := mf.Realize
@@ -260,14 +260,14 @@ func realizeHeaderBar(appName string, done bool, err error, w int) string {
 		innerW = 10
 	}
 
-	stateW := len([]rune(stateTag))   // approximate; lipgloss.Width is accurate
-	appW   := len([]rune(appTag))
+	stateW := len([]rune(stateTag)) // approximate; lipgloss.Width is accurate
+	appW := len([]rune(appTag))
 	_ = stateW
 	_ = appW
 
 	stateRendW := lipgloss.Width(stateTag)
-	appRendW   := lipgloss.Width(appTag)
-	dashCount  := innerW - stateRendW - appRendW - 2
+	appRendW := lipgloss.Width(appTag)
+	dashCount := innerW - stateRendW - appRendW - 2
 	if dashCount < 1 {
 		dashCount = 1
 	}

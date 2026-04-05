@@ -358,7 +358,7 @@ func defaultPageFormFields(metaFramework string, authRoleOptions, linkedPageOpti
 		{Key: "description", Label: "description   ", Kind: KindText},
 		{Key: "core_actions", Label: "core_actions  ", Kind: KindText},
 		{
-			Key:     "loading", Label: "loading       ", Kind: KindSelect,
+			Key: "loading", Label: "loading       ", Kind: KindSelect,
 			Options: loadingOptions(metaFramework),
 			Value:   "Skeleton",
 		},
@@ -401,7 +401,6 @@ func defaultComponentFormFields() []Field {
 		{Key: "description", Label: "description   ", Kind: KindText},
 	}
 }
-
 
 func defaultI18nFields() []Field {
 	return []Field{
@@ -499,7 +498,6 @@ func defaultNavFields() []Field {
 		},
 	}
 }
-
 
 // themeColorPalette is the curated set of hex colors offered in the Theme → colors picker.
 // Colors are grouped by hue family for easy visual scanning in the dropdown.
@@ -1017,4 +1015,3 @@ func (fe *FrontendEditor) updateFEDependentOptions() {
 	}
 
 }
-

@@ -165,12 +165,12 @@ const (
 type PatternTag = string
 
 const (
-	PatternTagDomain    PatternTag = "domain"
-	PatternTagInfra     PatternTag = "infra"
-	PatternTagBFF       PatternTag = "bff"
-	PatternTagGateway   PatternTag = "gateway"
-	PatternTagWorker    PatternTag = "worker"
-	PatternTagExternal  PatternTag = "external"
+	PatternTagDomain   PatternTag = "domain"
+	PatternTagInfra    PatternTag = "infra"
+	PatternTagBFF      PatternTag = "bff"
+	PatternTagGateway  PatternTag = "gateway"
+	PatternTagWorker   PatternTag = "worker"
+	PatternTagExternal PatternTag = "external"
 )
 
 // AuthStrategy enumerates valid values for AuthConfig.Strategy.

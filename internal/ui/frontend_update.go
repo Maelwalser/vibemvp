@@ -194,8 +194,6 @@ func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, te
 	return fe, nil
 }
 
-
-
 func (fe *FrontendEditor) saveCompForm() {
 	if fe.compIdx >= len(fe.components) {
 		return
@@ -259,7 +257,6 @@ func (fe *FrontendEditor) saveActionForm() {
 	a.CustomHandler = fieldGet(fe.actionForm, "custom_handler")
 	a.Description = fieldGet(fe.actionForm, "description")
 }
-
 
 func (fe FrontendEditor) updateCompForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	if fe.dd.Open {
@@ -676,4 +673,3 @@ func (fe FrontendEditor) View(w, h int) string {
 
 	return fillTildes(lines, h)
 }
-

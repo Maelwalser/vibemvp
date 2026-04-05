@@ -33,10 +33,10 @@ type InfraEditor struct {
 	obsEnabled bool
 
 	// Environments list+form (replaces the old flat env-topology form).
-	envs      []manifest.ServerEnvironmentDef
-	envIdx    int
-	envView   envView
-	envForm   []Field
+	envs       []manifest.ServerEnvironmentDef
+	envIdx     int
+	envView    envView
+	envForm    []Field
 	envFormIdx int
 
 	internalMode Mode

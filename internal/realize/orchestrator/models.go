@@ -132,30 +132,6 @@ func buildAgentWithModel(pa manifest.ProviderAssignment, model string, maxTokens
 
 // ── Provider selection ────────────────────────────────────────────────────────
 
-// resolveAgent returns a task-specific agent if the manifest has a provider
-// assignment for the task's section, otherwise returns the default agent.
-func resolveAgent(taskID string, providers manifest.ProviderAssignments, def agent.Agent, verbose bool) agent.Agent {
-	pa, ok := providerFor(taskID, providers)
-	if !ok || pa.Credential == "" {
-		return def
-	}
-	model := resolveModelID(pa.Provider, pa.Model, pa.Version)
-	switch pa.Provider {
-	case "Claude":
-		return agent.NewClaudeAgentWithKey(model, defaultMaxTokens, verbose, pa.Credential)
-	case "ChatGPT":
-		return agent.NewOpenAIAgent("https://api.openai.com", pa.Credential, model, defaultMaxTokens, verbose)
-	case "Gemini":
-		return agent.NewGeminiAgent(pa.Credential, model, defaultMaxTokens, verbose)
-	case "Mistral":
-		return agent.NewOpenAIAgent("https://api.mistral.ai", pa.Credential, model, defaultMaxTokens, verbose)
-	case "Llama":
-		return agent.NewOpenAIAgent("https://api.groq.com/openai", pa.Credential, model, defaultMaxTokens, verbose)
-	default:
-		return def
-	}
-}
-
 // providerFor returns the ProviderAssignment for the section that owns taskID.
 // Task IDs follow "<section>.<name>" or just "<section>".
 func providerFor(taskID string, providers manifest.ProviderAssignments) (manifest.ProviderAssignment, bool) {

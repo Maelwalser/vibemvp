@@ -722,4 +722,3 @@ func (ce ContractsEditor) View(w, h int) string {
 
 	return fillTildes(lines, h)
 }
-

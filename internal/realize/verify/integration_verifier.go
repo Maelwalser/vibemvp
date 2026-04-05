@@ -82,7 +82,7 @@ func RunIntegrationBuild(ctx context.Context, outputDir string) IntegrationResul
 // every directory containing a go.mod file, skipping hidden dirs and .tmp/.
 func findGoModDirsIntegration(root string) []string {
 	var dirs []string
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error { //nolint:errcheck
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -106,7 +106,7 @@ func findGoModDirsIntegration(root string) []string {
 // directory containing a tsconfig.json, skipping node_modules, .next, .tmp.
 func findTSDirsIntegration(root string) []string {
 	var dirs []string
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error { //nolint:errcheck
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}

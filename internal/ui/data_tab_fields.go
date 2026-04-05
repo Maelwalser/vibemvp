@@ -901,4 +901,3 @@ func fsDefFromForm(fields []Field) manifest.FileStorageDef {
 		AllowedTypes: fieldGetMulti(fields, "allowed_types"),
 	}
 }
-

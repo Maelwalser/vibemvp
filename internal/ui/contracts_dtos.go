@@ -132,7 +132,6 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	return ce, nil
 }
 
-
 func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cmd) {
 	visible := ce.visibleDTOFields()
 	switch key.String() {
@@ -518,4 +517,3 @@ func (ce ContractsEditor) DTOProtocols() []string {
 	}
 	return result
 }
-

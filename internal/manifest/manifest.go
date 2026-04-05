@@ -53,12 +53,12 @@ func (r RealizeOptions) isEmpty() bool {
 
 // RealizeOptions holds configuration for the code-generation agent run.
 type RealizeOptions struct {
-	AppName      string            `json:"app_name"`
-	OutputDir    string            `json:"output_dir"`
-	Model        string            `json:"model,omitempty"`           // kept for CLI backward compat
-	Concurrency  int               `json:"concurrency"`
-	Verify       bool              `json:"verify"`
-	DryRun       bool              `json:"dry_run"`
+	AppName       string            `json:"app_name"`
+	OutputDir     string            `json:"output_dir"`
+	Model         string            `json:"model,omitempty"` // kept for CLI backward compat
+	Concurrency   int               `json:"concurrency"`
+	Verify        bool              `json:"verify"`
+	DryRun        bool              `json:"dry_run"`
 	SectionModels map[string]string `json:"section_models,omitempty"` // kept for backward compat
 	// Provider and tier model assignments (set via the Realize tab UI).
 	Provider   string `json:"provider,omitempty"`    // provider label (e.g. "Claude", "Gemini")
@@ -162,10 +162,10 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 		Realize             *RealizeOptions     `json:"realize,omitempty"`
 		ConfiguredProviders ProviderAssignments `json:"configured_providers,omitempty"`
 		// Legacy fields retained for backward compatibility.
-		Databases []DBSourceDef   `json:"databases,omitempty"`
-		Entities  []EntityDef     `json:"entities,omitempty"`
-		Testing   *TestingPillar  `json:"testing,omitempty"`
-		CICD      *CICDPillar     `json:"cicd,omitempty"`
+		Databases []DBSourceDef    `json:"databases,omitempty"`
+		Entities  []EntityDef      `json:"entities,omitempty"`
+		Testing   *TestingPillar   `json:"testing,omitempty"`
+		CICD      *CICDPillar      `json:"cicd,omitempty"`
 		Telemetry *TelemetryPillar `json:"telemetry,omitempty"`
 	}
 

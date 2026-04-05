@@ -272,4 +272,3 @@ func isEntFormFieldDisabled(form []Field, idx int) bool {
 
 func nextEntFormIdx(form []Field, cur int) int { return nextFormIdx(form, cur, isEntFormFieldDisabled) }
 func prevEntFormIdx(form []Field, cur int) int { return prevFormIdx(form, cur, isEntFormFieldDisabled) }
-

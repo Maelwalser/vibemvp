@@ -39,9 +39,6 @@ var sharpBorder = lipgloss.Border{
 	BottomRight: "┘",
 }
 
-// heavyRoundBorder kept for compat — mapped to sharp style.
-var heavyRoundBorder = sharpBorder
-
 // activeBorder — heavy weight for the active / focused pane.
 var activeBorder = lipgloss.Border{
 	Top:         "━",
@@ -53,9 +50,6 @@ var activeBorder = lipgloss.Border{
 	BottomLeft:  "└",
 	BottomRight: "┘",
 }
-
-// panelBorderActive kept for compat.
-var panelBorderActive = activeBorder
 
 var (
 	// Mode indicator pills — high-contrast badges.
@@ -109,8 +103,8 @@ var (
 			Foreground(lipgloss.Color(clrFgDim))
 
 	StyleCurLineNum = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(clrYellow)).
-				Bold(true)
+			Foreground(lipgloss.Color(clrYellow)).
+			Bold(true)
 
 	StyleCurLine = lipgloss.NewStyle().
 			Background(lipgloss.Color(clrBgHL))
@@ -233,12 +227,12 @@ var (
 			Bold(true)
 
 	StyleNeonViolet = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(clrViolet)).
-				Bold(true)
+			Foreground(lipgloss.Color(clrViolet)).
+			Bold(true)
 
 	StyleNeonOrange = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(clrOrange)).
-				Bold(true)
+			Foreground(lipgloss.Color(clrOrange)).
+			Bold(true)
 
 	StyleNeonTeal = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(clrTeal)).

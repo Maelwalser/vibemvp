@@ -76,8 +76,8 @@ type Model struct {
 	crossCutEditor    CrossCutEditor
 	realizeEditor     RealizeEditor
 
-	cmd    cmdState
-	modal  modalState
+	cmd     cmdState
+	modal   modalState
 	realize realizeState
 
 	filePath      string // active save path; empty = use onSave callback default
@@ -91,7 +91,7 @@ func NewModel(onSave SaveFunc) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
-	ti.CursorStyle = StyleCursor
+	ti.Cursor.Style = StyleCursor
 	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 
 	ta := textarea.New()
@@ -506,13 +506,13 @@ func (m Model) execSave() (tea.Model, tea.Cmd) {
 func (m Model) BuildManifest() *manifest.Manifest {
 	dataPillar := m.dataTabEditor.ToManifestDataPillar()
 	return &manifest.Manifest{
-		Description: m.descriptionEditor.Value(),
-		Data:        dataPillar,
-		Backend:   m.backendEditor.ToManifest(),
-		Contracts: m.contractsEditor.ToManifestContractsPillar(),
-		Frontend:  m.frontendEditor.ToManifestFrontendPillar(),
-		Infra:     m.infraEditor.ToManifestInfraPillar(),
-		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
+		Description:         m.descriptionEditor.Value(),
+		Data:                dataPillar,
+		Backend:             m.backendEditor.ToManifest(),
+		Contracts:           m.contractsEditor.ToManifestContractsPillar(),
+		Frontend:            m.frontendEditor.ToManifestFrontendPillar(),
+		Infra:               m.infraEditor.ToManifestInfraPillar(),
+		CrossCut:            m.crossCutEditor.ToManifestCrossCutPillar(),
 		Realize:             m.realizeEditor.ToManifestRealizeOptions(),
 		ConfiguredProviders: m.modal.menu.ToManifestConfiguredProviders(),
 
@@ -538,4 +538,3 @@ func (m Model) contentHeight() int {
 
 const minTermWidth = 60
 const minTermHeight = 12
-

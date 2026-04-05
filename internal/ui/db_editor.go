@@ -37,8 +37,8 @@ type DBEditor struct {
 	dd   DropdownState
 	cBuf bool
 
-	width        int
-	envNames     []string // injected from InfraPillar.Environments
+	width    int
+	envNames []string // injected from InfraPillar.Environments
 }
 
 // SetEnvironmentNames injects environment names for the environment selector field
@@ -52,7 +52,7 @@ func newDBEditor() DBEditor {
 	fi := textinput.New()
 	fi.Prompt = ""
 	fi.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
-	fi.CursorStyle = StyleCursor
+	fi.Cursor.Style = StyleCursor
 	fi.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 
 	return DBEditor{

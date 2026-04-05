@@ -979,28 +979,3 @@ func (be BackendEditor) withDTONames(fields []Field) []Field {
 	}
 	return out
 }
-
-// withDomainNames returns a copy of fields where the domain field is upgraded to
-// a KindSelect dropdown populated with the available domain names.
-func (be BackendEditor) withDomainNames(fields []Field) []Field {
-	names := be.DomainNames
-	out := copyFields(fields)
-	for i := range out {
-		if out[i].Key == "domain" {
-			out[i].Kind = KindSelect
-			out[i].Options = names
-			out[i].Value = placeholderFor(names, "(no domains configured)")
-			out[i].SelIdx = 0
-			for j, n := range names {
-				if n == out[i].Value {
-					out[i].SelIdx = j
-					break
-				}
-			}
-			if len(names) > 0 && out[i].Value == "" {
-				out[i].Value = names[0]
-			}
-		}
-	}
-	return out
-}

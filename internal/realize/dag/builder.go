@@ -49,20 +49,6 @@ func serviceIDs(m *manifest.Manifest) []string {
 	}
 }
 
-// serviceAllLayerIDs returns all task IDs for a service (plan + deps + four layers).
-// Used by crosscut tasks that need to depend on every layer.
-func serviceAllLayerIDs(name string) []string {
-	slug := svcSlug(name)
-	return []string{
-		"svc." + slug + ".plan",
-		"svc." + slug + ".deps",
-		"svc." + slug + ".repository",
-		"svc." + slug + ".service",
-		"svc." + slug + ".handler",
-		"svc." + slug + ".bootstrap",
-	}
-}
-
 func svcBootstrapID(name string) string { return "svc." + svcSlug(name) + ".bootstrap" }
 func svcPlanID(name string) string      { return "svc." + svcSlug(name) + ".plan" }
 func svcDepsID(name string) string      { return "svc." + svcSlug(name) + ".deps" }
@@ -138,9 +124,9 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 	// Auth middleware generates Go code — it belongs alongside the backend module.
 	if m.Backend.Auth != nil && m.Backend.Auth.Strategy != "" {
 		add(d, &Task{
-			ID:    "backend.auth",
-			Kind:  TaskKindAuth,
-			Label: "Generate authentication middleware",
+			ID:           "backend.auth",
+			Kind:         TaskKindAuth,
+			Label:        "Generate authentication middleware",
 			Dependencies: dataDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,

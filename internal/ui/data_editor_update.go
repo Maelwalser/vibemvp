@@ -446,4 +446,3 @@ func (de DataEditor) enterFormInsert() (DataEditor, tea.Cmd) {
 	de.formInput.CursorEnd()
 	return de, de.formInput.Focus()
 }
-

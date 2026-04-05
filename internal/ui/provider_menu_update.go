@@ -165,4 +165,3 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 
 	return p, nil
 }
-

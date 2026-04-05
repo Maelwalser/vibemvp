@@ -471,7 +471,6 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 	}
 
 	var fields []Field
-	filteredActiveIdx := ed.formIdx
 	skippedBefore := 0
 	for i, f := range ed.form {
 		if be.isServiceFieldHidden(f.Key) {
@@ -482,7 +481,7 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 		}
 		fields = append(fields, f)
 	}
-	filteredActiveIdx = ed.formIdx - skippedBefore
+	filteredActiveIdx := ed.formIdx - skippedBefore
 	if filteredActiveIdx < 0 {
 		filteredActiveIdx = 0
 	}
@@ -654,4 +653,3 @@ func (be BackendEditor) viewMessaging(w int) []string {
 }
 
 // ── Jobs updates ──────────────────────────────────────────────────────────────
-

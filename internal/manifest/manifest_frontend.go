@@ -131,10 +131,10 @@ const (
 type AssetDef struct {
 	Name        string     `json:"name"`
 	Path        string     `json:"path"`
-	AssetType   string     `json:"asset_type"`          // image, icon, font, video, mockup, moodboard
-	Format      string     `json:"format"`              // png, jpg, svg, gif, mp4, pdf, figma, sketch, other
-	Usage       AssetUsage `json:"usage"`               // project | inspiration
-	Pages       string     `json:"pages,omitempty"`     // comma-separated page routes this asset is used on
+	AssetType   string     `json:"asset_type"`      // image, icon, font, video, mockup, moodboard
+	Format      string     `json:"format"`          // png, jpg, svg, gif, mp4, pdf, figma, sketch, other
+	Usage       AssetUsage `json:"usage"`           // project | inspiration
+	Pages       string     `json:"pages,omitempty"` // comma-separated page routes this asset is used on
 	Description string     `json:"description,omitempty"`
 }
 

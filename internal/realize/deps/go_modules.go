@@ -258,8 +258,8 @@ func ValidateGoMod(ctx context.Context, goModContent string, goFiles map[string]
 	}
 	for path, content := range goFiles {
 		full := filepath.Join(tmpDir, path)
-		os.MkdirAll(filepath.Dir(full), 0755)
-		os.WriteFile(full, []byte(content), 0644)
+		_ = os.MkdirAll(filepath.Dir(full), 0755)
+		_ = os.WriteFile(full, []byte(content), 0644)
 	}
 
 	cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
@@ -343,7 +343,7 @@ func resolveGoDevToolVersion(ctx context.Context, t GoDevTool) GoDevTool {
 	modResp, err := http.DefaultClient.Do(modReq)
 	if err != nil || modResp.StatusCode != http.StatusOK {
 		if modResp != nil {
-			modResp.Body.Close()
+			_ = modResp.Body.Close()
 		}
 		return resolved
 	}

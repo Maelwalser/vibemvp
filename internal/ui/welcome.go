@@ -330,4 +330,3 @@ func (w WelcomeModel) View() string {
 
 	return lipgloss.Place(w.width, w.height, lipgloss.Center, lipgloss.Center, box)
 }
-

@@ -411,4 +411,3 @@ func (de DataEditor) viewColForm(w, h int) string {
 
 	return fillTildes(lines, h)
 }
-

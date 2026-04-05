@@ -479,7 +479,7 @@ func hintBar(pairs ...string) string {
 		return ""
 	}
 	var hints []string
-	for i := 0; i < len(pairs); i += 2 {
+	for i := 0; i+1 < len(pairs); i += 2 {
 		hints = append(hints, StyleHelpKey.Render(pairs[i])+StyleHelpDesc.Render(" "+pairs[i+1]))
 	}
 	sep := StyleHelpDesc.Render("  │  ")
@@ -495,7 +495,7 @@ func hintBarBg(bg lipgloss.Color, pairs ...string) string {
 	keyStyle := StyleHelpKey.Background(bg)
 	descStyle := StyleHelpDesc.Background(bg)
 	var hints []string
-	for i := 0; i < len(pairs); i += 2 {
+	for i := 0; i+1 < len(pairs); i += 2 {
 		hints = append(hints, keyStyle.Render(pairs[i])+descStyle.Render(" "+pairs[i+1]))
 	}
 	sep := descStyle.Render("  │  ")
@@ -694,7 +694,7 @@ func newFormInput() textinput.Model {
 	fi := textinput.New()
 	fi.Prompt = ""
 	fi.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
-	fi.CursorStyle = StyleCursor
+	fi.Cursor.Style = StyleCursor
 	fi.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 	return fi
 }
@@ -932,4 +932,3 @@ func withSidePanel(left string, artLines []string, leftW, artW, h int) string {
 	sb.WriteString("\n")
 	return sb.String()
 }
-

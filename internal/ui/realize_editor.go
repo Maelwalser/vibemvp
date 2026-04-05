@@ -449,7 +449,6 @@ var (
 const splitIdx = 5
 
 func (r RealizeEditor) View(w, h int) string {
-	r.width = w
 	r.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,

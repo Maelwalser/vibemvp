@@ -19,18 +19,16 @@ const (
 
 var contractsTabLabels = []string{"DTOs", "ENDPOINTS", "API VERSIONING", "EXTERNAL APIS"}
 
-
 // ── list-item sub-view ────────────────────────────────────────────────────────
 
 type ceSubView int
 
 const (
-	ceViewList     ceSubView = iota
-	ceViewForm               // top-level form
-	ceViewSubList            // sub-list (e.g., DTO fields, endpoint error responses)
-	ceViewSubForm            // sub-item form
+	ceViewList    ceSubView = iota
+	ceViewForm              // top-level form
+	ceViewSubList           // sub-list (e.g., DTO fields, endpoint error responses)
+	ceViewSubForm           // sub-item form
 )
-
 
 // ── ContractsEditor ───────────────────────────────────────────────────────────
 
@@ -74,12 +72,12 @@ type ContractsEditor struct {
 	extIntFormIdx int
 
 	// Cross-editor reference data (set by model.go before each Update)
-	availableDomains       []string               // from DataTabEditor.domainNames()
-	availableDomainDefs    []manifest.DomainDef   // from DataTabEditor.domains
-	availableServices      []string               // from BackendEditor.ServiceNames()
-	availableServiceDefs   []manifest.ServiceDef  // from BackendEditor.ServiceDefs()
-	availableAuthRoles     []string               // from BackendEditor.AuthRoleOptions()
-	wafRateLimitStrategy   string                 // from BackendEditor.WAFRateLimitStrategy()
+	availableDomains     []string              // from DataTabEditor.domainNames()
+	availableDomainDefs  []manifest.DomainDef  // from DataTabEditor.domains
+	availableServices    []string              // from BackendEditor.ServiceNames()
+	availableServiceDefs []manifest.ServiceDef // from BackendEditor.ServiceDefs()
+	availableAuthRoles   []string              // from BackendEditor.AuthRoleOptions()
+	wafRateLimitStrategy string                // from BackendEditor.WAFRateLimitStrategy()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	dd DropdownState
@@ -654,4 +652,3 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 	}
 	return ce, nil
 }
-

@@ -7,16 +7,16 @@ type FieldKind int
 
 const (
 	KindText        FieldKind = iota // single-line text input
-	KindSelect                      // cycle through a list of options
-	KindTextArea                    // multi-line text input
-	KindDataModel                   // sentinel: delegates to a sub-editor
-	KindMultiSelect                 // select multiple options from a list
+	KindSelect                       // cycle through a list of options
+	KindTextArea                     // multi-line text input
+	KindDataModel                    // sentinel: delegates to a sub-editor
+	KindMultiSelect                  // select multiple options from a list
 )
 
 // Field represents a single form field within a section.
 type Field struct {
-	Key          string    // machine key (e.g. "arch_pattern")
-	Label        string    // padded display label — must be exactly 14 chars
+	Key          string // machine key (e.g. "arch_pattern")
+	Label        string // padded display label — must be exactly 14 chars
 	Kind         FieldKind
 	Value        string   // current string value
 	Options      []string // KindSelect/KindMultiSelect: available choices
@@ -248,10 +248,10 @@ func (f *Field) CyclePrev() {
 // For the 6 main tabs, each section has a single KindDataModel sentinel field
 // that triggers full delegation to the appropriate sub-editor.
 type Section struct {
-	ID     string  // short identifier (e.g. "backend")
-	Abbr   string  // tab label
-	Title  string  // full title
-	Desc   string  // one-line description shown as a comment
+	ID     string // short identifier (e.g. "backend")
+	Abbr   string // tab label
+	Title  string // full title
+	Desc   string // one-line description shown as a comment
 	Fields []Field
 }
 

@@ -172,7 +172,7 @@ func dbFormToSource(form []Field) manifest.DBSourceDef {
 			return 0
 		}
 		n := 0
-		fmt.Sscanf(v, "%d", &n)
+		_, _ = fmt.Sscanf(v, "%d", &n)
 		return n
 	}
 	env := get("environment")

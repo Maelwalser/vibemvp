@@ -89,7 +89,7 @@ func fixPlaceholderImportPaths(dir string, files []string) string {
 			return `"` + modulePath + `"`
 		})
 		if newContent != content {
-			os.WriteFile(path, []byte(newContent), 0644)
+			_ = os.WriteFile(path, []byte(newContent), 0644)
 			fixed++
 		}
 	}
@@ -138,7 +138,7 @@ func fixGoEscapeSequences(dir string, files []string) string {
 		content := string(data)
 		result := rewriteInvalidEscapes(content)
 		if result != content {
-			os.WriteFile(path, []byte(result), 0644)
+			_ = os.WriteFile(path, []byte(result), 0644)
 			fixed++
 		}
 	}
@@ -362,7 +362,7 @@ func removeDuplicateDecls(baseDir string, files []string) bool {
 					regexp.QuoteMeta(typeName)))
 			content = typeRe.ReplaceAllString(content, "")
 		}
-		os.WriteFile(filepath.Join(baseDir, f), []byte(content), 0644)
+		_ = os.WriteFile(filepath.Join(baseDir, f), []byte(content), 0644)
 	}
 	return true
 }
@@ -377,7 +377,7 @@ func fixGofmt(dir string, files []string) string {
 		}
 		path := filepath.Join(dir, f)
 		before, _ := os.ReadFile(path)
-		exec.Command("gofmt", "-w", path).Run()
+		_ = exec.Command("gofmt", "-w", path).Run()
 		after, _ := os.ReadFile(path)
 		if !bytes.Equal(before, after) {
 			fixed++

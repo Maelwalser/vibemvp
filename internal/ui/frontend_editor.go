@@ -26,7 +26,6 @@ const (
 
 var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "COMPONENTS", "NAVIGATION", "I18N", "A11Y/SEO", "ASSETS"}
 
-
 // ── FrontendEditor ────────────────────────────────────────────────────────────
 
 // FrontendEditor manages the FRONTEND main-tab.
@@ -559,12 +558,6 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 	return fe, nil
 }
 
-func (fe *FrontendEditor) resetIdx() {
-	fe.techFormIdx = 0
-	fe.themeFormIdx = 0
-	fe.navFormIdx = 0
-}
-
 func (fe FrontendEditor) updateInsert(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 	if fe.inTextArea {
 		key, ok := msg.(tea.KeyMsg)
@@ -823,4 +816,3 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	}
 	return fe, nil
 }
-

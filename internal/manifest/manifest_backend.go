@@ -44,9 +44,9 @@ type CommLink struct {
 	Protocol           string        `json:"protocol"`
 	Trigger            string        `json:"trigger,omitempty"`
 	SyncAsync          SyncAsyncMode `json:"sync_async"`
-	ResiliencePatterns []string `json:"resilience_patterns,omitempty"`
-	DTOs               []string `json:"dtos,omitempty"`          // payload / request DTOs
-	ResponseDTOs       []string `json:"response_dtos,omitempty"` // response DTOs (bidirectional only)
+	ResiliencePatterns []string      `json:"resilience_patterns,omitempty"`
+	DTOs               []string      `json:"dtos,omitempty"`          // payload / request DTOs
+	ResponseDTOs       []string      `json:"response_dtos,omitempty"` // response DTOs (bidirectional only)
 }
 
 // MessagingConfig describes the message broker configuration.
@@ -99,14 +99,14 @@ type PolicyRule struct {
 
 // AuthConfig describes authentication and identity settings.
 type AuthConfig struct {
-	Strategy     AuthStrategy `json:"strategy,omitempty"`
-	Provider     string       `json:"provider,omitempty"`
-	ServiceUnit  string       `json:"service_unit,omitempty"` // service responsible for auth (self-managed / Keycloak)
-	AuthzModel   string       `json:"authz_model,omitempty"`
-	TokenStorage string       `json:"token_storage,omitempty"`
-	SessionMgmt  string       `json:"session_mgmt,omitempty"`
-	MFA          string       `json:"mfa,omitempty"`
-	RefreshToken string       `json:"refresh_token,omitempty"`
+	Strategy     AuthStrategy    `json:"strategy,omitempty"`
+	Provider     string          `json:"provider,omitempty"`
+	ServiceUnit  string          `json:"service_unit,omitempty"` // service responsible for auth (self-managed / Keycloak)
+	AuthzModel   string          `json:"authz_model,omitempty"`
+	TokenStorage string          `json:"token_storage,omitempty"`
+	SessionMgmt  string          `json:"session_mgmt,omitempty"`
+	MFA          string          `json:"mfa,omitempty"`
+	RefreshToken string          `json:"refresh_token,omitempty"`
 	Permissions  []PermissionDef `json:"permissions,omitempty"`
 	Roles        []RoleDef       `json:"roles,omitempty"`
 	PolicyRules  []PolicyRule    `json:"policy_rules,omitempty"`
@@ -181,10 +181,10 @@ type BackendPillar struct {
 	MonolithEnvironment string `json:"monolith_environment,omitempty"`
 
 	// Legacy monolith fields kept for backward compatibility.
-	ComputeEnv      ComputeEnv `json:"compute_env,omitempty"`
-	CloudProvider   string     `json:"cloud_provider,omitempty"`
-	Language        string     `json:"language,omitempty"`
-	LanguageVersion string     `json:"language_version,omitempty"`
-	Framework       string     `json:"framework,omitempty"`
-	FrameworkVersion string    `json:"framework_version,omitempty"`
+	ComputeEnv       ComputeEnv `json:"compute_env,omitempty"`
+	CloudProvider    string     `json:"cloud_provider,omitempty"`
+	Language         string     `json:"language,omitempty"`
+	LanguageVersion  string     `json:"language_version,omitempty"`
+	Framework        string     `json:"framework,omitempty"`
+	FrameworkVersion string     `json:"framework_version,omitempty"`
 }

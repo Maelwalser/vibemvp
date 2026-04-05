@@ -40,7 +40,7 @@ type TypeEntry struct {
 type SharedMemory struct {
 	mu           sync.RWMutex
 	outputs      map[string]*TaskOutput
-	rawPaths     map[string][]string // task ID → committed file paths (untruncated)
+	rawPaths     map[string][]string  // task ID → committed file paths (untruncated)
 	typeRegistry map[string]TypeEntry // exported type name → first-seen location
 }
 

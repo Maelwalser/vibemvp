@@ -659,7 +659,6 @@ func (be BackendEditor) roleNamesExcept(excludeIdx int) []string {
 	return names
 }
 
-
 // viewAuth renders the AUTH tab content.
 func (be BackendEditor) viewAuth(w int) []string {
 	if !be.authEnabled {
@@ -975,7 +974,6 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	}
 	return be, nil
 }
-
 
 // CloudProvider returns the selected cloud provider from the Env tab.
 // Returns an empty string if the env section has not been configured.
