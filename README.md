@@ -7,7 +7,7 @@ What vibe is on the menu today?
 A TUI for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
 
 
-(Still in development, may have issues; TODO Final task in flow needs fixing)
+(Still in development, not yet installable may have issues; TODO Final task in flow needs fixing)
 
 ## Table of Contents
 
