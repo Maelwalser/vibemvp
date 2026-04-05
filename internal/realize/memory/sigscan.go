@@ -21,7 +21,8 @@ func ExtractGoExportedTypeNames(filePath, content string) map[string]TypeEntry {
 		pkg = ""
 	}
 	result := make(map[string]TypeEntry)
-	for _, line := range strings.Split(content, "\n") {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "type ") {
 			continue
@@ -36,7 +37,23 @@ func ExtractGoExportedTypeNames(filePath, content string) map[string]TypeEntry {
 		if len(name) == 0 || name[0] < 'A' || name[0] > 'Z' {
 			continue
 		}
-		result[name] = TypeEntry{Package: pkg, File: filePath}
+
+		// Capture the full type body so downstream agents see method/field signatures.
+		var defBuilder strings.Builder
+		defBuilder.WriteString(line + "\n")
+		if strings.HasSuffix(trimmed, "{") {
+			depth := 1
+			for j := i + 1; j < len(lines) && depth > 0; j++ {
+				defBuilder.WriteString(lines[j] + "\n")
+				depth += strings.Count(lines[j], "{") - strings.Count(lines[j], "}")
+			}
+		}
+
+		result[name] = TypeEntry{
+			Package:    pkg,
+			File:       filePath,
+			Definition: defBuilder.String(),
+		}
 	}
 	return result
 }

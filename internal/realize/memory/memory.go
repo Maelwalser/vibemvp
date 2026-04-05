@@ -33,6 +33,10 @@ type TypeEntry struct {
 	Package string
 	// File is the relative source file path, e.g. "internal/domain/user.go".
 	File string
+	// Definition is the full type declaration body (struct/interface fields included).
+	// Injected into downstream agent prompts so they know method signatures without
+	// having to re-read the full file excerpt.
+	Definition string
 }
 
 // SharedMemory is a thread-safe store of completed task outputs.

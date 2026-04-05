@@ -85,6 +85,13 @@ func UserMessage(ac *Context) (string, error) {
 					importPath = modulePath + "/" + entry.Package
 				}
 				b.WriteString(fmt.Sprintf("- `%s` — `%s` — import as `\"%s\"`\n", name, entry.File, importPath))
+				if entry.Definition != "" {
+					b.WriteString("  ```go\n")
+					for _, dl := range strings.Split(strings.TrimRight(entry.Definition, "\n"), "\n") {
+						b.WriteString("  " + dl + "\n")
+					}
+					b.WriteString("  ```\n")
+				}
 			}
 		}
 		b.WriteString("\n")
