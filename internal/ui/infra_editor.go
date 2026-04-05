@@ -174,38 +174,38 @@ func (ie InfraEditor) primaryCloudProvider() string {
 func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 	var p manifest.InfraPillar
 	if ie.netEnabled {
-		p.Networking = manifest.NetworkingConfig{
-			DNSProvider:     fieldGet(ie.networkingFields, "dns_provider"),
-			TLSSSL:          fieldGet(ie.networkingFields, "tls_ssl"),
-			ReverseProxy:    fieldGet(ie.networkingFields, "reverse_proxy"),
-			CDN:             fieldGet(ie.networkingFields, "cdn"),
+		p.Networking = &manifest.NetworkingConfig{
+			DNSProvider:     noneToEmpty(fieldGet(ie.networkingFields, "dns_provider")),
+			TLSSSL:          noneToEmpty(fieldGet(ie.networkingFields, "tls_ssl")),
+			ReverseProxy:    noneToEmpty(fieldGet(ie.networkingFields, "reverse_proxy")),
+			CDN:             noneToEmpty(fieldGet(ie.networkingFields, "cdn")),
 			PrimaryDomain:   fieldGet(ie.networkingFields, "primary_domain"),
-			DomainStrategy:  fieldGet(ie.networkingFields, "domain_strategy"),
-			CORSEnforcement: fieldGet(ie.networkingFields, "cors_infra"),
-			CORSStrategy:    fieldGet(ie.networkingFields, "cors_strategy"),
+			DomainStrategy:  noneToEmpty(fieldGet(ie.networkingFields, "domain_strategy")),
+			CORSEnforcement: noneToEmpty(fieldGet(ie.networkingFields, "cors_infra")),
+			CORSStrategy:    noneToEmpty(fieldGet(ie.networkingFields, "cors_strategy")),
 			CORSOrigins:     fieldGet(ie.networkingFields, "cors_origins"),
-			SSLCertMgmt:     fieldGet(ie.networkingFields, "ssl_cert"),
+			SSLCertMgmt:     noneToEmpty(fieldGet(ie.networkingFields, "ssl_cert")),
 		}
 	}
 	if ie.cicdEnabled {
-		p.CICD = manifest.CICDConfig{
-			Platform:          fieldGet(ie.cicdFields, "platform"),
-			ContainerRegistry: fieldGet(ie.cicdFields, "registry"),
-			DeployStrategy:    fieldGet(ie.cicdFields, "deploy_strategy"),
-			IaCTool:           fieldGet(ie.cicdFields, "iac_tool"),
-			SecretsMgmt:       fieldGet(ie.cicdFields, "secrets_mgmt"),
-			ContainerRuntime:  fieldGet(ie.cicdFields, "container_runtime"),
-			BackupDR:          fieldGet(ie.cicdFields, "backup_dr"),
+		p.CICD = &manifest.CICDConfig{
+			Platform:          noneToEmpty(fieldGet(ie.cicdFields, "platform")),
+			ContainerRegistry: noneToEmpty(fieldGet(ie.cicdFields, "registry")),
+			DeployStrategy:    noneToEmpty(fieldGet(ie.cicdFields, "deploy_strategy")),
+			IaCTool:           noneToEmpty(fieldGet(ie.cicdFields, "iac_tool")),
+			SecretsMgmt:       noneToEmpty(fieldGet(ie.cicdFields, "secrets_mgmt")),
+			ContainerRuntime:  noneToEmpty(fieldGet(ie.cicdFields, "container_runtime")),
+			BackupDR:          noneToEmpty(fieldGet(ie.cicdFields, "backup_dr")),
 		}
 	}
 	if ie.obsEnabled {
-		p.Observability = manifest.ObservabilityConfig{
-			Logging:       fieldGet(ie.obsFields, "logging"),
-			Metrics:       fieldGet(ie.obsFields, "metrics"),
-			Tracing:       fieldGet(ie.obsFields, "tracing"),
-			ErrorTracking: fieldGet(ie.obsFields, "error_tracking"),
+		p.Observability = &manifest.ObservabilityConfig{
+			Logging:       noneToEmpty(fieldGet(ie.obsFields, "logging")),
+			Metrics:       noneToEmpty(fieldGet(ie.obsFields, "metrics")),
+			Tracing:       noneToEmpty(fieldGet(ie.obsFields, "tracing")),
+			ErrorTracking: noneToEmpty(fieldGet(ie.obsFields, "error_tracking")),
 			HealthChecks:  fieldGet(ie.obsFields, "health_checks") == "true",
-			Alerting:      fieldGet(ie.obsFields, "alerting"),
+			Alerting:      noneToEmpty(fieldGet(ie.obsFields, "alerting")),
 			LogRetention:  fieldGet(ie.obsFields, "log_retention"),
 		}
 	}
@@ -216,35 +216,32 @@ func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 // FromInfraPillar populates the editor from a saved manifest InfraPillar,
 // reversing the ToManifestInfraPillar() operation.
 func (ie InfraEditor) FromInfraPillar(ip manifest.InfraPillar) InfraEditor {
-	n := ip.Networking
-	if n.DNSProvider != "" || n.ReverseProxy != "" || n.CDN != "" {
+	if ip.Networking != nil && (ip.Networking.DNSProvider != "" || ip.Networking.ReverseProxy != "" || ip.Networking.CDN != "") {
 		ie.netEnabled = true
-		ie.networkingFields = setFieldValue(ie.networkingFields, "dns_provider", n.DNSProvider)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "tls_ssl", n.TLSSSL)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "reverse_proxy", n.ReverseProxy)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "cdn", n.CDN)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "primary_domain", n.PrimaryDomain)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "domain_strategy", n.DomainStrategy)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_infra", n.CORSEnforcement)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_strategy", n.CORSStrategy)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_origins", n.CORSOrigins)
-		ie.networkingFields = setFieldValue(ie.networkingFields, "ssl_cert", n.SSLCertMgmt)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "dns_provider", ip.Networking.DNSProvider)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "tls_ssl", ip.Networking.TLSSSL)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "reverse_proxy", ip.Networking.ReverseProxy)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cdn", ip.Networking.CDN)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "primary_domain", ip.Networking.PrimaryDomain)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "domain_strategy", ip.Networking.DomainStrategy)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_infra", ip.Networking.CORSEnforcement)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_strategy", ip.Networking.CORSStrategy)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_origins", ip.Networking.CORSOrigins)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "ssl_cert", ip.Networking.SSLCertMgmt)
 	}
 
-	c := ip.CICD
-	if c.Platform != "" {
+	if ip.CICD != nil && ip.CICD.Platform != "" {
 		ie.cicdEnabled = true
-		ie.cicdFields = setFieldValue(ie.cicdFields, "platform", c.Platform)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "registry", c.ContainerRegistry)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "deploy_strategy", c.DeployStrategy)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "iac_tool", c.IaCTool)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "secrets_mgmt", c.SecretsMgmt)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "container_runtime", c.ContainerRuntime)
-		ie.cicdFields = setFieldValue(ie.cicdFields, "backup_dr", c.BackupDR)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "platform", ip.CICD.Platform)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "registry", ip.CICD.ContainerRegistry)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "deploy_strategy", ip.CICD.DeployStrategy)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "iac_tool", ip.CICD.IaCTool)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "secrets_mgmt", ip.CICD.SecretsMgmt)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "container_runtime", ip.CICD.ContainerRuntime)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "backup_dr", ip.CICD.BackupDR)
 	}
 
-	o := ip.Observability
-	if o.Logging != "" || o.Metrics != "" {
+	if o := ip.Observability; o != nil && (o.Logging != "" || o.Metrics != "") {
 		ie.obsEnabled = true
 		ie.obsFields = setFieldValue(ie.obsFields, "logging", o.Logging)
 		ie.obsFields = setFieldValue(ie.obsFields, "metrics", o.Metrics)

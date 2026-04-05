@@ -99,17 +99,26 @@ type PolicyRule struct {
 
 // AuthConfig describes authentication and identity settings.
 type AuthConfig struct {
-	Strategy     AuthStrategy `json:"strategy"`
-	Provider     string       `json:"provider"`
+	Strategy     AuthStrategy `json:"strategy,omitempty"`
+	Provider     string       `json:"provider,omitempty"`
 	ServiceUnit  string       `json:"service_unit,omitempty"` // service responsible for auth (self-managed / Keycloak)
-	AuthzModel   string       `json:"authz_model"`
-	TokenStorage string       `json:"token_storage"`
+	AuthzModel   string       `json:"authz_model,omitempty"`
+	TokenStorage string       `json:"token_storage,omitempty"`
 	SessionMgmt  string       `json:"session_mgmt,omitempty"`
-	MFA          string       `json:"mfa"`
+	MFA          string       `json:"mfa,omitempty"`
 	RefreshToken string       `json:"refresh_token,omitempty"`
 	Permissions  []PermissionDef `json:"permissions,omitempty"`
 	Roles        []RoleDef       `json:"roles,omitempty"`
 	PolicyRules  []PolicyRule    `json:"policy_rules,omitempty"`
+}
+
+// OrZero returns a dereferenced EnvConfig, or a zero value if nil.
+// This is a nil-safe helper for code that expects a value type.
+func (e *EnvConfig) OrZero() EnvConfig {
+	if e == nil {
+		return EnvConfig{}
+	}
+	return *e
 }
 
 // WAFConfig describes Web Application Firewall and rate limiting settings.
@@ -156,17 +165,17 @@ type EnvConfig struct {
 
 // BackendPillar covers the full backend configuration.
 type BackendPillar struct {
-	ArchPattern  ArchPattern       `json:"arch_pattern"`
-	Env          EnvConfig         `json:"env"`
+	ArchPattern  ArchPattern       `json:"arch_pattern,omitempty"`
+	Env          *EnvConfig        `json:"env,omitempty"`
 	StackConfigs []StackConfig     `json:"stack_configs,omitempty"`
 	Services     []ServiceDef      `json:"services,omitempty"`
 	CommLinks    []CommLink        `json:"comm_links,omitempty"`
 	Messaging    *MessagingConfig  `json:"messaging,omitempty"`
 	Events       []EventDef        `json:"events,omitempty"`
 	APIGateway   *APIGatewayConfig `json:"api_gateway,omitempty"`
-	Auth         AuthConfig        `json:"auth"`
+	Auth         *AuthConfig       `json:"auth,omitempty"`
 	JobQueues    []JobQueueDef     `json:"job_queues,omitempty"`
-	WAF          WAFConfig         `json:"waf,omitempty"`
+	WAF          *WAFConfig        `json:"waf,omitempty"`
 
 	// Monolith shared environment (selected from InfraPillar.Environments).
 	MonolithEnvironment string `json:"monolith_environment,omitempty"`

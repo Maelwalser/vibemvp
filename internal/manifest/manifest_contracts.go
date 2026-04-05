@@ -126,6 +126,14 @@ type ExternalAPIDef struct {
 type ContractsPillar struct {
 	DTOs         []DTODef         `json:"dtos,omitempty"`
 	Endpoints    []EndpointDef    `json:"endpoints,omitempty"`
-	Versioning   APIVersioning    `json:"versioning"`
+	Versioning   *APIVersioning   `json:"versioning,omitempty"`
 	ExternalAPIs []ExternalAPIDef `json:"external_apis,omitempty"`
+}
+
+// OrZero returns a dereferenced APIVersioning, or a zero value if nil.
+func (v *APIVersioning) OrZero() APIVersioning {
+	if v == nil {
+		return APIVersioning{}
+	}
+	return *v
 }

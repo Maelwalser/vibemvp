@@ -4,10 +4,10 @@ package manifest
 
 // NetworkingConfig describes networking and connectivity settings.
 type NetworkingConfig struct {
-	DNSProvider     string `json:"dns_provider"`
-	TLSSSL          string `json:"tls_ssl"`
-	ReverseProxy    string `json:"reverse_proxy"`
-	CDN             string `json:"cdn"`
+	DNSProvider     string `json:"dns_provider,omitempty"`
+	TLSSSL          string `json:"tls_ssl,omitempty"`
+	ReverseProxy    string `json:"reverse_proxy,omitempty"`
+	CDN             string `json:"cdn,omitempty"`
 	PrimaryDomain   string `json:"primary_domain,omitempty"`
 	DomainStrategy  string `json:"domain_strategy,omitempty"`
 	CORSEnforcement string `json:"cors_enforcement,omitempty"`
@@ -18,10 +18,10 @@ type NetworkingConfig struct {
 
 // CICDConfig describes CI/CD pipeline settings.
 type CICDConfig struct {
-	Platform          string `json:"platform"`
-	ContainerRegistry string `json:"container_registry"`
-	DeployStrategy    string `json:"deploy_strategy"`
-	IaCTool           string `json:"iac_tool"`
+	Platform          string `json:"platform,omitempty"`
+	ContainerRegistry string `json:"container_registry,omitempty"`
+	DeployStrategy    string `json:"deploy_strategy,omitempty"`
+	IaCTool           string `json:"iac_tool,omitempty"`
 	SecretsMgmt       string `json:"secrets_mgmt,omitempty"`
 	ContainerRuntime  string `json:"container_runtime,omitempty"`
 	BackupDR          string `json:"backup_dr,omitempty"`
@@ -29,12 +29,12 @@ type CICDConfig struct {
 
 // ObservabilityConfig describes logging, metrics, tracing, and alerting settings.
 type ObservabilityConfig struct {
-	Logging       string `json:"logging"`
-	Metrics       string `json:"metrics"`
-	Tracing       string `json:"tracing"`
-	ErrorTracking string `json:"error_tracking"`
-	HealthChecks  bool   `json:"health_checks"`
-	Alerting      string `json:"alerting"`
+	Logging       string `json:"logging,omitempty"`
+	Metrics       string `json:"metrics,omitempty"`
+	Tracing       string `json:"tracing,omitempty"`
+	ErrorTracking string `json:"error_tracking,omitempty"`
+	HealthChecks  bool   `json:"health_checks,omitempty"`
+	Alerting      string `json:"alerting,omitempty"`
 	LogRetention  string `json:"log_retention,omitempty"`
 }
 
@@ -49,8 +49,8 @@ type ServerEnvironmentDef struct {
 
 // InfraPillar groups infrastructure configuration.
 type InfraPillar struct {
-	Networking    NetworkingConfig       `json:"networking"`
-	CICD          CICDConfig             `json:"cicd"`
-	Observability ObservabilityConfig    `json:"observability"`
+	Networking    *NetworkingConfig      `json:"networking,omitempty"`
+	CICD          *CICDConfig            `json:"cicd,omitempty"`
+	Observability *ObservabilityConfig   `json:"observability,omitempty"`
 	Environments  []ServerEnvironmentDef `json:"environments,omitempty"`
 }

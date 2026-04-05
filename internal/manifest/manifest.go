@@ -7,6 +7,48 @@ import (
 	"time"
 )
 
+// ── isEmpty helpers ────────────────────────────────────────────────────────────
+// These determine whether a pillar has any meaningful user configuration so that
+// unconfigured pillars are omitted from the saved manifest.json.
+
+func (p BackendPillar) isEmpty() bool {
+	return len(p.Services) == 0 && len(p.StackConfigs) == 0 &&
+		p.Auth == nil && p.Messaging == nil && p.APIGateway == nil &&
+		len(p.CommLinks) == 0 && len(p.Events) == 0 && len(p.JobQueues) == 0
+}
+
+func (p DataPillar) isEmpty() bool {
+	return len(p.Databases) == 0 && len(p.Domains) == 0 && len(p.Entities) == 0 &&
+		len(p.Cachings) == 0 && len(p.FileStorages) == 0 && len(p.Governances) == 0
+}
+
+func (p ContractsPillar) isEmpty() bool {
+	return len(p.DTOs) == 0 && len(p.Endpoints) == 0 &&
+		p.Versioning == nil && len(p.ExternalAPIs) == 0
+}
+
+func (p FrontendPillar) isEmpty() bool {
+	return p.Tech == nil && p.Theme == nil && p.Navigation == nil &&
+		len(p.Pages) == 0 && len(p.Components) == 0 && len(p.Assets) == 0 &&
+		p.I18n == nil && p.A11ySEO == nil
+}
+
+func (p InfraPillar) isEmpty() bool {
+	return p.Networking == nil && p.CICD == nil && p.Observability == nil &&
+		len(p.Environments) == 0
+}
+
+func (p CrossCutPillar) isEmpty() bool {
+	return p.Testing == nil && p.Docs == nil &&
+		p.DependencyUpdates == "" && p.FeatureFlags == "" &&
+		p.UptimeSLO == "" && p.LatencyP99 == "" &&
+		p.BackendLinter == "" && p.FrontendLinter == ""
+}
+
+func (r RealizeOptions) isEmpty() bool {
+	return r.AppName == "" && r.OutputDir == ""
+}
+
 // ── Realize options ───────────────────────────────────────────────────────────
 
 // RealizeOptions holds configuration for the code-generation agent run.
@@ -102,6 +144,73 @@ func Load(path string) (*Manifest, error) {
 		return nil, fmt.Errorf("failed to parse manifest %s: %w", path, err)
 	}
 	return &m, nil
+}
+
+// MarshalJSON serializes the Manifest, omitting any pillar that has no
+// meaningful configuration so the output stays clean.
+func (m Manifest) MarshalJSON() ([]byte, error) {
+	// shadow uses pointer pillar fields so encoding/json's omitempty works.
+	type shadow struct {
+		CreatedAt           time.Time           `json:"created_at"`
+		Description         string              `json:"description,omitempty"`
+		Data                *DataPillar         `json:"data,omitempty"`
+		Backend             *BackendPillar      `json:"backend,omitempty"`
+		Contracts           *ContractsPillar    `json:"contracts,omitempty"`
+		Frontend            *FrontendPillar     `json:"frontend,omitempty"`
+		Infrastructure      *InfraPillar        `json:"infrastructure,omitempty"`
+		CrossCutting        *CrossCutPillar     `json:"cross_cutting,omitempty"`
+		Realize             *RealizeOptions     `json:"realize,omitempty"`
+		ConfiguredProviders ProviderAssignments `json:"configured_providers,omitempty"`
+		// Legacy fields retained for backward compatibility.
+		Databases []DBSourceDef   `json:"databases,omitempty"`
+		Entities  []EntityDef     `json:"entities,omitempty"`
+		Testing   *TestingPillar  `json:"testing,omitempty"`
+		CICD      *CICDPillar     `json:"cicd,omitempty"`
+		Telemetry *TelemetryPillar `json:"telemetry,omitempty"`
+	}
+
+	s := shadow{
+		CreatedAt:           m.CreatedAt,
+		Description:         m.Description,
+		ConfiguredProviders: m.ConfiguredProviders,
+		Databases:           m.Databases,
+		Entities:            m.Entities,
+	}
+
+	// Only include legacy struct pillars if they have data.
+	if m.Testing != (TestingPillar{}) {
+		s.Testing = &m.Testing
+	}
+	if m.CICD != (CICDPillar{}) {
+		s.CICD = &m.CICD
+	}
+	if m.Telemetry != (TelemetryPillar{}) {
+		s.Telemetry = &m.Telemetry
+	}
+
+	if !m.Backend.isEmpty() {
+		s.Backend = &m.Backend
+	}
+	if !m.Data.isEmpty() {
+		s.Data = &m.Data
+	}
+	if !m.Contracts.isEmpty() {
+		s.Contracts = &m.Contracts
+	}
+	if !m.Frontend.isEmpty() {
+		s.Frontend = &m.Frontend
+	}
+	if !m.Infra.isEmpty() {
+		s.Infrastructure = &m.Infra
+	}
+	if !m.CrossCut.isEmpty() {
+		s.CrossCutting = &m.CrossCut
+	}
+	if !m.Realize.isEmpty() {
+		s.Realize = &m.Realize
+	}
+
+	return json.Marshal(s)
 }
 
 // Save writes the manifest to path as indented JSON.

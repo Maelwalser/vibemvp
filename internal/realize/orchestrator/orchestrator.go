@@ -452,13 +452,13 @@ func technologiesFor(task *dag.Task) []string {
 	}
 
 	// Frontend framework.
-	if task.Payload.Frontend != nil {
+	if task.Payload.Frontend != nil && task.Payload.Frontend.Tech != nil {
 		techs = append(techs, task.Payload.Frontend.Tech.Framework)
 		techs = append(techs, task.Payload.Frontend.Tech.Styling)
 	}
 
 	// Infrastructure.
-	if task.Payload.Infra != nil {
+	if task.Payload.Infra != nil && task.Payload.Infra.CICD != nil {
 		techs = append(techs, task.Payload.Infra.CICD.Platform)
 		techs = append(techs, task.Payload.Infra.CICD.IaCTool)
 	}
@@ -491,19 +491,20 @@ func technologiesFor(task *dag.Task) []string {
 
 	// Cross-cutting: testing frameworks and docs formats.
 	if task.Payload.CrossCut != nil {
-		t := task.Payload.CrossCut.Testing
-		for _, fw := range []string{t.Unit, t.Integration, t.E2E, t.API, t.Load, t.Contract, t.FrontendTesting} {
-			if fw != "" && fw != "none" {
-				techs = append(techs, fw)
+		if t := task.Payload.CrossCut.Testing; t != nil {
+			for _, fw := range []string{t.Unit, t.Integration, t.E2E, t.API, t.Load, t.Contract, t.FrontendTesting} {
+				if fw != "" && fw != "none" {
+					techs = append(techs, fw)
+				}
 			}
 		}
-		if task.Payload.CrossCut.Docs.Changelog != "" {
-			techs = append(techs, task.Payload.CrossCut.Docs.Changelog)
+		if d := task.Payload.CrossCut.Docs; d != nil && d.Changelog != "" {
+			techs = append(techs, d.Changelog)
 		}
 	}
 
 	// Frontend: realtime strategy, bundle optimization, error boundary.
-	if task.Payload.Frontend != nil {
+	if task.Payload.Frontend != nil && task.Payload.Frontend.Tech != nil {
 		ft := task.Payload.Frontend.Tech
 		for _, v := range []string{ft.RealtimeStrategy, ft.BundleOptimization, ft.ErrorBoundary} {
 			if v != "" && v != "none" {

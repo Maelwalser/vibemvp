@@ -81,7 +81,7 @@ func taskLanguage(task *dag.Task) string {
 		// Data tasks: language determined by primary service stack; use null verifier.
 		return ""
 	case dag.TaskKindFrontend:
-		if task.Payload.Frontend != nil {
+		if task.Payload.Frontend != nil && task.Payload.Frontend.Tech != nil {
 			return normalizeFrontendLanguage(task.Payload.Frontend.Tech.Language)
 		}
 	case dag.TaskKindInfraTerraform:

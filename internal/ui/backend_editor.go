@@ -618,28 +618,36 @@ func (be BackendEditor) tabLabels() []string {
 
 // ── ToManifest ────────────────────────────────────────────────────────────────
 
+// noneToEmpty converts UI sentinel "None" values to empty strings so they are
+// omitted from the manifest JSON (all manifest string fields use omitempty).
+func noneToEmpty(s string) string {
+	switch s {
+	case "None", "none", "(none)":
+		return ""
+	}
+	return s
+}
+
 func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	arch := be.currentArch()
 
-	var env manifest.EnvConfig
-
-	var auth manifest.AuthConfig
+	var auth *manifest.AuthConfig
 	if be.authEnabled {
 		svcUnit := fieldGet(be.AuthFields, "service_unit")
 		if svcUnit == "None (external)" || svcUnit == "None" || svcUnit == "(no services configured)" {
 			svcUnit = ""
 		}
-		auth = manifest.AuthConfig{
-			Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
-			Provider:     fieldGet(be.AuthFields, "provider"),
+		auth = &manifest.AuthConfig{
+			Strategy:     noneToEmpty(fieldGetMulti(be.AuthFields, "strategy")),
+			Provider:     noneToEmpty(fieldGet(be.AuthFields, "provider")),
 			ServiceUnit:  svcUnit,
-			AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
-			SessionMgmt:  fieldGet(be.AuthFields, "session_mgmt"),
+			AuthzModel:   noneToEmpty(fieldGet(be.AuthFields, "authz_model")),
+			SessionMgmt:  noneToEmpty(fieldGet(be.AuthFields, "session_mgmt")),
 			Permissions:  be.authPerms,
 			Roles:        be.authRoles,
-			TokenStorage: fieldGetMulti(be.AuthFields, "token_storage"),
-			RefreshToken: fieldGet(be.AuthFields, "refresh_token"),
-			MFA:          fieldGet(be.AuthFields, "mfa"),
+			TokenStorage: noneToEmpty(fieldGetMulti(be.AuthFields, "token_storage")),
+			RefreshToken: noneToEmpty(fieldGet(be.AuthFields, "refresh_token")),
+			MFA:          noneToEmpty(fieldGet(be.AuthFields, "mfa")),
 		}
 	}
 
@@ -660,7 +668,6 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 
 	bp := manifest.BackendPillar{
 		ArchPattern:  manifest.ArchPattern(arch),
-		Env:          env,
 		StackConfigs: stackConfigs,
 		Services:     be.Services,
 		CommLinks:    be.CommLinks,
@@ -668,14 +675,14 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		JobQueues:    be.jobQueues,
 	}
 	if be.secEnabled {
-		bp.WAF = manifest.WAFConfig{
-			Provider:          fieldGet(be.securityFields, "waf_provider"),
-			Ruleset:           fieldGet(be.securityFields, "waf_ruleset"),
-			CAPTCHA:           fieldGet(be.securityFields, "captcha"),
-			BotProtection:     fieldGet(be.securityFields, "bot_protection"),
-			RateLimitStrategy: fieldGet(be.securityFields, "rate_limit_strategy"),
-			RateLimitBackend:  fieldGet(be.securityFields, "rate_limit_backend"),
-			DDoSProtection:    fieldGet(be.securityFields, "ddos_protection"),
+		bp.WAF = &manifest.WAFConfig{
+			Provider:          noneToEmpty(fieldGet(be.securityFields, "waf_provider")),
+			Ruleset:           noneToEmpty(fieldGet(be.securityFields, "waf_ruleset")),
+			CAPTCHA:           noneToEmpty(fieldGet(be.securityFields, "captcha")),
+			BotProtection:     noneToEmpty(fieldGet(be.securityFields, "bot_protection")),
+			RateLimitStrategy: noneToEmpty(fieldGet(be.securityFields, "rate_limit_strategy")),
+			RateLimitBackend:  noneToEmpty(fieldGet(be.securityFields, "rate_limit_backend")),
+			DDoSProtection:    noneToEmpty(fieldGet(be.securityFields, "ddos_protection")),
 			InternalMTLS:      fieldGet(be.securityFields, "internal_mtls") == "Enabled",
 		}
 	}
@@ -683,24 +690,24 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	tabs := subTabsForArch(arch)
 	for _, t := range tabs {
 		if t == beTabMessaging {
-			env := fieldGet(be.MessagingFields, "environment")
-			if env == "(no environments configured)" {
-				env = ""
+			msgEnv := fieldGet(be.MessagingFields, "environment")
+			if msgEnv == "(no environments configured)" {
+				msgEnv = ""
 			}
 			mc := manifest.MessagingConfig{
-				BrokerTech:    fieldGet(be.MessagingFields, "broker_tech"),
-				Deployment:    fieldGet(be.MessagingFields, "deployment"),
-				Serialization: fieldGet(be.MessagingFields, "serialization"),
-				Delivery:      fieldGet(be.MessagingFields, "delivery"),
-				Environment:   env,
+				BrokerTech:    noneToEmpty(fieldGet(be.MessagingFields, "broker_tech")),
+				Deployment:    noneToEmpty(fieldGet(be.MessagingFields, "deployment")),
+				Serialization: noneToEmpty(fieldGet(be.MessagingFields, "serialization")),
+				Delivery:      noneToEmpty(fieldGet(be.MessagingFields, "delivery")),
+				Environment:   msgEnv,
 			}
 			bp.Messaging = &mc
 			bp.Events = be.Events
 		}
 		if t == beTabAPIGW && be.apiGWEnabled {
 			gw := manifest.APIGatewayConfig{
-				Technology:  fieldGet(be.APIGWFields, "technology"),
-				Routing:     fieldGet(be.APIGWFields, "routing"),
+				Technology:  noneToEmpty(fieldGet(be.APIGWFields, "technology")),
+				Routing:     noneToEmpty(fieldGet(be.APIGWFields, "routing")),
 				Features:    fieldGetMulti(be.APIGWFields, "features"),
 				Endpoints:   fieldGetMulti(be.APIGWFields, "endpoints"),
 				Environment: fieldGet(be.APIGWFields, "environment"),
@@ -723,8 +730,10 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			bp.MonolithEnvironment = envVal
 		}
 		// Global health dependencies for monolith live in EnvConfig.
-		env.HealthDeps = fieldGetSelectedSlice(be.EnvFields, "health_deps")
-		bp.Env = env
+		healthDeps := fieldGetSelectedSlice(be.EnvFields, "health_deps")
+		if len(healthDeps) > 0 {
+			bp.Env = &manifest.EnvConfig{HealthDeps: healthDeps}
+		}
 	} else if len(be.Services) > 0 {
 		bp.Language = be.Services[0].Language
 		bp.LanguageVersion = be.Services[0].LanguageVersion
@@ -765,7 +774,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 				be.EnvFields = setFieldValue(be.EnvFields, "environment", bp.MonolithEnvironment)
 			}
 			// Restore global health deps — options populated lazily via SetDBSourceAliases.
-			if len(bp.Env.HealthDeps) > 0 {
+			if bp.Env != nil && len(bp.Env.HealthDeps) > 0 {
 				for i := range be.EnvFields {
 					if be.EnvFields[i].Key == "health_deps" {
 						be.EnvFields[i].Value = strings.Join(bp.Env.HealthDeps, ", ")
@@ -837,7 +846,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 	}
 
 	// Auth fields.
-	if bp.Auth.Strategy != "" || bp.Auth.Provider != "" {
+	if bp.Auth != nil && (bp.Auth.Strategy != "" || bp.Auth.Provider != "") {
 		be.authEnabled = true
 		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "strategy", bp.Auth.Strategy)
 		be.AuthFields = setFieldValue(be.AuthFields, "provider", bp.Auth.Provider)
@@ -865,7 +874,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 	}
 
 	// Security / WAF fields.
-	if bp.WAF.Provider != "" || bp.WAF.Ruleset != "" {
+	if bp.WAF != nil && (bp.WAF.Provider != "" || bp.WAF.Ruleset != "") {
 		be.secEnabled = true
 		be.securityFields = setFieldValue(be.securityFields, "waf_provider", bp.WAF.Provider)
 		be.securityFields = setFieldValue(be.securityFields, "waf_ruleset", bp.WAF.Ruleset)

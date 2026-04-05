@@ -169,7 +169,7 @@ func (ce ContractsEditor) ToManifestContractsPillar() manifest.ContractsPillar {
 				strategies[proto] = v
 			}
 		}
-		p.Versioning = manifest.APIVersioning{
+		p.Versioning = &manifest.APIVersioning{
 			PerProtocolStrategies: strategies,
 			CurrentVersion:        fieldGet(ce.versioningFields, "current_version"),
 			DeprecationPolicy:     fieldGet(ce.versioningFields, "deprecation"),
@@ -187,7 +187,7 @@ func (ce ContractsEditor) FromContractsPillar(cp manifest.ContractsPillar) Contr
 	ce.externalAPIs = cp.ExternalAPIs
 
 	// Versioning fields.
-	if len(cp.Versioning.PerProtocolStrategies) > 0 || cp.Versioning.CurrentVersion != "" {
+	if cp.Versioning != nil && (len(cp.Versioning.PerProtocolStrategies) > 0 || cp.Versioning.CurrentVersion != "") {
 		ce.versioningEnabled = true
 		// Rebuild fields based on stored protocols.
 		ce.rebuildVersioningFields()
