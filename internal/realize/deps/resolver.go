@@ -137,7 +137,7 @@ func (a *Agent) resolveNode(ctx context.Context) ([]dag.GeneratedFile, error) {
 			fmt.Printf("[deps] npm install --package-lock-only in %s\n", dir)
 		}
 
-		out, err := runCmd(ctx, dir, "npm", "install", "--package-lock-only", "--ignore-scripts")
+		out, err := runCmd(ctx, dir, "npm", "install", "--package-lock-only", "--ignore-scripts", "--legacy-peer-deps")
 		if err != nil {
 			return nil, fmt.Errorf("npm install in %s failed: %w\n%s", dir, err, out)
 		}
