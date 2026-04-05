@@ -172,16 +172,7 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
     "tier_fast": "claude-haiku-4-5-20251001",
     "tier_medium": "claude-sonnet-4-6",
     "tier_slow": "claude-opus-4-6",
-    "section_models": {
-      "backend": "Claude · Sonnet",
-      "data": "Gemini · Flash"
-    }
   },
-
-  "configured_providers": {
-    "Claude":  { "provider": "Claude",  "model": "Sonnet", "auth": "api_key", "credential": "..." },
-    "Gemini":  { "provider": "Gemini",  "model": "Pro",    "auth": "oauth",   "credential": "..." }
-  }
 }
 ```
 
