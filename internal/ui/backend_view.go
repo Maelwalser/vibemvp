@@ -199,6 +199,8 @@ func (be *BackendEditor) saveInput() {
 		ed := &be.stackConfigEditor
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].CanEditAsText() {
 			ed.form[ed.formIdx].SaveTextInput(val)
+			// Persist to items and propagate name changes to dependent forms immediately.
+			be.saveStackConfigForm()
 		}
 		return
 	}

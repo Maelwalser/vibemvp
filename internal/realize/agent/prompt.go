@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -199,6 +200,42 @@ func fenceLanguage(path string) string {
 // guidance for common, well-understood failure modes. Returns empty string when
 // no patterns are recognised.
 func errorPatternHints(errors string) string {
+	var matched []string
+
+	// Extract specific missing method names from "does not implement" errors.
+	// Go compiler format: "*ConcreteType does not implement Interface (missing method MethodName)"
+	if strings.Contains(errors, "does not implement") {
+		missingMethodRe := regexp.MustCompile(`(\*?\w+) does not implement (\w+) \(missing method (\w+)\)`)
+		for _, m := range missingMethodRe.FindAllStringSubmatch(errors, -1) {
+			concrete, iface, method := m[1], m[2], m[3]
+			matched = append(matched,
+				fmt.Sprintf("- Interface not satisfied: `%s` is missing method `%s` required by `%s`. "+
+					"Find the interface definition in the Shared Team Context (interfaces.go) and implement "+
+					"**every** method listed — do not truncate or omit any. Add `%s` with the EXACT "+
+					"signature shown in the interface.", concrete, method, iface, method))
+		}
+		// If regex didn't match (unusual format), fall through to the generic pattern below.
+	}
+
+	// Extract specific undefined symbol names from "undefined:" errors.
+	// Go compiler format: "undefined: symbolName"
+	if strings.Contains(errors, "undefined:") {
+		undefinedRe := regexp.MustCompile(`undefined: (\w+)`)
+		seen := make(map[string]bool)
+		for _, m := range undefinedRe.FindAllStringSubmatch(errors, -1) {
+			sym := m[1]
+			if seen[sym] {
+				continue
+			}
+			seen[sym] = true
+			matched = append(matched,
+				fmt.Sprintf("- Symbol `%s` is undefined. Add a top-level import for the package that "+
+					"exports `%s` (e.g. `\"net/http\"` for `http.*`, `\"context\"` for `context.*`, "+
+					"`\"fmt\"` for `fmt.*`). Every referenced symbol must have a corresponding `import` "+
+					"line in the same file — the compiler never resolves imports automatically.", sym, sym))
+		}
+	}
+
 	type pattern struct {
 		needle string
 		hint   string
@@ -219,9 +256,9 @@ func errorPatternHints(errors string) string {
 		},
 		{
 			"undefined:",
-			"Undefined symbol: a referenced identifier is not declared in scope. " +
-				"Check that all struct types, functions, and constants you reference are declared in the same " +
-				"package or properly imported. Ensure all files that need each other are included in the output.",
+			"Undefined symbol: check that all referenced identifiers are either declared in the same " +
+				"package or imported. Every file must have a complete import block — the compiler does not " +
+				"auto-resolve missing imports. See the specific symbol hints above for targeted guidance.",
 		},
 		{
 			"cannot use",
@@ -239,14 +276,27 @@ func errorPatternHints(errors string) string {
 		},
 		{
 			"does not implement",
-			"Interface not satisfied: a concrete type is missing one or more methods required by the interface. " +
-				"Check the interface definition and ensure the concrete type implements every method with " +
-				"the exact signature (including pointer vs value receiver).",
+			"Interface not satisfied: a concrete type is missing one or more required methods. " +
+				"Find the interface definition in Shared Team Context and implement EVERY method listed — " +
+				"never truncate or omit any. See the specific missing-method hints above for details.",
 		},
 		{
 			"syntax error",
 			"Syntax error: the generated Go code is not valid. Check for mismatched braces, missing commas " +
 				"in struct literals, or incomplete function bodies. Regenerate the affected files in full.",
+		},
+		{
+			"non-declaration statement outside function body",
+			"Truncated interface declaration: a fragment like `, error)` at the top level means the " +
+				"`type InterfaceName interface {` opening line and first method signature were cut off. " +
+				"Regenerate the affected file in FULL:\n" +
+				"  1. Every interface MUST start with `type X interface {`\n" +
+				"  2. ALL methods must have COMPLETE signatures (no truncation, no `...` placeholders)\n" +
+				"  3. interfaces.go contains ONLY interface type declarations — " +
+				"NO `func` implementations, NO struct bodies, NO constructor functions.\n" +
+				"Use the EXACT method signatures and return types from the " +
+				"'Dependency & API Reference' section — never substitute `interface{}` " +
+				"for a library-specific return type.",
 		},
 		{
 			"gofmt",
@@ -335,7 +385,6 @@ func errorPatternHints(errors string) string {
 		},
 	}
 
-	var matched []string
 	for _, p := range patterns {
 		if strings.Contains(errors, p.needle) {
 			matched = append(matched, "- "+p.hint)

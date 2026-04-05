@@ -1,5 +1,23 @@
 # Go PostgreSQL Repository (pgx/v5)
 
+## WRONG vs CORRECT — PgxPool Imports (Most Common Compile Error)
+
+❌ **WRONG** — causes `undefined: pgx` and `undefined: pgconn` errors:
+```go
+// pgxpool is the concrete POOL package — it does NOT export pgx.Tx or pgconn.CommandTag
+import "github.com/jackc/pgx/v5/pgxpool"
+```
+
+✅ **CORRECT** — interfaces.go MUST import BOTH of these packages:
+```go
+import (
+    "context"
+    "github.com/jackc/pgx/v5"          // → pgx.Tx, pgx.Rows, pgx.Row, pgx.Batch, pgx.BatchResults
+    "github.com/jackc/pgx/v5/pgconn"   // → pgconn.CommandTag
+)
+```
+`pgxpool` belongs in the repository IMPLEMENTATION file (`postgres/db.go`), not in `interfaces.go`.
+
 ## The PgxPool Interface (MANDATORY)
 Define in `internal/repository/interfaces.go`. NEVER use `*pgxpool.Pool` in struct fields —
 doing so prevents pgxmock injection in tests and causes the type mismatch compile error.

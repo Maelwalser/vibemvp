@@ -19,8 +19,14 @@ import (
 func ApplyDeterministicFixes(dir string, files []string) string {
 	var fixes []string
 
-	// Fix placeholder import paths first — rewriting imports may introduce
-	// temporarily un-gofmt'd lines, so run gofmt after.
+	// Language-aware import resolution: add missing imports and remove unused ones
+	// using the language's own tooling (goimports for Go, isort for Python, etc.).
+	// Run first so subsequent steps see clean import blocks.
+	if f := fixLanguageImports(dir, files); f != "" {
+		fixes = append(fixes, f)
+	}
+	// Fix placeholder import paths — rewriting imports may introduce temporarily
+	// un-gofmt'd lines, so run gofmt after.
 	if f := fixPlaceholderImportPaths(dir, files); f != "" {
 		fixes = append(fixes, f)
 	}
@@ -38,6 +44,14 @@ func ApplyDeterministicFixes(dir string, files []string) string {
 	if f := fixMisplacedImports(dir, files); f != "" {
 		fixes = append(fixes, f)
 	}
+	// Repair orphaned return-type fragments left by truncated LLM responses, e.g.:
+	//   // PgxPool is the interface for ...
+	//   , error)          ← truncated — type PgxPool interface { and Exec method were cut off
+	//       Query(...)
+	//   }
+	if f := fixOrphanedInterfaceFragments(dir, files); f != "" {
+		fixes = append(fixes, f)
+	}
 	if f := fixGofmt(dir, files); f != "" {
 		fixes = append(fixes, f)
 	}
@@ -46,6 +60,231 @@ func ApplyDeterministicFixes(dir string, files []string) string {
 		return ""
 	}
 	return strings.Join(fixes, "; ")
+}
+
+// ── Language-aware import fixer ──────────────────────────────────────────────
+//
+// Uses the language's own import-management tooling to add missing imports and
+// remove unused ones. This is a generalizable pattern — each language maps to
+// its own tool:
+//
+//   Go:     goimports -w  (adds missing stdlib/module imports, removes unused)
+//   Python: isort .       (re-orders imports; missing imports still need LLM retry)
+//   Other:  no-op         (TypeScript import resolution requires build context)
+//
+// goimports uses the Go module graph to discover packages — it is not hardcoded
+// to any particular package list. It works for any module configuration.
+// Falls back to gofmt-only when goimports is not installed.
+
+func fixLanguageImports(dir string, files []string) string {
+	var msgs []string
+
+	if msg := fixGoImports(dir, files); msg != "" {
+		msgs = append(msgs, msg)
+	}
+	if msg := fixPythonImports(dir, files); msg != "" {
+		msgs = append(msgs, msg)
+	}
+
+	if len(msgs) == 0 {
+		return ""
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// fixGoImports runs goimports on all .go files in the directory.
+// goimports adds missing stdlib/module imports and removes unused ones.
+// Falls back to removeUnusedGoImports when goimports is not installed.
+func fixGoImports(dir string, files []string) string {
+	// Check if goimports is available.
+	goimportsPath, err := exec.LookPath("goimports")
+	if err != nil {
+		// goimports not installed — fall back to the simpler unused-import remover.
+		return removeUnusedGoImports(dir, files)
+	}
+
+	fixed := 0
+	for _, f := range files {
+		if filepath.Ext(f) != ".go" {
+			continue
+		}
+		path := filepath.Join(dir, f)
+		before, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		// Run goimports in the file's own directory so it can resolve module imports.
+		cmd := exec.Command(goimportsPath, "-w", path)
+		cmd.Dir = dir
+		_ = cmd.Run()
+		after, _ := os.ReadFile(path)
+		if !bytes.Equal(before, after) {
+			fixed++
+		}
+	}
+	if fixed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("goimports fixed imports in %d file(s)", fixed)
+}
+
+// removeUnusedGoImports is a fallback for when goimports is not installed.
+// It parses "go build" errors for "imported and not used" lines and removes
+// the offending import from the named file. This handles the most common
+// case where the LLM imports a package it doesn't actually use.
+func removeUnusedGoImports(dir string, files []string) string {
+	if len(files) == 0 {
+		return ""
+	}
+
+	// Find the go.mod root so we can run go build in the right module directory.
+	// We need the nearest go.mod directory, not dir itself.
+	goModDir := findGoModDir(dir, files)
+	if goModDir == "" {
+		return ""
+	}
+
+	// Run go build to find unused import errors.
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = goModDir
+	out, _ := cmd.CombinedOutput()
+	if len(out) == 0 {
+		return ""
+	}
+
+	// Parse "imported and not used" errors.
+	// Format: <file>:<line>:<col>: "<pkg>" imported and not used
+	unusedImportRe := regexp.MustCompile(`^(.+\.go):(\d+):\d+: "([^"]+)" imported and not used`)
+	type fix struct {
+		file string
+		line int
+		pkg  string
+	}
+	var fixes []fix
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		m := unusedImportRe.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		relFile, lineStr, pkg := m[1], m[2], m[3]
+		key := relFile + ":" + lineStr
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		lineNum := 0
+		fmt.Sscanf(lineStr, "%d", &lineNum)
+		fixes = append(fixes, fix{file: relFile, line: lineNum, pkg: pkg})
+	}
+	if len(fixes) == 0 {
+		return ""
+	}
+
+	// Group by file and remove the import lines.
+	byFile := make(map[string][]fix)
+	for _, fx := range fixes {
+		byFile[fx.file] = append(byFile[fx.file], fx)
+	}
+
+	applied := 0
+	for relFile, fileFixes := range byFile {
+		// Try both the path as reported by go build and relative to goModDir.
+		path := relFile
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(goModDir, relFile)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		changed := false
+		for _, fx := range fileFixes {
+			if fx.line < 1 || fx.line > len(lines) {
+				continue
+			}
+			lineIdx := fx.line - 1
+			trimmed := strings.TrimSpace(lines[lineIdx])
+			// Match the import line: \t"pkg" or \t_ "pkg" or \talias "pkg"
+			if strings.Contains(trimmed, `"`+fx.pkg+`"`) {
+				lines[lineIdx] = ""
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		_ = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+		applied++
+	}
+	if applied == 0 {
+		return ""
+	}
+	return fmt.Sprintf("removed unused imports in %d file(s) (goimports fallback)", applied)
+}
+
+// findGoModDir returns the directory containing go.mod that is a parent of
+// the given dir, walking up the tree. Returns "" when no go.mod is found.
+func findGoModDir(dir string, files []string) string {
+	// First check if any of the listed files are under a go.mod directory.
+	for _, f := range files {
+		if filepath.Ext(f) != ".go" {
+			continue
+		}
+		abs := filepath.Join(dir, f)
+		current := filepath.Dir(abs)
+		for {
+			if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
+				return current
+			}
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+			current = parent
+		}
+	}
+	// Fall back to walking up from dir itself.
+	current := dir
+	for {
+		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return ""
+}
+
+// fixPythonImports runs isort on Python files when available.
+// isort re-orders and deduplicates imports; it cannot add missing imports.
+func fixPythonImports(dir string, files []string) string {
+	isortPath, err := exec.LookPath("isort")
+	if err != nil {
+		return ""
+	}
+
+	var pyFiles []string
+	for _, f := range files {
+		if filepath.Ext(f) == ".py" {
+			pyFiles = append(pyFiles, filepath.Join(dir, f))
+		}
+	}
+	if len(pyFiles) == 0 {
+		return ""
+	}
+
+	args := append([]string{"--quiet"}, pyFiles...)
+	cmd := exec.Command(isortPath, args...)
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("isort cleaned imports in %d Python file(s)", len(pyFiles))
 }
 
 // ── Placeholder import path fix ──────────────────────────────────────────────
@@ -405,6 +644,126 @@ func fixMisplacedImports(dir string, files []string) string {
 		return ""
 	}
 	return fmt.Sprintf("removed misplaced import statement(s) in %d file(s)", fixed)
+}
+
+// ── Orphaned interface fragment fix ──────────────────────────────────────────
+//
+// When an LLM response is truncated mid-way through a type declaration, the file
+// can contain a top-level line that starts with ", " — the tail of a return-type
+// expression whose opening was cut off. For example:
+//
+//   // PgxPool is the interface for pgxpool.Pool operations.
+//   , error)                             ← truncated: "type PgxPool interface {\n\tExec(..., error)" was lost
+//       Query(ctx context.Context, ...) (pgx.Rows, error)
+//       Close()
+//   }
+//
+// Go rejects `, error)` at package scope with "non-declaration statement outside
+// function body". This fix detects the pattern and reconstructs the missing
+// `type X interface {` declaration so the file at least parses. The resulting
+// interface will be incomplete (missing the first method), but syntactically valid
+// — gofmt accepts it and the LLM retry can fill in the rest.
+
+// fixOrphanedInterfaceFragments scans Go files for top-level orphaned return
+// fragments and reconstructs the missing interface declaration header.
+func fixOrphanedInterfaceFragments(dir string, files []string) string {
+	fixed := 0
+	for _, f := range files {
+		if filepath.Ext(f) != ".go" {
+			continue
+		}
+		path := filepath.Join(dir, f)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		patched, changed := repairOrphanedFragments(string(data))
+		if changed {
+			_ = os.WriteFile(path, []byte(patched), 0644)
+			fixed++
+		}
+	}
+	if fixed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("repaired truncated interface declaration(s) in %d file(s)", fixed)
+}
+
+// repairOrphanedFragments is the pure-function core of fixOrphanedInterfaceFragments.
+// It scans src for lines at brace depth 0 that start with ", " (orphaned return
+// fragments), extracts the interface name from the preceding doc comment, removes
+// the fragment, and inserts "type <Name> interface {" in its place.
+func repairOrphanedFragments(src string) (string, bool) {
+	lines := strings.Split(src, "\n")
+	depth := 0
+	changed := false
+
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+
+		// Track brace depth using naive counting.
+		// This is safe here: we only act on depth==0 lines with the ", " prefix,
+		// which cannot appear in valid Go at package scope.
+		depth += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
+
+		// Only act on lines at package scope (depth 0) that look like an orphaned
+		// return-type tail: starts with ", " followed by a non-space character.
+		if depth != 0 {
+			continue
+		}
+		if len(trimmed) < 2 || trimmed[0] != ',' || trimmed[1] != ' ' {
+			continue
+		}
+
+		// Found an orphan. Determine the interface name from the preceding comment.
+		name := extractInterfaceNameFromComment(lines, i)
+
+		// Remove the orphaned line.
+		lines = append(lines[:i], lines[i+1:]...)
+		changed = true
+
+		// Insert "type <Name> interface {" at position i (before the remaining body).
+		header := "type " + name + " interface {"
+		newLines := make([]string, 0, len(lines)+1)
+		newLines = append(newLines, lines[:i]...)
+		newLines = append(newLines, header)
+		newLines = append(newLines, lines[i:]...)
+		lines = newLines
+
+		// The inserted "{" increases depth to 1. Skip past the inserted header.
+		depth = 1
+		i++
+	}
+
+	if !changed {
+		return src, false
+	}
+	return strings.Join(lines, "\n"), true
+}
+
+// extractInterfaceNameFromComment scans backwards from lineIdx looking for the
+// nearest doc comment whose first word is an exported identifier (uppercase).
+// Returns "UnknownInterface" when no qualifying comment is found.
+func extractInterfaceNameFromComment(lines []string, lineIdx int) string {
+	for j := lineIdx - 1; j >= 0; j-- {
+		trimmed := strings.TrimSpace(lines[j])
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "//") {
+			break // hit a non-comment line — stop
+		}
+		comment := strings.TrimSpace(strings.TrimPrefix(trimmed, "//"))
+		if comment == "" {
+			continue
+		}
+		word := strings.Fields(comment)[0]
+		// Must be an exported identifier: starts with an uppercase ASCII letter.
+		if len(word) > 0 && word[0] >= 'A' && word[0] <= 'Z' {
+			return word
+		}
+	}
+	return "UnknownInterface"
 }
 
 // ── pgxpool v5 invalid field fix ─────────────────────────────────────────────

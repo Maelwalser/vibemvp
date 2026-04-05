@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-05T11:38:23.459784755+02:00",
+  "created_at": "2026-04-05T15:30:13.792234666+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
@@ -66,10 +66,6 @@
       {
         "name": "auth-api",
         "responsibility": "Handles user registration, login, token refresh, and logout",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0",
         "pattern_tag": "Monolith part",
         "technologies": [
           "REST"
@@ -83,7 +79,7 @@
       "provider": "self-managed",
       "service_unit": "auth-api",
       "authz_model": "RBAC",
-      "token_storage": "HttpOnly cookie",
+      "token_storage": "Authorization header (Bearer)",
       "permissions": [
         {
           "name": "profile:read",

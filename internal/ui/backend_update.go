@@ -12,7 +12,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	switch key.String() {
 	case " ":
 		if isMulti {
-			// Toggle the current option
+			// Space toggles the highlighted option in a multi-select.
 			be.toggleMultiSelectOption()
 		} else {
 			custom := be.applyDropdown()

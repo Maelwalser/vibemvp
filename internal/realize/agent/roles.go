@@ -59,7 +59,7 @@ var taskRoleDescriptions = map[dag.TaskKind]string{
 
 STRICT SCOPE — output EXACTLY these files:
 1. go.mod — module name MUST be exactly the module_path value from the payload. List ONLY your direct (first-party) dependencies. Do NOT list transitive dependencies — a dedicated dependency resolution step will run "go mod tidy" to resolve them. Use EXACTLY the module paths and versions from the "Dependency & API Reference" section below — do NOT invent versions. Include every library that repository, service, and handler layers will need (e.g. pgx/v5, fiber/v2, jwt, uuid).
-2. internal/repository/interfaces.go — defines every repository interface for each domain entity (e.g. UserRepository, BlogRepository). Each interface must list all CRUD methods with precise Go types derived from the domain structs in Shared Team Context. If any database is PostgreSQL, also define the PgxPool interface here (with Exec, Query, QueryRow, SendBatch, Begin methods).
+2. internal/repository/interfaces.go — defines every repository interface for each domain entity (e.g. UserRepository, BlogRepository). Each interface must list all CRUD methods with precise Go types derived from the domain structs in Shared Team Context. For each database driver in use, also define a connection pool/client interface (e.g. PgxPool for pgx/v5, DBPool for database/sql) so all downstream layers depend on an interface, not a concrete driver type. Use the exact method signatures from the "Dependency & API Reference" section below.
 3. internal/domain/errors.go — domain-level sentinel errors (ErrNotFound, ErrAlreadyExists, etc.) if not already present in Shared Team Context.
 
 CRITICAL RULES:
@@ -67,7 +67,28 @@ CRITICAL RULES:
 - Do NOT list transitive dependencies in go.mod — only the packages your own code imports directly
 - Repository interfaces you define are the binding contract — downstream agents CANNOT use different method signatures
 - Use the exact domain struct names from Shared Team Context; do not redefine or rename them
-- For PostgreSQL services: the PgxPool interface MUST be defined in interfaces.go; downstream repository structs must use this interface, never *pgxpool.Pool directly`,
+- interfaces.go MUST contain ONLY ` + "`" + `type X interface { ... }` + "`" + ` declarations — NO func implementations,
+  NO ` + "`" + `func NewXxx(...)` + "`" + ` constructors, NO struct definitions, NO method bodies whatsoever.
+  Connection pool constructors (NewPool, NewClient, NewConnection, etc.) belong in the repository
+  implementation package (e.g. internal/repository/postgres/db.go), NOT in interfaces.go.
+- Every interface body MUST be COMPLETE — list every method in full. An empty or truncated
+  interface body causes downstream "does not implement" compile errors that cannot be auto-fixed.
+- For any database driver, connection pool, or external client: use the EXACT method signatures
+  and return types documented in the "Dependency & API Reference" section below. NEVER substitute
+  ` + "`" + `interface{}` + "`" + ` or any other generic type for a library-specific return type. Downstream repository
+  structs MUST depend on these interfaces, never on the concrete driver type directly.
+
+IMPORT RULES FOR interfaces.go (CRITICAL — wrong imports are the #1 compile failure):
+The PgxPool interface uses types from TWO separate packages — import BOTH:
+  import (
+      "context"
+      "github.com/jackc/pgx/v5"         // provides: pgx.Tx, pgx.Rows, pgx.Row, pgx.Batch, pgx.BatchResults
+      "github.com/jackc/pgx/v5/pgconn"  // provides: pgconn.CommandTag
+  )
+NEVER import "github.com/jackc/pgx/v5/pgxpool" in interfaces.go — pgxpool is the concrete
+pool implementation, which belongs in internal/repository/postgres/db.go, not in the
+interface file. Using "pgxpool" as the import alias makes pgx.Tx and pgconn.CommandTag
+undefined because those identifiers live in different packages.`,
 
 	// Data pillar — narrow scope, each task does exactly one thing.
 	dag.TaskKindDataSchemas: `You are an expert Go developer. Generate ONLY Go domain struct types for the given domain definitions.
@@ -147,10 +168,23 @@ For ArchModularMonolith: group by module — use internal/modules/{module-name}/
 STRICT SCOPE:
 - One handler file per domain entity (e.g. internal/handler/user_handler.go)
 - A router setup file (internal/router/router.go) that registers all routes
-- Auth middleware if auth strategy is defined (internal/middleware/auth.go)
+- Auth middleware when auth strategy is defined: generate BOTH internal/middleware/auth.go AND
+  internal/middleware/rbac.go using the HTTP framework shown in the service payload (e.g. Fiber, Gin, Echo, net/http)
 - Table-driven _test.go for each handler file
 - Use the module path from the payload's module_path field for all imports
 - DO NOT generate: domain structs, repository code, service code, main.go, or go.mod
+
+AUTH MIDDLEWARE RULES (CRITICAL — prevents cross-task framework conflicts):
+The internal/auth/ package (TokenManager) is generated by the auth task and will appear in Shared Team Context.
+YOU own the HTTP adapter layer: internal/middleware/auth.go and internal/middleware/rbac.go.
+- Use the SAME HTTP framework as the service (Fiber, Gin, Echo, or net/http from the Service.Framework field)
+- auth.go: JWT extraction from header/cookie + storing claims in context (framework-specific)
+- rbac.go: Permission/role checking middleware — MUST use the same framework as auth.go
+- ALL helper functions referenced in rbac.go (e.g. helper to read claims from context, error writer)
+  MUST be defined in the same file or the same package. Never reference an undefined symbol.
+- For Fiber: use c.Locals("claims") to pass *auth.Claims; return c.Status(403).JSON(...)
+- For net/http: use context.WithValue and r.Context().Value(...) to pass claims; use w.WriteHeader(...)
+- Never mix frameworks within the same package (e.g. fiber.Ctx alongside http.ResponseWriter)
 
 RESPONSE STRUCT TYPE RULES (CRITICAL):
 - Response struct fields MUST use the same Go types as the domain struct fields shown in Shared Team Context.
@@ -202,11 +236,51 @@ IMPORT PATH RULES (CRITICAL — most common bootstrap compile errors):
   6. Server start` +
 		crossTaskConsistencyRules,
 
-	dag.TaskKindAuth:      "You are an expert security engineer. Generate authentication and authorization middleware, JWT token handling, and identity integration code.",
+	dag.TaskKindAuth: `You are an expert security engineer. Generate authentication and authorization logic.
+
+STRICT SCOPE — output ONLY files under internal/auth/ (package auth):
+- JWT token management (internal/auth/jwt.go): Claims struct, TokenManager struct with methods
+  GenerateAccessToken, GenerateRefreshToken, ParseAccessToken, ParseRefreshToken
+- Role/permission constants and RolePermissions map (internal/auth/jwt.go or internal/auth/roles.go)
+- Table-driven _test.go alongside the jwt file
+
+DO NOT generate any of these — they belong to other tasks:
+- HTTP middleware (internal/middleware/*.go) — generated by the handler task which knows the HTTP framework
+- main.go, go.mod, repository code, service code, domain structs
+- Any file outside internal/auth/
+
+SELF-CONTAINED CODE RULE (CRITICAL):
+Every function, method, and type you reference MUST be defined within the files you generate.
+NEVER call a function or method that you did not define in the same output.
+If you need a helper, define it. Do NOT reference undefined symbols.
+
+TOKEN MANAGER API (CRITICAL — downstream service and middleware tasks depend on these exact signatures):
+The TokenManager struct MUST expose these methods with EXACTLY these signatures:
+  func NewTokenManager(secret string) (*TokenManager, error)
+  func (m *TokenManager) GenerateAccessToken(userID uuid.UUID, email string, role Role) (string, error)
+  func (m *TokenManager) GenerateRefreshToken(userID string) (string, error)
+  func (m *TokenManager) ParseAccessToken(tokenStr string) (*Claims, error)
+  func (m *TokenManager) ParseRefreshToken(tokenStr string) (*RegisteredClaims, error)
+
+The Claims struct MUST have: UserID string, Email string, Role Role, Permissions []Permission, jwt.RegisteredClaims
+TokenManager constructors return (*TokenManager, error) — always two return values.
+GenerateRefreshToken is a METHOD on *TokenManager, not a standalone function.
+
+Use the exact library APIs from the "Dependency & API Reference" section for JWT operations.`,
 	dag.TaskKindMessaging: "You are an expert distributed systems engineer. Generate message broker configuration, event producer/consumer boilerplate, and event schema definitions.",
 	dag.TaskKindGateway:   "You are an expert platform engineer. Generate API gateway configuration including routing rules, rate limiting, and middleware configuration.",
 
 	dag.TaskKindContracts: `You are an expert API designer. Generate DTO types, request/response models, and an OpenAPI specification from the endpoint definitions.
+
+IMPORT COMPLETENESS (CRITICAL):
+Every generated source file MUST be self-sufficient — include ALL required imports.
+The compiler never resolves missing imports automatically; every referenced symbol needs
+a corresponding import line in the same file. Common imports for contract files:
+- http.Cookie, http.Request, http.ResponseWriter → import "net/http"
+- time.Time, time.Duration                       → import "time"
+- uuid.UUID                                      → import "github.com/google/uuid"
+- json.Marshal, json.Unmarshal                   → import "encoding/json"
+Do not omit imports because "they seem obvious" — every file is verified in isolation.
 
 PATH RULES — determined by arch_pattern in the payload:
 
