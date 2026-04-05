@@ -287,7 +287,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		ce.extUndo.Push(copySlice(ce.externalAPIs))
 		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
 		ce.extIdx = len(ce.externalAPIs) - 1
-		ce.extForm = defaultExternalAPIFormFields()
+		ce.extForm = defaultExternalAPIFormFields(ce.availableServices)
 		existing := make([]string, 0, len(ce.externalAPIs)-1)
 		for i, api := range ce.externalAPIs {
 			if i != ce.extIdx {
@@ -309,8 +309,11 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "enter":
 		if n > 0 {
 			api := ce.externalAPIs[ce.extIdx]
-			ce.extForm = defaultExternalAPIFormFields()
+			ce.extForm = defaultExternalAPIFormFields(ce.availableServices)
 			ce.extForm = setFieldValue(ce.extForm, "provider", api.Provider)
+			if api.CalledByService != "" {
+				ce.extForm = setFieldValue(ce.extForm, "called_by_service", api.CalledByService)
+			}
 			ce.extForm = setFieldValue(ce.extForm, "responsibility", api.Responsibility)
 			if api.Protocol != "" {
 				ce.extForm = setFieldValue(ce.extForm, "protocol", api.Protocol)
@@ -410,6 +413,11 @@ func (ce *ContractsEditor) saveExtForm() {
 	}
 	api := &ce.externalAPIs[ce.extIdx]
 	api.Provider = fieldGet(ce.extForm, "provider")
+	v := fieldGet(ce.extForm, "called_by_service")
+	if v == "(any / unspecified)" {
+		v = ""
+	}
+	api.CalledByService = v
 	api.Responsibility = fieldGet(ce.extForm, "responsibility")
 	api.Protocol = fieldGet(ce.extForm, "protocol")
 	api.AuthMechanism = fieldGet(ce.extForm, "auth_mechanism")
@@ -589,6 +597,9 @@ func (ce ContractsEditor) viewExternal(w int) []string {
 				subtitle := api.Protocol
 				if subtitle == "" {
 					subtitle = "REST"
+				}
+				if api.CalledByService != "" {
+					subtitle += " · svc:" + api.CalledByService
 				}
 				if api.AuthMechanism != "" {
 					subtitle += " · " + api.AuthMechanism

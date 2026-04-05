@@ -120,11 +120,13 @@ func (be BackendEditor) updateStackConfigForm(key tea.KeyMsg) (BackendEditor, te
 		}
 	case "h", "left":
 		be.saveStackConfigForm()
+		ed.itemView = beListViewList
 		if be.activeTabIdx > 0 {
 			be.activeTabIdx--
 		}
 	case "l", "right":
 		be.saveStackConfigForm()
+		ed.itemView = beListViewList
 		tabs := be.activeTabs()
 		if be.activeTabIdx < len(tabs)-1 {
 			be.activeTabIdx++

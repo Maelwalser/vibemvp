@@ -194,6 +194,8 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 	links := commLinksFor(svc.Name, m.Backend.CommLinks)
 	jobQueues := jobQueuesForService(svc.Name, m.Backend.JobQueues)
 	cronJobs := cronJobsForService(svc.Name, m.Backend.JobQueues)
+	svcFileStorages := fileStoragesForService(svc.Name, m.Data.FileStorages)
+	svcExternalAPIs := externalAPIsForService(svc.Name, m.Contracts.ExternalAPIs)
 	outputDir := svcDirs[slug]
 
 	planID := svcPlanID(slug)
@@ -220,7 +222,8 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			Domains:      m.Data.Domains,
 			Databases:    m.Data.Databases,
 			Cachings:     m.Data.Cachings,
-			FileStorages: m.Data.FileStorages,
+			FileStorages: svcFileStorages,
+			ExternalAPIs: svcExternalAPIs,
 			Auth:         m.Backend.Auth,
 			ServiceDirs:  svcDirs,
 			OutputDir:    outputDir,
@@ -278,7 +281,8 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			Service:      &svcCopy,
 			Domains:      m.Data.Domains,
 			Cachings:     m.Data.Cachings,
-			FileStorages: m.Data.FileStorages,
+			FileStorages: svcFileStorages,
+			ExternalAPIs: svcExternalAPIs,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
 			ServiceDirs:  svcDirs,
@@ -302,7 +306,8 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			Endpoints:    m.Contracts.Endpoints,
 			CommLinks:    links,
 			Auth:         m.Backend.Auth,
-			FileStorages: m.Data.FileStorages,
+			FileStorages: svcFileStorages,
+			ExternalAPIs: svcExternalAPIs,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
 			ServiceDirs:  svcDirs,
@@ -325,7 +330,8 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			AllServices:  m.Backend.Services,
 			Databases:    m.Data.Databases,
 			Cachings:     m.Data.Cachings,
-			FileStorages: m.Data.FileStorages,
+			FileStorages: svcFileStorages,
+			ExternalAPIs: svcExternalAPIs,
 			Auth:         m.Backend.Auth,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
@@ -333,6 +339,33 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			OutputDir:    outputDir,
 		},
 	})
+}
+
+// externalAPIsForService returns the external APIs that belong to the given
+// service (CalledByService == name) plus any that are unassigned (empty),
+// since unassigned APIs are assumed shared across all services.
+// Returns nil (not an empty slice) when nothing matches, so omitempty omits it.
+func externalAPIsForService(name string, apis []manifest.ExternalAPIDef) []manifest.ExternalAPIDef {
+	var out []manifest.ExternalAPIDef
+	for _, a := range apis {
+		if a.CalledByService == "" || a.CalledByService == name {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// fileStoragesForService returns the file storage buckets that belong to the
+// given service (UsedByService == name) plus any that are unassigned (empty).
+// Returns nil when nothing matches so omitempty omits it.
+func fileStoragesForService(name string, storages []manifest.FileStorageDef) []manifest.FileStorageDef {
+	var out []manifest.FileStorageDef
+	for _, s := range storages {
+		if s.UsedByService == "" || s.UsedByService == name {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // commLinksFor returns the comm links involving the given service.
@@ -391,16 +424,17 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 		Label:        "Generate DTOs, API types, and OpenAPI spec",
 		Dependencies: deps,
 		Payload: TaskPayload{
-			ArchPattern: m.Backend.ArchPattern,
-			EnvConfig:   m.Backend.Env.OrZero(),
-			Domains:     m.Data.Domains,
-			AllServices: m.Backend.Services,
-			DTOs:        m.Contracts.DTOs,
-			Endpoints:   m.Contracts.Endpoints,
-			Versioning:  m.Contracts.Versioning.OrZero(),
-			Auth:        m.Backend.Auth,
-			OutputDir:   contractsOutputDir(m, svcDirs),
-			ServiceDirs: svcDirs,
+			ArchPattern:  m.Backend.ArchPattern,
+			EnvConfig:    m.Backend.Env.OrZero(),
+			Domains:      m.Data.Domains,
+			AllServices:  m.Backend.Services,
+			DTOs:         m.Contracts.DTOs,
+			Endpoints:    m.Contracts.Endpoints,
+			Versioning:   m.Contracts.Versioning.OrZero(),
+			ExternalAPIs: m.Contracts.ExternalAPIs,
+			Auth:         m.Backend.Auth,
+			OutputDir:    contractsOutputDir(m, svcDirs),
+			ServiceDirs:  svcDirs,
 		},
 	})
 }
