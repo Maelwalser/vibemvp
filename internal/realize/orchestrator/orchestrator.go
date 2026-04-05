@@ -569,5 +569,5 @@ func applyIntegrationFixes(outputDir string) string {
 	if len(allGoFiles) == 0 {
 		return ""
 	}
-	return verify.ApplyDeterministicFixes(outputDir, allGoFiles)
+	return verify.ApplyDeterministicFixes(outputDir, allGoFiles, "go")
 }

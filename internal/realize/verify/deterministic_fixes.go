@@ -14,46 +14,69 @@ import (
 // generated code before running the language verifier. Returns a description
 // of fixes applied, or "" if none were needed.
 //
+// language must match the verifier's Language() string ("go", "typescript",
+// "python", "terraform", or "" for unknown). Only fixes relevant to that
+// language are executed — no cross-language tool invocations are attempted.
+//
 // Run this BEFORE every verification attempt — not just on retries — so that
 // first-attempt code gets the same cleanup benefit without consuming a retry slot.
-func ApplyDeterministicFixes(dir string, files []string) string {
+func ApplyDeterministicFixes(dir string, files []string, language string) string {
 	var fixes []string
 
-	// Language-aware import resolution: add missing imports and remove unused ones
-	// using the language's own tooling (goimports for Go, isort for Python, etc.).
-	// Run first so subsequent steps see clean import blocks.
-	if f := fixLanguageImports(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	// Fix placeholder import paths — rewriting imports may introduce temporarily
-	// un-gofmt'd lines, so run gofmt after.
-	if f := fixPlaceholderImportPaths(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	if f := fixGoEscapeSequences(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	if f := fixDuplicateTypes(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	// Remove invalid pgxpool v5 fields before gofmt so the result is clean.
-	if f := fixInvalidPgxpoolConfig(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	// Remove import statements that appear inside function bodies — always a bug.
-	if f := fixMisplacedImports(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	// Repair orphaned return-type fragments left by truncated LLM responses, e.g.:
-	//   // PgxPool is the interface for ...
-	//   , error)          ← truncated — type PgxPool interface { and Exec method were cut off
-	//       Query(...)
-	//   }
-	if f := fixOrphanedInterfaceFragments(dir, files); f != "" {
-		fixes = append(fixes, f)
-	}
-	if f := fixGofmt(dir, files); f != "" {
-		fixes = append(fixes, f)
+	switch language {
+	case "go", "":
+		// goimports adds missing stdlib/module imports and removes unused ones.
+		// Run first so placeholder-path and gofmt steps see a clean import block.
+		if f := fixGoImports(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		// Fix placeholder import paths — rewriting imports may introduce temporarily
+		// un-gofmt'd lines, so run gofmt after.
+		if f := fixPlaceholderImportPaths(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		if f := fixGoEscapeSequences(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		if f := fixDuplicateTypes(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		// Remove invalid pgxpool v5 fields before gofmt so the result is clean.
+		if f := fixInvalidPgxpoolConfig(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		// Remove import statements that appear inside function bodies — always a bug.
+		if f := fixMisplacedImports(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		// Repair orphaned return-type fragments left by truncated LLM responses, e.g.:
+		//   // PgxPool is the interface for ...
+		//   , error)          ← truncated — type PgxPool interface { and Exec method were cut off
+		//       Query(...)
+		//   }
+		if f := fixOrphanedInterfaceFragments(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		if f := fixGofmt(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+
+	case "typescript":
+		if f := fixTypeScript(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+
+	case "python":
+		// isort re-orders imports; run before ruff/black so they see a consistent
+		// import block and don't re-report ordering violations as unfixed.
+		if f := fixPythonImports(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+		if f := fixPython(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
+
+	// terraform and other verifier languages have no deterministic fixes yet.
 	}
 
 	if len(fixes) == 0 {
@@ -62,36 +85,8 @@ func ApplyDeterministicFixes(dir string, files []string) string {
 	return strings.Join(fixes, "; ")
 }
 
-// ── Language-aware import fixer ──────────────────────────────────────────────
+// ── Go import fixer ───────────────────────────────────────────────────────────
 //
-// Uses the language's own import-management tooling to add missing imports and
-// remove unused ones. This is a generalizable pattern — each language maps to
-// its own tool:
-//
-//   Go:     goimports -w  (adds missing stdlib/module imports, removes unused)
-//   Python: isort .       (re-orders imports; missing imports still need LLM retry)
-//   Other:  no-op         (TypeScript import resolution requires build context)
-//
-// goimports uses the Go module graph to discover packages — it is not hardcoded
-// to any particular package list. It works for any module configuration.
-// Falls back to gofmt-only when goimports is not installed.
-
-func fixLanguageImports(dir string, files []string) string {
-	var msgs []string
-
-	if msg := fixGoImports(dir, files); msg != "" {
-		msgs = append(msgs, msg)
-	}
-	if msg := fixPythonImports(dir, files); msg != "" {
-		msgs = append(msgs, msg)
-	}
-
-	if len(msgs) == 0 {
-		return ""
-	}
-	return strings.Join(msgs, "; ")
-}
-
 // fixGoImports runs goimports on all .go files in the directory.
 // goimports adds missing stdlib/module imports and removes unused ones.
 // Falls back to removeUnusedGoImports when goimports is not installed.
@@ -989,3 +984,4 @@ func fixGofmt(dir string, files []string) string {
 	}
 	return fmt.Sprintf("gofmt fixed %d file(s)", fixed)
 }
+

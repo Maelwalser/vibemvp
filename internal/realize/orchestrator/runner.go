@@ -213,9 +213,9 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			}
 		}
 
-		// Apply deterministic fixes (gofmt, invalid escape sequences, duplicate
-		// type declarations) before every verification — not just on retries.
-		if fixes := verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(result.Files)); fixes != "" {
+		// Apply deterministic fixes (language-specific formatting, import cleanup,
+		// etc.) before every verification — not just on retries.
+		if fixes := verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(result.Files), r.verifier.Language()); fixes != "" {
 			r.log("[%s] applied deterministic fixes: %s", r.task.ID, fixes)
 		}
 
@@ -243,8 +243,8 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		if attempt < r.maxRetries {
 			if uuidFix := verify.ApplyUUIDToStringFixes(tmpDir, vResult.Output); uuidFix != "" {
 				r.log("[%s] %s", r.task.ID, uuidFix)
-				// Re-gofmt after rewriting
-				verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(lastFiles))
+				// Re-apply language fixes after rewriting.
+				verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(lastFiles), r.verifier.Language())
 				if fixResult, ferr := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(lastFiles)); ferr == nil && fixResult.Passed {
 					r.log("[%s] uuid fix resolved verification — skipping LLM retry", r.task.ID)
 					return r.commit(ctx, tmpDir, lastFiles)
