@@ -275,69 +275,69 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 		Assets:     assets,
 	}
 	if fe.techEnabled {
-		p.Tech = manifest.FrontendTechConfig{
-			Language:           fieldGet(fe.techFields, "language"),
+		p.Tech = &manifest.FrontendTechConfig{
+			Language:           noneToEmpty(fieldGet(fe.techFields, "language")),
 			LanguageVersion:    fieldGet(fe.techFields, "language_version"),
-			Platform:           fieldGet(fe.techFields, "platform"),
-			Framework:          fieldGet(fe.techFields, "framework"),
+			Platform:           noneToEmpty(fieldGet(fe.techFields, "platform")),
+			Framework:          noneToEmpty(fieldGet(fe.techFields, "framework")),
 			FrameworkVersion:   fieldGet(fe.techFields, "framework_version"),
-			MetaFramework:      fieldGet(fe.techFields, "meta_framework"),
-			PackageManager:     fieldGet(fe.techFields, "pkg_manager"),
-			Styling:            fieldGet(fe.techFields, "styling"),
-			ComponentLib:       fieldGet(fe.techFields, "component_lib"),
-			StateManagement:    fieldGet(fe.techFields, "state_mgmt"),
-			DataFetching:       fieldGet(fe.techFields, "data_fetching"),
-			FormHandling:       fieldGet(fe.techFields, "form_handling"),
-			Validation:         fieldGet(fe.techFields, "validation"),
-			PWASupport:         fieldGet(fe.techFields, "pwa_support"),
-			RealtimeStrategy:   fieldGet(fe.techFields, "realtime"),
-			ImageOptimization:  fieldGet(fe.techFields, "image_opt"),
-			AuthFlowType:       fieldGet(fe.techFields, "auth_flow"),
-			ErrorBoundary:      fieldGet(fe.techFields, "error_boundary"),
-			BundleOptimization: fieldGet(fe.techFields, "bundle_opt"),
+			MetaFramework:      noneToEmpty(fieldGet(fe.techFields, "meta_framework")),
+			PackageManager:     noneToEmpty(fieldGet(fe.techFields, "pkg_manager")),
+			Styling:            noneToEmpty(fieldGet(fe.techFields, "styling")),
+			ComponentLib:       noneToEmpty(fieldGet(fe.techFields, "component_lib")),
+			StateManagement:    noneToEmpty(fieldGet(fe.techFields, "state_mgmt")),
+			DataFetching:       noneToEmpty(fieldGet(fe.techFields, "data_fetching")),
+			FormHandling:       noneToEmpty(fieldGet(fe.techFields, "form_handling")),
+			Validation:         noneToEmpty(fieldGet(fe.techFields, "validation")),
+			PWASupport:         noneToEmpty(fieldGet(fe.techFields, "pwa_support")),
+			RealtimeStrategy:   noneToEmpty(fieldGet(fe.techFields, "realtime")),
+			ImageOptimization:  noneToEmpty(fieldGet(fe.techFields, "image_opt")),
+			AuthFlowType:       noneToEmpty(fieldGet(fe.techFields, "auth_flow")),
+			ErrorBoundary:      noneToEmpty(fieldGet(fe.techFields, "error_boundary")),
+			BundleOptimization: noneToEmpty(fieldGet(fe.techFields, "bundle_opt")),
 		}
 		// Legacy compatibility
-		p.Rendering = manifest.RenderingMode(fieldGet(fe.techFields, "platform"))
-		p.Framework = fieldGet(fe.techFields, "framework")
-		p.Styling = fieldGet(fe.techFields, "styling")
+		p.Rendering = manifest.RenderingMode(noneToEmpty(fieldGet(fe.techFields, "platform")))
+		p.Framework = noneToEmpty(fieldGet(fe.techFields, "framework"))
+		p.Styling = noneToEmpty(fieldGet(fe.techFields, "styling"))
 	}
 	if fe.themeEnabled {
-		p.Theme = manifest.FrontendTheme{
-			DarkMode:     fieldGet(fe.themeFields, "dark_mode"),
-			BorderRadius: fieldGet(fe.themeFields, "border_radius"),
-			Spacing:      fieldGet(fe.themeFields, "spacing"),
-			Elevation:    fieldGet(fe.themeFields, "elevation"),
-			Motion:       fieldGet(fe.themeFields, "motion"),
-			Vibe:         fieldGet(fe.themeFields, "vibe"),
+		p.Theme = &manifest.FrontendTheme{
+			DarkMode:     noneToEmpty(fieldGet(fe.themeFields, "dark_mode")),
+			BorderRadius: noneToEmpty(fieldGet(fe.themeFields, "border_radius")),
+			Spacing:      noneToEmpty(fieldGet(fe.themeFields, "spacing")),
+			Elevation:    noneToEmpty(fieldGet(fe.themeFields, "elevation")),
+			Motion:       noneToEmpty(fieldGet(fe.themeFields, "motion")),
+			Vibe:         noneToEmpty(fieldGet(fe.themeFields, "vibe")),
 			Font:         fieldGet(fe.themeFields, "font"),
 			Colors:       fieldGet(fe.themeFields, "colors"),
 			Description:  fieldGet(fe.themeFields, "description"),
 		}
 	}
 	if fe.navEnabled {
-		p.Navigation = manifest.NavigationConfig{
-			NavType:     fieldGet(fe.navFields, "nav_type"),
+		p.Navigation = &manifest.NavigationConfig{
+			NavType:     noneToEmpty(fieldGet(fe.navFields, "nav_type")),
 			Breadcrumbs: fieldGet(fe.navFields, "breadcrumbs") == "true",
 			AuthAware:   fieldGet(fe.navFields, "auth_aware") == "true",
 		}
 	}
 	if fe.i18nEnabled {
-		p.I18n = manifest.I18nConfig{
-			Enabled:             fieldGet(fe.i18nFields, "enabled"),
+		p.I18n = &manifest.I18nConfig{
+			Enabled:             noneToEmpty(fieldGet(fe.i18nFields, "enabled")),
 			DefaultLocale:       fieldGet(fe.i18nFields, "default_locale"),
 			SupportedLocales:    fieldGetMulti(fe.i18nFields, "supported_locales"),
-			TranslationStrategy: fieldGet(fe.i18nFields, "translation_strategy"),
-			TimezoneHandling:    fieldGet(fe.i18nFields, "timezone_handling"),
+			TranslationStrategy: noneToEmpty(fieldGet(fe.i18nFields, "translation_strategy")),
+			TimezoneHandling:    noneToEmpty(fieldGet(fe.i18nFields, "timezone_handling")),
 		}
 	}
 	if fe.a11yEnabled {
-		p.A11ySEO = manifest.A11ySEOConfig{
-			WCAGLevel:         fieldGet(fe.a11yFields, "wcag_level"),
-			SEORenderStrategy: fieldGet(fe.a11yFields, "seo_render_strategy"),
-			Sitemap:           fieldGet(fe.a11yFields, "sitemap"),
-			MetaTagInjection:  fieldGet(fe.a11yFields, "meta_tag_injection"),
-			Analytics:         fieldGet(fe.a11yFields, "analytics"),
-			Telemetry:         fieldGet(fe.a11yFields, "telemetry"),
+		p.A11ySEO = &manifest.A11ySEOConfig{
+			WCAGLevel:         noneToEmpty(fieldGet(fe.a11yFields, "wcag_level")),
+			SEORenderStrategy: noneToEmpty(fieldGet(fe.a11yFields, "seo_render_strategy")),
+			Sitemap:           noneToEmpty(fieldGet(fe.a11yFields, "sitemap")),
+			MetaTagInjection:  noneToEmpty(fieldGet(fe.a11yFields, "meta_tag_injection")),
+			Analytics:         noneToEmpty(fieldGet(fe.a11yFields, "analytics")),
+			Telemetry:         noneToEmpty(fieldGet(fe.a11yFields, "telemetry")),
 		}
 	}
 	return p
@@ -346,42 +346,40 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 // FromFrontendPillar populates the editor from a saved manifest FrontendPillar,
 // reversing the ToManifestFrontendPillar() operation.
 func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) FrontendEditor {
-	t := fp.Tech
-	if t.Language != "" || t.Framework != "" || t.Platform != "" {
+	if fp.Tech != nil && (fp.Tech.Language != "" || fp.Tech.Framework != "" || fp.Tech.Platform != "") {
 		fe.techEnabled = true
-		fe.techFields = setFieldValue(fe.techFields, "language", t.Language)
-		fe.techFields = setFieldValue(fe.techFields, "language_version", t.LanguageVersion)
-		fe.techFields = setFieldValue(fe.techFields, "platform", t.Platform)
-		fe.techFields = setFieldValue(fe.techFields, "framework", t.Framework)
-		fe.techFields = setFieldValue(fe.techFields, "framework_version", t.FrameworkVersion)
-		fe.techFields = setFieldValue(fe.techFields, "meta_framework", t.MetaFramework)
-		fe.techFields = setFieldValue(fe.techFields, "pkg_manager", t.PackageManager)
-		fe.techFields = setFieldValue(fe.techFields, "styling", t.Styling)
-		fe.techFields = setFieldValue(fe.techFields, "component_lib", t.ComponentLib)
-		fe.techFields = setFieldValue(fe.techFields, "state_mgmt", t.StateManagement)
-		fe.techFields = setFieldValue(fe.techFields, "data_fetching", t.DataFetching)
-		fe.techFields = setFieldValue(fe.techFields, "form_handling", t.FormHandling)
-		fe.techFields = setFieldValue(fe.techFields, "validation", t.Validation)
-		fe.techFields = setFieldValue(fe.techFields, "pwa_support", t.PWASupport)
-		fe.techFields = setFieldValue(fe.techFields, "realtime", t.RealtimeStrategy)
-		fe.techFields = setFieldValue(fe.techFields, "image_opt", t.ImageOptimization)
-		fe.techFields = setFieldValue(fe.techFields, "auth_flow", t.AuthFlowType)
-		fe.techFields = setFieldValue(fe.techFields, "error_boundary", t.ErrorBoundary)
-		fe.techFields = setFieldValue(fe.techFields, "bundle_opt", t.BundleOptimization)
+		fe.techFields = setFieldValue(fe.techFields, "language", fp.Tech.Language)
+		fe.techFields = setFieldValue(fe.techFields, "language_version", fp.Tech.LanguageVersion)
+		fe.techFields = setFieldValue(fe.techFields, "platform", fp.Tech.Platform)
+		fe.techFields = setFieldValue(fe.techFields, "framework", fp.Tech.Framework)
+		fe.techFields = setFieldValue(fe.techFields, "framework_version", fp.Tech.FrameworkVersion)
+		fe.techFields = setFieldValue(fe.techFields, "meta_framework", fp.Tech.MetaFramework)
+		fe.techFields = setFieldValue(fe.techFields, "pkg_manager", fp.Tech.PackageManager)
+		fe.techFields = setFieldValue(fe.techFields, "styling", fp.Tech.Styling)
+		fe.techFields = setFieldValue(fe.techFields, "component_lib", fp.Tech.ComponentLib)
+		fe.techFields = setFieldValue(fe.techFields, "state_mgmt", fp.Tech.StateManagement)
+		fe.techFields = setFieldValue(fe.techFields, "data_fetching", fp.Tech.DataFetching)
+		fe.techFields = setFieldValue(fe.techFields, "form_handling", fp.Tech.FormHandling)
+		fe.techFields = setFieldValue(fe.techFields, "validation", fp.Tech.Validation)
+		fe.techFields = setFieldValue(fe.techFields, "pwa_support", fp.Tech.PWASupport)
+		fe.techFields = setFieldValue(fe.techFields, "realtime", fp.Tech.RealtimeStrategy)
+		fe.techFields = setFieldValue(fe.techFields, "image_opt", fp.Tech.ImageOptimization)
+		fe.techFields = setFieldValue(fe.techFields, "auth_flow", fp.Tech.AuthFlowType)
+		fe.techFields = setFieldValue(fe.techFields, "error_boundary", fp.Tech.ErrorBoundary)
+		fe.techFields = setFieldValue(fe.techFields, "bundle_opt", fp.Tech.BundleOptimization)
 	}
 
-	th := fp.Theme
-	if th.DarkMode != "" || th.BorderRadius != "" {
+	if fp.Theme != nil && (fp.Theme.DarkMode != "" || fp.Theme.BorderRadius != "") {
 		fe.themeEnabled = true
-		fe.themeFields = setFieldValue(fe.themeFields, "dark_mode", th.DarkMode)
-		fe.themeFields = setFieldValue(fe.themeFields, "border_radius", th.BorderRadius)
-		fe.themeFields = setFieldValue(fe.themeFields, "spacing", th.Spacing)
-		fe.themeFields = setFieldValue(fe.themeFields, "elevation", th.Elevation)
-		fe.themeFields = setFieldValue(fe.themeFields, "motion", th.Motion)
-		fe.themeFields = setFieldValue(fe.themeFields, "vibe", th.Vibe)
-		fe.themeFields = setFieldValue(fe.themeFields, "font", th.Font)
-		fe.themeFields = restoreMultiSelectValue(fe.themeFields, "colors", th.Colors)
-		fe.themeFields = setFieldValue(fe.themeFields, "description", th.Description)
+		fe.themeFields = setFieldValue(fe.themeFields, "dark_mode", fp.Theme.DarkMode)
+		fe.themeFields = setFieldValue(fe.themeFields, "border_radius", fp.Theme.BorderRadius)
+		fe.themeFields = setFieldValue(fe.themeFields, "spacing", fp.Theme.Spacing)
+		fe.themeFields = setFieldValue(fe.themeFields, "elevation", fp.Theme.Elevation)
+		fe.themeFields = setFieldValue(fe.themeFields, "motion", fp.Theme.Motion)
+		fe.themeFields = setFieldValue(fe.themeFields, "vibe", fp.Theme.Vibe)
+		fe.themeFields = setFieldValue(fe.themeFields, "font", fp.Theme.Font)
+		fe.themeFields = restoreMultiSelectValue(fe.themeFields, "colors", fp.Theme.Colors)
+		fe.themeFields = setFieldValue(fe.themeFields, "description", fp.Theme.Description)
 	}
 
 	// Collections stored directly; per-item forms rebuilt lazily on navigation.
@@ -389,39 +387,36 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 	fe.pages = fp.Pages
 	fe.assets = fp.Assets
 
-	n := fp.Navigation
-	if n.NavType != "" {
+	if fp.Navigation != nil && fp.Navigation.NavType != "" {
 		fe.navEnabled = true
-		fe.navFields = setFieldValue(fe.navFields, "nav_type", n.NavType)
+		fe.navFields = setFieldValue(fe.navFields, "nav_type", fp.Navigation.NavType)
 		boolStr := func(b bool) string {
 			if b {
 				return "true"
 			}
 			return "false"
 		}
-		fe.navFields = setFieldValue(fe.navFields, "breadcrumbs", boolStr(n.Breadcrumbs))
-		fe.navFields = setFieldValue(fe.navFields, "auth_aware", boolStr(n.AuthAware))
+		fe.navFields = setFieldValue(fe.navFields, "breadcrumbs", boolStr(fp.Navigation.Breadcrumbs))
+		fe.navFields = setFieldValue(fe.navFields, "auth_aware", boolStr(fp.Navigation.AuthAware))
 	}
 
-	i := fp.I18n
-	if i.Enabled != "" || i.DefaultLocale != "" {
+	if fp.I18n != nil && (fp.I18n.Enabled != "" || fp.I18n.DefaultLocale != "") {
 		fe.i18nEnabled = true
-		fe.i18nFields = setFieldValue(fe.i18nFields, "enabled", i.Enabled)
-		fe.i18nFields = setFieldValue(fe.i18nFields, "default_locale", i.DefaultLocale)
-		fe.i18nFields = restoreMultiSelectValue(fe.i18nFields, "supported_locales", i.SupportedLocales)
-		fe.i18nFields = setFieldValue(fe.i18nFields, "translation_strategy", i.TranslationStrategy)
-		fe.i18nFields = setFieldValue(fe.i18nFields, "timezone_handling", i.TimezoneHandling)
+		fe.i18nFields = setFieldValue(fe.i18nFields, "enabled", fp.I18n.Enabled)
+		fe.i18nFields = setFieldValue(fe.i18nFields, "default_locale", fp.I18n.DefaultLocale)
+		fe.i18nFields = restoreMultiSelectValue(fe.i18nFields, "supported_locales", fp.I18n.SupportedLocales)
+		fe.i18nFields = setFieldValue(fe.i18nFields, "translation_strategy", fp.I18n.TranslationStrategy)
+		fe.i18nFields = setFieldValue(fe.i18nFields, "timezone_handling", fp.I18n.TimezoneHandling)
 	}
 
-	a := fp.A11ySEO
-	if a.WCAGLevel != "" || a.SEORenderStrategy != "" {
+	if fp.A11ySEO != nil && (fp.A11ySEO.WCAGLevel != "" || fp.A11ySEO.SEORenderStrategy != "") {
 		fe.a11yEnabled = true
-		fe.a11yFields = setFieldValue(fe.a11yFields, "wcag_level", a.WCAGLevel)
-		fe.a11yFields = setFieldValue(fe.a11yFields, "seo_render_strategy", a.SEORenderStrategy)
-		fe.a11yFields = setFieldValue(fe.a11yFields, "sitemap", a.Sitemap)
-		fe.a11yFields = setFieldValue(fe.a11yFields, "meta_tag_injection", a.MetaTagInjection)
-		fe.a11yFields = setFieldValue(fe.a11yFields, "analytics", a.Analytics)
-		fe.a11yFields = setFieldValue(fe.a11yFields, "telemetry", a.Telemetry)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "wcag_level", fp.A11ySEO.WCAGLevel)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "seo_render_strategy", fp.A11ySEO.SEORenderStrategy)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "sitemap", fp.A11ySEO.Sitemap)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "meta_tag_injection", fp.A11ySEO.MetaTagInjection)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "analytics", fp.A11ySEO.Analytics)
+		fe.a11yFields = setFieldValue(fe.a11yFields, "telemetry", fp.A11ySEO.Telemetry)
 	}
 
 	return fe

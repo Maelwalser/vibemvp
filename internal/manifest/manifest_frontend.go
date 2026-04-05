@@ -4,14 +4,14 @@ package manifest
 
 // FrontendTechConfig describes the technology stack choices for the frontend.
 type FrontendTechConfig struct {
-	Language           string `json:"language"`
+	Language           string `json:"language,omitempty"`
 	LanguageVersion    string `json:"language_version,omitempty"`
-	Platform           string `json:"platform"`
-	Framework          string `json:"framework"`
+	Platform           string `json:"platform,omitempty"`
+	Framework          string `json:"framework,omitempty"`
 	FrameworkVersion   string `json:"framework_version,omitempty"`
 	MetaFramework      string `json:"meta_framework,omitempty"`
-	PackageManager     string `json:"package_manager"`
-	Styling            string `json:"styling"`
+	PackageManager     string `json:"package_manager,omitempty"`
+	Styling            string `json:"styling,omitempty"`
 	ComponentLib       string `json:"component_lib,omitempty"`
 	StateManagement    string `json:"state_management,omitempty"`
 	DataFetching       string `json:"data_fetching,omitempty"`
@@ -27,11 +27,11 @@ type FrontendTechConfig struct {
 
 // FrontendTheme describes the visual theme settings.
 type FrontendTheme struct {
-	DarkMode     string `json:"dark_mode"`
-	BorderRadius string `json:"border_radius"`
-	Spacing      string `json:"spacing"`
-	Elevation    string `json:"elevation"`
-	Motion       string `json:"motion"`
+	DarkMode     string `json:"dark_mode,omitempty"`
+	BorderRadius string `json:"border_radius,omitempty"`
+	Spacing      string `json:"spacing,omitempty"`
+	Elevation    string `json:"elevation,omitempty"`
+	Motion       string `json:"motion,omitempty"`
 	Vibe         string `json:"vibe,omitempty"`
 	Font         string `json:"font,omitempty"`
 	Colors       string `json:"colors,omitempty"`
@@ -94,7 +94,7 @@ type PageDef struct {
 
 // NavigationConfig describes frontend navigation settings.
 type NavigationConfig struct {
-	NavType     string `json:"nav_type"`
+	NavType     string `json:"nav_type,omitempty"`
 	Breadcrumbs bool   `json:"breadcrumbs"`
 	AuthAware   bool   `json:"auth_aware"`
 }
@@ -140,14 +140,14 @@ type AssetDef struct {
 
 // FrontendPillar covers the full frontend configuration.
 type FrontendPillar struct {
-	Tech       FrontendTechConfig `json:"tech"`
-	Theme      FrontendTheme      `json:"theme"`
-	Components []PageComponentDef `json:"components,omitempty"` // shared component library
-	Pages      []PageDef          `json:"pages,omitempty"`
-	Assets     []AssetDef         `json:"assets,omitempty"`
-	Navigation NavigationConfig   `json:"navigation"`
-	I18n       I18nConfig         `json:"i18n,omitempty"`
-	A11ySEO    A11ySEOConfig      `json:"a11y_seo,omitempty"`
+	Tech       *FrontendTechConfig `json:"tech,omitempty"`
+	Theme      *FrontendTheme      `json:"theme,omitempty"`
+	Components []PageComponentDef  `json:"components,omitempty"` // shared component library
+	Pages      []PageDef           `json:"pages,omitempty"`
+	Assets     []AssetDef          `json:"assets,omitempty"`
+	Navigation *NavigationConfig   `json:"navigation,omitempty"`
+	I18n       *I18nConfig         `json:"i18n,omitempty"`
+	A11ySEO    *A11ySEOConfig      `json:"a11y_seo,omitempty"`
 
 	// Legacy fields preserved for backward compatibility.
 	Rendering     RenderingMode `json:"rendering,omitempty"`

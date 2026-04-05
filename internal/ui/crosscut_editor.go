@@ -118,14 +118,14 @@ func newCrossCutEditor() CrossCutEditor {
 func (cc CrossCutEditor) ToManifestCrossCutPillar() manifest.CrossCutPillar {
 	var p manifest.CrossCutPillar
 	if cc.testingEnabled {
-		p.Testing = manifest.TestingConfig{
-			Unit:            fieldGet(cc.testingFields, "unit"),
-			Integration:     fieldGet(cc.testingFields, "integration"),
-			E2E:             fieldGet(cc.testingFields, "e2e"),
-			FrontendTesting: fieldGet(cc.testingFields, "fe_testing"),
-			API:             fieldGet(cc.testingFields, "api"),
-			Load:            fieldGet(cc.testingFields, "load"),
-			Contract:        fieldGet(cc.testingFields, "contract"),
+		p.Testing = &manifest.TestingConfig{
+			Unit:            noneToEmpty(fieldGet(cc.testingFields, "unit")),
+			Integration:     noneToEmpty(fieldGet(cc.testingFields, "integration")),
+			E2E:             noneToEmpty(fieldGet(cc.testingFields, "e2e")),
+			FrontendTesting: noneToEmpty(fieldGet(cc.testingFields, "fe_testing")),
+			API:             noneToEmpty(fieldGet(cc.testingFields, "api")),
+			Load:            noneToEmpty(fieldGet(cc.testingFields, "load")),
+			Contract:        noneToEmpty(fieldGet(cc.testingFields, "contract")),
 		}
 	}
 	if cc.docsEnabled {
@@ -140,10 +140,10 @@ func (cc CrossCutEditor) ToManifestCrossCutPillar() manifest.CrossCutPillar {
 				formats[proto] = v
 			}
 		}
-		p.Docs = manifest.DocsConfig{
+		p.Docs = &manifest.DocsConfig{
 			PerProtocolFormats: formats,
 			AutoGenerate:       fieldGet(cc.docsFields, "auto_generate") == "true",
-			Changelog:          fieldGet(cc.docsFields, "changelog"),
+			Changelog:          noneToEmpty(fieldGet(cc.docsFields, "changelog")),
 		}
 	}
 	if cc.standardsEnabled {
@@ -160,8 +160,7 @@ func (cc CrossCutEditor) ToManifestCrossCutPillar() manifest.CrossCutPillar {
 // FromCrossCutPillar populates the editor from a saved manifest CrossCutPillar,
 // reversing the ToManifestCrossCutPillar() operation.
 func (cc CrossCutEditor) FromCrossCutPillar(p manifest.CrossCutPillar) CrossCutEditor {
-	t := p.Testing
-	if t.Unit != "" || t.Integration != "" || t.E2E != "" {
+	if t := p.Testing; t != nil && (t.Unit != "" || t.Integration != "" || t.E2E != "") {
 		cc.testingEnabled = true
 		cc.testingFields = setFieldValue(cc.testingFields, "unit", t.Unit)
 		cc.testingFields = setFieldValue(cc.testingFields, "integration", t.Integration)
@@ -173,7 +172,7 @@ func (cc CrossCutEditor) FromCrossCutPillar(p manifest.CrossCutPillar) CrossCutE
 	}
 
 	d := p.Docs
-	if len(d.PerProtocolFormats) > 0 || d.APIDocs != "" || d.Changelog != "" {
+	if d != nil && (len(d.PerProtocolFormats) > 0 || d.APIDocs != "" || d.Changelog != "") {
 		cc.docsEnabled = true
 		boolStr := func(b bool) string {
 			if b {

@@ -83,7 +83,7 @@ func (b *Builder) addDataTasks(m *manifest.Manifest, d *DAG) {
 	svcDirs := serviceOutputDirs(m)
 	basePayload := TaskPayload{
 		ArchPattern:  m.Backend.ArchPattern,
-		EnvConfig:    m.Backend.Env,
+		EnvConfig:    m.Backend.Env.OrZero(),
 		Domains:      m.Data.Domains,
 		Databases:    m.Data.Databases,
 		Cachings:     m.Data.Cachings,
@@ -136,7 +136,7 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 	}
 
 	// Auth middleware generates Go code — it belongs alongside the backend module.
-	if m.Backend.Auth.Strategy != "" {
+	if m.Backend.Auth != nil && m.Backend.Auth.Strategy != "" {
 		add(d, &Task{
 			ID:    "backend.auth",
 			Kind:  TaskKindAuth,
@@ -144,11 +144,11 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 			Dependencies: dataDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,
-				EnvConfig:   m.Backend.Env,
+				EnvConfig:   m.Backend.Env.OrZero(),
 				Domains:     m.Data.Domains,
 				Databases:   m.Data.Databases,
 				AllServices: m.Backend.Services,
-				Auth:        &m.Backend.Auth,
+				Auth:        m.Backend.Auth,
 				OutputDir:   backendBaseDir(svcDirs),
 			},
 		})
@@ -163,7 +163,7 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 			Dependencies: dataDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,
-				EnvConfig:   m.Backend.Env,
+				EnvConfig:   m.Backend.Env.OrZero(),
 				Domains:     m.Data.Domains,
 				AllServices: m.Backend.Services,
 				Messaging:   m.Backend.Messaging,
@@ -181,7 +181,7 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 			Dependencies: dataDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,
-				EnvConfig:   m.Backend.Env,
+				EnvConfig:   m.Backend.Env.OrZero(),
 				AllServices: m.Backend.Services,
 				APIGateway:  m.Backend.APIGateway,
 			},
@@ -229,13 +229,13 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 		Payload: TaskPayload{
 			ModulePath:   modPath,
 			ArchPattern:  m.Backend.ArchPattern,
-			EnvConfig:    m.Backend.Env,
+			EnvConfig:    m.Backend.Env.OrZero(),
 			Service:      &svcCopy,
 			Domains:      m.Data.Domains,
 			Databases:    m.Data.Databases,
 			Cachings:     m.Data.Cachings,
 			FileStorages: m.Data.FileStorages,
-			Auth:         &m.Backend.Auth,
+			Auth:         m.Backend.Auth,
 			ServiceDirs:  svcDirs,
 			OutputDir:    outputDir,
 		},
@@ -315,7 +315,7 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			Domains:      m.Data.Domains,
 			Endpoints:    m.Contracts.Endpoints,
 			CommLinks:    links,
-			Auth:         &m.Backend.Auth,
+			Auth:         m.Backend.Auth,
 			FileStorages: m.Data.FileStorages,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
@@ -334,13 +334,13 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 		Payload: TaskPayload{
 			ModulePath:   modPath,
 			ArchPattern:  m.Backend.ArchPattern,
-			EnvConfig:    m.Backend.Env,
+			EnvConfig:    m.Backend.Env.OrZero(),
 			Service:      &svcCopy,
 			AllServices:  m.Backend.Services,
 			Databases:    m.Data.Databases,
 			Cachings:     m.Data.Cachings,
 			FileStorages: m.Data.FileStorages,
-			Auth:         &m.Backend.Auth,
+			Auth:         m.Backend.Auth,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
 			ServiceDirs:  svcDirs,
@@ -394,7 +394,7 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 
 	// Depends on all service tasks.
 	deps := append(serviceIDs(m), "data.schemas")
-	if m.Backend.Auth.Strategy != "" {
+	if m.Backend.Auth != nil && m.Backend.Auth.Strategy != "" {
 		deps = append(deps, "backend.auth")
 	}
 
@@ -406,13 +406,13 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 		Dependencies: deps,
 		Payload: TaskPayload{
 			ArchPattern: m.Backend.ArchPattern,
-			EnvConfig:   m.Backend.Env,
+			EnvConfig:   m.Backend.Env.OrZero(),
 			Domains:     m.Data.Domains,
 			AllServices: m.Backend.Services,
 			DTOs:        m.Contracts.DTOs,
 			Endpoints:   m.Contracts.Endpoints,
-			Versioning:  m.Contracts.Versioning,
-			Auth:        &m.Backend.Auth,
+			Versioning:  m.Contracts.Versioning.OrZero(),
+			Auth:        m.Backend.Auth,
 			OutputDir:   contractsOutputDir(m, svcDirs),
 			ServiceDirs: svcDirs,
 		},
@@ -422,7 +422,7 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 // ── Wave 3: frontend ──────────────────────────────────────────────────────────
 
 func (b *Builder) addFrontendTask(m *manifest.Manifest, d *DAG) {
-	if m.Frontend.Tech.Framework == "" {
+	if m.Frontend.Tech == nil || m.Frontend.Tech.Framework == "" {
 		return
 	}
 
@@ -443,9 +443,9 @@ func (b *Builder) addFrontendTask(m *manifest.Manifest, d *DAG) {
 			ArchPattern: m.Backend.ArchPattern,
 			DTOs:        m.Contracts.DTOs,
 			Endpoints:   m.Contracts.Endpoints,
-			Versioning:  m.Contracts.Versioning,
+			Versioning:  m.Contracts.Versioning.OrZero(),
 			AllServices: m.Backend.Services,
-			Auth:        &m.Backend.Auth,
+			Auth:        m.Backend.Auth,
 			Frontend:    &fp,
 			OutputDir:   svcDirs["frontend"],
 		},
@@ -474,7 +474,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 		Dependencies: baseDeps,
 		Payload: TaskPayload{
 			ArchPattern: m.Backend.ArchPattern,
-			EnvConfig:   m.Backend.Env,
+			EnvConfig:   m.Backend.Env.OrZero(),
 			AllServices: m.Backend.Services,
 			Domains:     m.Data.Domains,
 			Databases:   m.Data.Databases,
@@ -484,7 +484,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 		},
 	})
 
-	if m.Infra.CICD.IaCTool != "" && m.Infra.CICD.IaCTool != "None" {
+	if m.Infra.CICD != nil && m.Infra.CICD.IaCTool != "" && m.Infra.CICD.IaCTool != "None" {
 		add(d, &Task{
 			ID:           "infra.terraform",
 			Kind:         TaskKindInfraTerraform,
@@ -492,7 +492,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 			Dependencies: baseDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,
-				EnvConfig:   m.Backend.Env,
+				EnvConfig:   m.Backend.Env.OrZero(),
 				AllServices: m.Backend.Services,
 				Databases:   m.Data.Databases,
 				Infra:       &infra,
@@ -501,7 +501,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 		})
 	}
 
-	if m.Infra.CICD.Platform != "" && m.Infra.CICD.Platform != "none" {
+	if m.Infra.CICD != nil && m.Infra.CICD.Platform != "" && m.Infra.CICD.Platform != "none" {
 		add(d, &Task{
 			ID:           "infra.cicd",
 			Kind:         TaskKindInfraCI,
@@ -509,7 +509,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 			Dependencies: baseDeps,
 			Payload: TaskPayload{
 				ArchPattern: m.Backend.ArchPattern,
-				EnvConfig:   m.Backend.Env,
+				EnvConfig:   m.Backend.Env.OrZero(),
 				AllServices: m.Backend.Services,
 				Infra:       &infra,
 				CrossCut:    crossCutOrNil(m),
@@ -533,7 +533,7 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 	svcDirs := serviceOutputDirs(m)
 	ccOutDir := crossCutOutputDir(m, svcDirs)
 
-	if m.CrossCut.Testing.Unit != "" || m.CrossCut.Testing.E2E != "" {
+	if m.CrossCut.Testing != nil && (m.CrossCut.Testing.Unit != "" || m.CrossCut.Testing.E2E != "") {
 		add(d, &Task{
 			ID:           "crosscut.testing",
 			Kind:         TaskKindCrossCutTesting,
@@ -554,7 +554,7 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 		})
 	}
 
-	if m.CrossCut.Docs.APIDocs != "" {
+	if m.CrossCut.Docs != nil && m.CrossCut.Docs.APIDocs != "" {
 		add(d, &Task{
 			ID:           "crosscut.docs",
 			Kind:         TaskKindCrossCutDocs,
@@ -565,7 +565,7 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 				AllServices: m.Backend.Services,
 				DTOs:        m.Contracts.DTOs,
 				Endpoints:   m.Contracts.Endpoints,
-				Versioning:  m.Contracts.Versioning,
+				Versioning:  m.Contracts.Versioning.OrZero(),
 				CrossCut:    &cc,
 				OutputDir:   ".",
 				ServiceDirs: svcDirs,
@@ -586,7 +586,7 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 // payload field — agents must NOT invent subdirectories outside this map.
 func serviceOutputDirs(m *manifest.Manifest) map[string]string {
 	dirs := make(map[string]string)
-	hasFrontend := m.Frontend.Tech.Framework != ""
+	hasFrontend := m.Frontend.Tech != nil && m.Frontend.Tech.Framework != ""
 
 	switch m.Backend.ArchPattern {
 	case manifest.ArchMonolith, manifest.ArchModularMonolith:
@@ -643,7 +643,7 @@ func crossCutOutputDir(m *manifest.Manifest, svcDirs map[string]string) string {
 // ── nil-safe helpers ──────────────────────────────────────────────────────────
 
 func frontendOrNil(m *manifest.Manifest) *manifest.FrontendPillar {
-	if m.Frontend.Tech.Framework == "" {
+	if m.Frontend.Tech == nil || m.Frontend.Tech.Framework == "" {
 		return nil
 	}
 	fp := m.Frontend
