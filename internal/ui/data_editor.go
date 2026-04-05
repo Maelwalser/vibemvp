@@ -14,8 +14,8 @@ type deMode int
 
 const (
 	deNormal deMode = iota
-	deInsert // typing in a column form text field
-	deNaming // typing a new entity or column name
+	deInsert        // typing in a column form text field
+	deNaming        // typing a new entity or column name
 )
 
 type deView int
@@ -73,7 +73,7 @@ func newDataEditor() DataEditor {
 	fi := textinput.New()
 	fi.Prompt = ""
 	fi.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
-	fi.CursorStyle = StyleCursor
+	fi.Cursor.Style = StyleCursor
 	fi.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim))
 
 	return DataEditor{
@@ -140,4 +140,3 @@ func (de DataEditor) HintLine() string {
 	}
 	return ""
 }
-

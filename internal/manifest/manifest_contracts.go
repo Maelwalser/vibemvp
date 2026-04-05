@@ -87,10 +87,10 @@ type ExternalAPIInteraction struct {
 	Path           string `json:"path,omitempty"`
 	RequestDTO     string `json:"request_dto,omitempty"`
 	ResponseDTO    string `json:"response_dto,omitempty"`
-	HTTPMethod     string `json:"http_method,omitempty"`     // REST
-	GQLOperation   string `json:"gql_operation,omitempty"`   // GraphQL
+	HTTPMethod     string `json:"http_method,omitempty"`      // REST
+	GQLOperation   string `json:"gql_operation,omitempty"`    // GraphQL
 	GRPCStreamType string `json:"grpc_stream_type,omitempty"` // gRPC
-	WSDirection    string `json:"ws_direction,omitempty"`    // WebSocket
+	WSDirection    string `json:"ws_direction,omitempty"`     // WebSocket
 }
 
 // ExternalAPIDef describes a third-party API that the system consumes.

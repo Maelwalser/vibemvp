@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading…"
@@ -332,8 +331,8 @@ func (m Model) renderStatusLine(w int) string {
 	sec := m.sections[m.activeSection]
 	sectionName := strings.ToUpper(sec.ID)
 	pos := fmt.Sprintf("%02d/%02d", m.activeSection+1, len(m.sections))
-	rightSeg := StyleStatusRight.Render("  " + sectionName + "  ") +
-		StyleStatusSegmentPos.Render(pos + " ")
+	rightSeg := StyleStatusRight.Render("  "+sectionName+"  ") +
+		StyleStatusSegmentPos.Render(pos+" ")
 
 	// Centre: status message.
 	msg := ""

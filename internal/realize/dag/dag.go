@@ -12,16 +12,16 @@ const (
 	// Service tasks are split into four focused layers so each agent call
 	// produces a small, independently-verifiable unit of code rather than
 	// an entire multi-thousand-line codebase in one shot.
-	TaskKindServicePlan             TaskKind = "backend.service.plan"       // architect phase: interfaces + go.mod skeleton
-	TaskKindDependencyResolution    TaskKind = "backend.service.deps"       // resolve + lock all dependencies (no LLM)
-	TaskKindServiceRepository TaskKind = "backend.service.repository" // data-access layer
-	TaskKindServiceLogic      TaskKind = "backend.service.logic"      // business logic layer
-	TaskKindServiceHandler    TaskKind = "backend.service.handler"    // HTTP handlers + routing
-	TaskKindServiceBootstrap  TaskKind = "backend.service.bootstrap"  // main.go, go.mod, config
+	TaskKindServicePlan          TaskKind = "backend.service.plan"       // architect phase: interfaces + go.mod skeleton
+	TaskKindDependencyResolution TaskKind = "backend.service.deps"       // resolve + lock all dependencies (no LLM)
+	TaskKindServiceRepository    TaskKind = "backend.service.repository" // data-access layer
+	TaskKindServiceLogic         TaskKind = "backend.service.logic"      // business logic layer
+	TaskKindServiceHandler       TaskKind = "backend.service.handler"    // HTTP handlers + routing
+	TaskKindServiceBootstrap     TaskKind = "backend.service.bootstrap"  // main.go, go.mod, config
 
-	TaskKindAuth     TaskKind = "backend.auth"
+	TaskKindAuth      TaskKind = "backend.auth"
 	TaskKindMessaging TaskKind = "backend.messaging"
-	TaskKindGateway  TaskKind = "backend.gateway"
+	TaskKindGateway   TaskKind = "backend.gateway"
 
 	TaskKindContracts       TaskKind = "contracts"
 	TaskKindFrontend        TaskKind = "frontend"
@@ -40,7 +40,7 @@ type GeneratedFile struct {
 
 // Task is the atomic unit of work executed by one agent invocation.
 type Task struct {
-	ID           string      // unique stable identifier, e.g. "service.user-api"
+	ID           string // unique stable identifier, e.g. "service.user-api"
 	Kind         TaskKind
 	Label        string
 	Dependencies []string    // IDs of tasks that must complete before this one
@@ -77,8 +77,8 @@ func (d *DAG) Levels() [][]string {
 		assignLevel(id)
 	}
 
-	// Find the maximum level.
-	maxLevel := 0
+	// Find the maximum level (-1 means no tasks → 0 waves).
+	maxLevel := -1
 	for _, l := range levels {
 		if l > maxLevel {
 			maxLevel = l

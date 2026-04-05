@@ -18,7 +18,6 @@ const (
 
 var ccTabLabels = []string{"TESTING", "DOCS", "STANDARDS"}
 
-
 // ── CrossCutEditor ────────────────────────────────────────────────────────────
 
 // CrossCutEditor manages the CROSS-CUTTING CONCERNS main-tab.
@@ -49,11 +48,11 @@ type CrossCutEditor struct {
 	cBuf bool
 
 	// Context from other editors — used to filter testing options.
-	backendLangs        []string
-	backendProtocols    []string
-	backendArchPattern  string
-	frontendLang        string
-	frontendFramework   string
+	backendLangs       []string
+	backendProtocols   []string
+	backendArchPattern string
+	frontendLang       string
+	frontendFramework  string
 
 	// Active API protocols sourced from ContractsEditor — used to build
 	// per-protocol documentation format fields.
@@ -512,7 +511,6 @@ func (cc CrossCutEditor) tryEnterInsert() (CrossCutEditor, tea.Cmd) {
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func (cc CrossCutEditor) View(w, h int) string {
-	cc.width = w
 	cc.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,

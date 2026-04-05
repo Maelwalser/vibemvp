@@ -29,10 +29,10 @@ type domainSubView int
 const (
 	domainViewList domainSubView = iota
 	domainViewForm
-	domainViewAttrs      // attribute list inside domain form
-	domainViewAttrForm   // attribute form
-	domainViewRels       // relationship list inside domain form
-	domainViewRelForm    // relationship form
+	domainViewAttrs    // attribute list inside domain form
+	domainViewAttrForm // attribute form
+	domainViewRels     // relationship list inside domain form
+	domainViewRelForm  // relationship form
 )
 
 // ── file storage list+form types ─────────────────────────────────────────────
@@ -62,7 +62,6 @@ const (
 	cachingViewForm
 )
 
-
 // ── DataTabEditor ─────────────────────────────────────────────────────────────
 
 // DataTabEditor is the composite DATA main-tab editor. It delegates the
@@ -76,19 +75,19 @@ type DataTabEditor struct {
 	dataEditor DataEditor
 
 	// DOMAINS sub-tab
-	domains        []manifest.DomainDef
-	domainSubView  domainSubView
-	domainIdx      int
-	domainForm     []Field
-	domainFormIdx  int
-	attrItems      [][]Field
-	attrIdx        int
-	attrForm       []Field
-	attrFormIdx    int
-	relItems       [][]Field
-	relIdx         int
-	relForm        []Field
-	relFormIdx     int
+	domains       []manifest.DomainDef
+	domainSubView domainSubView
+	domainIdx     int
+	domainForm    []Field
+	domainFormIdx int
+	attrItems     [][]Field
+	attrIdx       int
+	attrForm      []Field
+	attrFormIdx   int
+	relItems      [][]Field
+	relIdx        int
+	relForm       []Field
+	relFormIdx    int
 
 	// CACHING sub-tab
 	cachings       []manifest.CachingConfig
@@ -481,10 +480,6 @@ func (dt DataTabEditor) Update(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 	return dt, nil
 }
 
-func (dt DataTabEditor) resetFieldIdx() {
-	// nothing needed; individual sub-editors reset their own state
-}
-
 func (dt DataTabEditor) updateInsert(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if ok {
@@ -706,4 +701,3 @@ func (dt DataTabEditor) View(w, h int) string {
 	lines = append(lines, contentLines...)
 	return fillTildes(lines, h)
 }
-

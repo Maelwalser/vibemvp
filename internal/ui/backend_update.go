@@ -632,5 +632,3 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	}
 	return be, nil
 }
-
-

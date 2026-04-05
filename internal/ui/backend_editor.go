@@ -10,7 +10,6 @@ import (
 
 // ── modes ─────────────────────────────────────────────────────────────────────
 
-
 // ── arch options ──────────────────────────────────────────────────────────────
 
 type archOption struct {
@@ -112,7 +111,7 @@ const (
 )
 
 type beListEditor struct {
-	items    [][]Field        // each item is a slice of fields
+	items    [][]Field // each item is a slice of fields
 	itemView beListView
 	itemIdx  int
 	formIdx  int
@@ -148,7 +147,6 @@ type BackendEditor struct {
 
 	// Security/WAF tab
 	securityFields []Field
-	secFormIdx     int
 	secEnabled     bool
 
 	// Jobs tab
@@ -195,9 +193,9 @@ type BackendEditor struct {
 	DomainNames        []string
 	availableDTOs      []string
 	availableEndpoints []string
-	cacheAliases       []string // IsCache DB aliases from the Data pillar
-	dbSourceAliases    []string // All DB source aliases from the Data pillar (for health_deps)
-	dtoProtocols       []string // unique DTO serialisation protocols from ContractsEditor
+	cacheAliases       []string                        // IsCache DB aliases from the Data pillar
+	dbSourceAliases    []string                        // All DB source aliases from the Data pillar (for health_deps)
+	dtoProtocols       []string                        // unique DTO serialisation protocols from ContractsEditor
 	environmentNames   []string                        // InfraPillar environment names for service env dropdowns
 	environmentDefs    []manifest.ServerEnvironmentDef // InfraPillar full env defs for API GW tech filtering
 	orchestrator       string                          // Primary orchestrator from InfraPillar for service discovery
@@ -1160,4 +1158,3 @@ func (be BackendEditor) CommProtocols() []string {
 	}
 	return protos
 }
-

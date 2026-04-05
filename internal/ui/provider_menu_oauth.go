@@ -159,7 +159,7 @@ func startOAuthFlow(provider, clientID string) (string, error) {
 		codeCh <- code
 	})
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	srvErrCh := make(chan error, 1)
 	go func() {
 		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {

@@ -229,4 +229,3 @@ func openBrowser(url string) {
 	}
 	_ = exec.Command(cmd, args...).Start()
 }
-

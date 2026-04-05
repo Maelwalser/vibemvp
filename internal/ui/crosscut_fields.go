@@ -225,12 +225,12 @@ func computeTestingFields(backendLangs, backendProtocols []string, backendArchPa
 			}
 		}
 		fields = append(fields, Field{
-			Key:    t.key,
-			Label:  t.label,
-			Kind:   KindSelect,
+			Key:     t.key,
+			Label:   t.label,
+			Kind:    KindSelect,
 			Options: t.opts,
-			Value:  val,
-			SelIdx: selIdx,
+			Value:   val,
+			SelIdx:  selIdx,
 		})
 	}
 	return fields
@@ -503,4 +503,3 @@ func (cc *CrossCutEditor) updateFELinterOptions(lang string) {
 		break
 	}
 }
-

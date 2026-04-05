@@ -90,18 +90,18 @@ var aliasMap = map[string]string{
 	"NATS":        "broker-nats",
 	"AWS SQS/SNS": "broker-cloud",
 	// Job queues
-	"BullMQ":        "jobs-bullmq",
-	"Bull":          "jobs-bullmq",
-	"Temporal":      "jobs-temporal",
-	"Sidekiq":       "jobs-sidekiq-celery",
-	"Celery":        "jobs-sidekiq-celery",
-	"Dramatiq":      "jobs-sidekiq-celery",
-	"Faktory":       "jobs-faktory-asynq-river",
-	"Asynq":         "jobs-faktory-asynq-river",
-	"River":         "jobs-faktory-asynq-river",
-	"Hangfire":      "jobs-hangfire",
+	"BullMQ":         "jobs-bullmq",
+	"Bull":           "jobs-bullmq",
+	"Temporal":       "jobs-temporal",
+	"Sidekiq":        "jobs-sidekiq-celery",
+	"Celery":         "jobs-sidekiq-celery",
+	"Dramatiq":       "jobs-sidekiq-celery",
+	"Faktory":        "jobs-faktory-asynq-river",
+	"Asynq":          "jobs-faktory-asynq-river",
+	"River":          "jobs-faktory-asynq-river",
+	"Hangfire":       "jobs-hangfire",
 	"Laravel Queues": "jobs-laravel-queues",
-	"Oban":          "jobs-oban",
+	"Oban":           "jobs-oban",
 	// Styling
 	"Tailwind CSS": "tailwind",
 	"Tailwind":     "tailwind",
@@ -122,12 +122,12 @@ var aliasMap = map[string]string{
 	"pgxmock": "go-pgx-repository",
 
 	// Auth strategy aliases (AuthConfig.Strategy values)
-	"JWT":            "auth-jwt-stateless",
-	"Session-based":  "auth-session-based",
-	"SAML":           "auth-oauth2-oidc",
-	"OIDC":           "auth-oauth2-oidc",
-	"API Key":        "auth-apikey",
-	"mTLS":           "auth-mtls",
+	"JWT":           "auth-jwt-stateless",
+	"Session-based": "auth-session-based",
+	"SAML":          "auth-oauth2-oidc",
+	"OIDC":          "auth-oauth2-oidc",
+	"API Key":       "auth-apikey",
+	"mTLS":          "auth-mtls",
 
 	// File storage provider aliases (FileStorages[i].Technology values)
 	"S3":         "storage-s3-gcs",
@@ -142,26 +142,26 @@ var aliasMap = map[string]string{
 	"Memcached": "db-redis-memcached",
 
 	// Testing framework aliases (TestingConfig field values)
-	"Jest":                   "test-unit",
-	"Vitest":                 "test-unit",
-	"pytest":                 "test-unit",
-	"JUnit":                  "test-unit",
-	"xUnit":                  "test-unit",
-	"Go testing":             "test-unit",
-	"RSpec":                  "test-unit",
-	"Playwright":             "test-playwright-cypress",
-	"Cypress":                "test-playwright-cypress",
-	"Selenium":               "test-selenium",
-	"Nightwatch":             "test-playwright-cypress",
-	"k6":                     "test-load",
-	"Locust":                 "test-load",
-	"Apache JMeter":          "test-load",
-	"Pact":                   "test-contract",
-	"Spring Cloud Contract":  "test-contract",
-	"REST Assured":           "test-api",
-	"Postman":                "test-api",
-	"Supertest":              "test-api",
-	"Testcontainers":         "test-integration-containers",
+	"Jest":                  "test-unit",
+	"Vitest":                "test-unit",
+	"pytest":                "test-unit",
+	"JUnit":                 "test-unit",
+	"xUnit":                 "test-unit",
+	"Go testing":            "test-unit",
+	"RSpec":                 "test-unit",
+	"Playwright":            "test-playwright-cypress",
+	"Cypress":               "test-playwright-cypress",
+	"Selenium":              "test-selenium",
+	"Nightwatch":            "test-playwright-cypress",
+	"k6":                    "test-load",
+	"Locust":                "test-load",
+	"Apache JMeter":         "test-load",
+	"Pact":                  "test-contract",
+	"Spring Cloud Contract": "test-contract",
+	"REST Assured":          "test-api",
+	"Postman":               "test-api",
+	"Supertest":             "test-api",
+	"Testcontainers":        "test-integration-containers",
 
 	// CI platform aliases (CIPlatform values not yet aliased)
 	// Note: "GitHub Actions" and "GitLab CI" are already aliased above
@@ -209,8 +209,8 @@ var universalSkillsForKind = map[dag.TaskKind][]string{
 	},
 	dag.TaskKindServiceHandler: {
 		"backend-patterns", "security-review", "api-design", "coding-standards",
-		"pagination-impl",      // every list endpoint needs pagination
-		"api-versioning-impl",  // versioning strategy
+		"pagination-impl",     // every list endpoint needs pagination
+		"api-versioning-impl", // versioning strategy
 	},
 	dag.TaskKindServiceBootstrap: {
 		"backend-patterns", "coding-standards",

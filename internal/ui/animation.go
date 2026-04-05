@@ -23,10 +23,6 @@ func uiTick() tea.Cmd {
 	})
 }
 
-// headerDecoFrames are the two-frame scanline decorations shown in the header bar.
-// Alternates between flowing and receding density to create a subtle scanning effect.
-var headerDecoFrames = [2]string{"▏▎▍▌▋▊▉█", "█▉▊▋▌▍▎▏"}
-
 // modeSpinFrames are the two-frame Nerd Font powerline decorators flanking the mode badge.
 // Frame 0 uses half-circle powerline glyphs; frame 1 uses solid-arrow glyphs.
 // Requires a Nerd Font patched terminal font (e.g. JetBrainsMono Nerd Font).
@@ -41,9 +37,6 @@ const matrixChars = "ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹ�
 
 // MatrixSpinnerFrames is a 12-frame braille spinner styled for matrix output screens.
 var MatrixSpinnerFrames = [12]string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷", "⡿", "⣟", "⣯", "⣷"}
-
-// glitchFrames cycle through density characters for "glitch" state transitions.
-var glitchFrames = [6]string{"█", "▓", "▒", "░", "╳", "·"}
 
 // sineWaveFrames holds 16 pre-computed frames of a block-element sine-wave bar.
 // Each frame is 8 chars wide, suitable for inline progress / loader display.

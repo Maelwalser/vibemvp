@@ -10,7 +10,6 @@ import (
 	"github.com/vibe-menu/internal/realize/dag"
 )
 
-
 // FileRegistry implements Registry by reading skill markdown files from a directory.
 type FileRegistry struct {
 	skillsDir string

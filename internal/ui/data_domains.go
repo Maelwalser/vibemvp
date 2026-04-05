@@ -546,4 +546,3 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 	}
 	return nil
 }
-

@@ -21,12 +21,12 @@ type TaskPayload struct {
 	FileStorages []manifest.FileStorageDef `json:"file_storages,omitempty"`
 
 	// Backend pillar — per-service tasks set Service; others see AllServices.
-	Service     *manifest.ServiceDef     `json:"service,omitempty"`
-	AllServices []manifest.ServiceDef    `json:"all_services,omitempty"`
-	CommLinks   []manifest.CommLink      `json:"comm_links,omitempty"`
-	Messaging   *manifest.MessagingConfig `json:"messaging,omitempty"`
+	Service     *manifest.ServiceDef       `json:"service,omitempty"`
+	AllServices []manifest.ServiceDef      `json:"all_services,omitempty"`
+	CommLinks   []manifest.CommLink        `json:"comm_links,omitempty"`
+	Messaging   *manifest.MessagingConfig  `json:"messaging,omitempty"`
 	APIGateway  *manifest.APIGatewayConfig `json:"api_gateway,omitempty"`
-	Auth        *manifest.AuthConfig     `json:"auth,omitempty"`
+	Auth        *manifest.AuthConfig       `json:"auth,omitempty"`
 
 	// JobQueues and CronJobs are the background task configurations assigned to
 	// this service. Populated for service-layer and bootstrap tasks so agents

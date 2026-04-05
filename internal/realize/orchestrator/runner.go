@@ -154,7 +154,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			// before spending an LLM call.
 			if classifyError(lastVerifyOutput) == errTypeDeps && lockedGoMod != "" {
 				if modPath := findGoMod(tmpDir); modPath != "" {
-					os.WriteFile(modPath, []byte(lockedGoMod), 0644)
+					_ = os.WriteFile(modPath, []byte(lockedGoMod), 0644)
 					runGoModTidy(ctx, filepath.Dir(modPath))
 					if vr, err := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(lastFiles)); err == nil && vr.Passed {
 						r.log("[%s] deps fix resolved verification — skipping LLM retry", r.task.ID)
@@ -207,7 +207,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		// so the checksum database is up to date without inventing new versions.
 		if lockedGoMod != "" {
 			if modPath := findGoMod(tmpDir); modPath != "" {
-				os.WriteFile(modPath, []byte(lockedGoMod), 0644)
+				_ = os.WriteFile(modPath, []byte(lockedGoMod), 0644)
 				runGoModTidy(ctx, filepath.Dir(modPath))
 			}
 		}
@@ -389,7 +389,7 @@ func isImplementationTask(taskID string) bool {
 // findGoMod walks dir to find the first go.mod file.
 func findGoMod(dir string) string {
 	var result string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || result != "" {
 			return nil
 		}
@@ -406,7 +406,7 @@ func findGoMod(dir string) string {
 func runGoModTidy(ctx context.Context, dir string) {
 	cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	cmd.Dir = dir
-	cmd.CombinedOutput()
+	_, _ = cmd.CombinedOutput()
 }
 
 // agentForAttempt returns the agent to use for a given attempt number.

@@ -346,7 +346,7 @@ func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignme
 // found under outputDir, for use in diagnostic messages.
 func modulePathFromOutput(outputDir string) string {
 	var result string
-	filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || result != "" {
 			return nil
 		}
