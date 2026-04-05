@@ -1718,8 +1718,8 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 		}
 		fromY := midY(from)
 		toY := midY(to)
-		exitX := from.x + from.w   // first cell right of source box
-		bypassX := exitX + 3       // vertical connector column
+		exitX := from.x + from.w // first cell right of source box
+		bypassX := exitX + 3     // vertical connector column
 
 		// Source: horizontal exit
 		cv.hLine(exitX, fromY, 3)
@@ -1743,9 +1743,9 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 		edgeBoundsMap[e.id] = edgeBounds{x1: bx1, x2: bx2, y1: by1, y2: by2}
 		// Precise path: three segments instead of the bounding rectangle.
 		edgePathMap[e.id] = []edgeBounds{
-			{x1: exitX, x2: bypassX + 1, y1: fromY, y2: fromY + 1},          // horizontal exit
-			{x1: bypassX, x2: bypassX + 1, y1: lo, y2: hi + 1},              // vertical connector
-			{x1: to.x + to.w, x2: bypassX + 1, y1: toY, y2: toY + 1},       // horizontal entry + arrow
+			{x1: exitX, x2: bypassX + 1, y1: fromY, y2: fromY + 1},   // horizontal exit
+			{x1: bypassX, x2: bypassX + 1, y1: lo, y2: hi + 1},       // vertical connector
+			{x1: to.x + to.w, x2: bypassX + 1, y1: toY, y2: toY + 1}, // horizontal entry + arrow
 		}
 	}
 
@@ -1764,8 +1764,8 @@ func buildRawArchDiagram(nodes []archNode, edges []archEdge,
 		if !ok1 || !ok2 {
 			return
 		}
-		fromX := from.x          // left edge of broker (arrow exits here)
-		toX := to.x + to.w       // right exit of service (just outside the box)
+		fromX := from.x    // left edge of broker (arrow exits here)
+		toX := to.x + to.w // right exit of service (just outside the box)
 		fromY := midY(from)
 		toY := midY(to)
 
