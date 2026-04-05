@@ -169,7 +169,7 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		if f != nil && f.CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
-	case "F":
+	case "A":
 		ce.saveDTOForm()
 		ce.populateDTOFieldsFromDomains()
 		ce.dtoFieldIdx = 0
@@ -400,7 +400,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
 		lines = append(lines, renderFormFields(w, ce.visibleDTOFields(), ce.dtoFormIdx, ce.internalMode == ModeInsert, ce.formInput, ce.dd.Open, ce.dd.OptIdx)...)
-		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  F: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
+		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  A: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
 		return lines
 
 	case ceViewSubList:

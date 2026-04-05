@@ -488,12 +488,6 @@ func (dt DataTabEditor) updateInsert(msg tea.Msg) (DataTabEditor, tea.Cmd) {
 			dt.saveInput()
 			dt.internalMode = ModeNormal
 			dt.formInput.Blur()
-			// Auto-process attr_names when exiting insert mode on that field
-			if dt.activeTab == dataTabDomains && dt.domainSubView == domainViewForm &&
-				dt.domainFormIdx < len(dt.domainForm) && dt.domainForm[dt.domainFormIdx].Key == "attr_names" {
-				dt.processAttrNames()
-				dt.saveDomainAttrItemsOnly()
-			}
 			return dt, nil
 		case "tab":
 			dt.saveInput()
