@@ -31,7 +31,15 @@ func (dt DataTabEditor) updateCachingList(key tea.KeyMsg) (DataTabEditor, tea.Cm
 		if dt.cachingIdx > 0 {
 			dt.cachingIdx--
 		}
+	case "u":
+		if snap, ok := dt.cachingUndo.Pop(); ok {
+			dt.cachings = snap
+			if dt.cachingIdx >= len(dt.cachings) && dt.cachingIdx > 0 {
+				dt.cachingIdx = len(dt.cachings) - 1
+			}
+		}
 	case "a":
+		dt.cachingUndo.Push(copySlice(dt.cachings))
 		dt.cachings = append(dt.cachings, manifest.CachingConfig{})
 		dt.cachingIdx = len(dt.cachings) - 1
 		dt.cachingForm = defaultCachingFields()
@@ -46,6 +54,7 @@ func (dt DataTabEditor) updateCachingList(key tea.KeyMsg) (DataTabEditor, tea.Cm
 		dt.cachingSubView = cachingViewForm
 	case "d":
 		if n > 0 {
+			dt.cachingUndo.Push(copySlice(dt.cachings))
 			dt.cachings = append(dt.cachings[:dt.cachingIdx], dt.cachings[dt.cachingIdx+1:]...)
 			if dt.cachingIdx > 0 && dt.cachingIdx >= len(dt.cachings) {
 				dt.cachingIdx = len(dt.cachings) - 1
@@ -148,7 +157,15 @@ func (dt DataTabEditor) updateGovList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		if dt.govIdx > 0 {
 			dt.govIdx--
 		}
+	case "u":
+		if snap, ok := dt.govUndo.Pop(); ok {
+			dt.governances = snap
+			if dt.govIdx >= len(dt.governances) && dt.govIdx > 0 {
+				dt.govIdx = len(dt.governances) - 1
+			}
+		}
 	case "a":
+		dt.govUndo.Push(copySlice(dt.governances))
 		dt.governances = append(dt.governances, manifest.DataGovernanceConfig{})
 		dt.govIdx = len(dt.governances) - 1
 		dbAliases := dt.dbNames()
@@ -165,6 +182,7 @@ func (dt DataTabEditor) updateGovList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		dt.govSubView = govViewForm
 	case "d":
 		if n > 0 {
+			dt.govUndo.Push(copySlice(dt.governances))
 			dt.governances = append(dt.governances[:dt.govIdx], dt.governances[dt.govIdx+1:]...)
 			if dt.govIdx > 0 && dt.govIdx >= len(dt.governances) {
 				dt.govIdx = len(dt.governances) - 1
@@ -254,7 +272,15 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		if dt.fsIdx > 0 {
 			dt.fsIdx--
 		}
+	case "u":
+		if snap, ok := dt.fsUndo.Pop(); ok {
+			dt.fileStorages = snap
+			if dt.fsIdx >= len(dt.fileStorages) && dt.fsIdx > 0 {
+				dt.fsIdx = len(dt.fileStorages) - 1
+			}
+		}
 	case "a":
+		dt.fsUndo.Push(copySlice(dt.fileStorages))
 		dt.fileStorages = append(dt.fileStorages, manifest.FileStorageDef{})
 		dt.fsIdx = len(dt.fileStorages) - 1
 		dt.fsForm = defaultFSFormFields(dt.domainNames(), dt.cloudProvider, dt.environmentNames)
@@ -269,6 +295,7 @@ func (dt DataTabEditor) updateFSList(key tea.KeyMsg) (DataTabEditor, tea.Cmd) {
 		dt.fsSubView = fsViewForm
 	case "d":
 		if n > 0 {
+			dt.fsUndo.Push(copySlice(dt.fileStorages))
 			dt.fileStorages = append(dt.fileStorages[:dt.fsIdx], dt.fileStorages[dt.fsIdx+1:]...)
 			if dt.fsIdx > 0 && dt.fsIdx >= len(dt.fileStorages) {
 				dt.fsIdx = len(dt.fileStorages) - 1

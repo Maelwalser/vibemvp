@@ -88,6 +88,11 @@ type ContractsEditor struct {
 	width        int
 
 	cBuf bool
+
+	// Per-subtab undo stacks (structural add/delete only)
+	dtosUndo UndoStack[[]manifest.DTODef]
+	epsUndo  UndoStack[[]manifest.EndpointDef]
+	extUndo  UndoStack[[]manifest.ExternalAPIDef]
 }
 
 func newContractsEditor() ContractsEditor {
@@ -217,9 +222,9 @@ func (ce ContractsEditor) HintLine() string {
 	case contractsTabDTOs:
 		switch ce.dtoSubView {
 		case ceViewList:
-			return hintBar("j/k", "navigate", "a", "add DTO", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add DTO", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		case ceViewForm:
-			return hintBar("j/k", "navigate", "i/Enter", "edit", "F", "fields", "b/Esc", "back")
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "A", "fields", "b/Esc", "back")
 		case ceViewSubList:
 			return hintBar("j/k", "navigate", "a", "add field", "d", "delete", "Enter", "edit", "b", "back")
 		case ceViewSubForm:
@@ -228,7 +233,7 @@ func (ce ContractsEditor) HintLine() string {
 	case contractsTabEndpoints:
 		switch ce.epSubView {
 		case ceViewList:
-			return hintBar("j/k", "navigate", "a", "add endpoint", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add endpoint", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		case ceViewForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
@@ -240,7 +245,7 @@ func (ce ContractsEditor) HintLine() string {
 	case contractsTabExternal:
 		switch ce.extSubView {
 		case ceViewList:
-			return hintBar("j/k", "navigate", "a", "add provider", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add provider", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		case ceViewForm:
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "I", "interactions", "b/Esc", "back")
 		case ceViewSubList:

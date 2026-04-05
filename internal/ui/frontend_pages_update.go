@@ -25,7 +25,15 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		if fe.pageIdx > 0 {
 			fe.pageIdx--
 		}
+	case "u":
+		if snap, ok := fe.pagesUndo.Pop(); ok {
+			fe.pages = snap
+			if fe.pageIdx >= len(fe.pages) && fe.pageIdx > 0 {
+				fe.pageIdx = len(fe.pages) - 1
+			}
+		}
 	case "a":
+		fe.pagesUndo.Push(copySlice(fe.pages))
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
 		fe.pageForm = defaultPageFormFields(fieldGet(fe.techFields, "meta_framework"), fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames(), fe.componentNames())
@@ -43,6 +51,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		return fe.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			fe.pagesUndo.Push(copySlice(fe.pages))
 			fe.pages = append(fe.pages[:fe.pageIdx], fe.pages[fe.pageIdx+1:]...)
 			if fe.pageIdx > 0 && fe.pageIdx >= len(fe.pages) {
 				fe.pageIdx = len(fe.pages) - 1

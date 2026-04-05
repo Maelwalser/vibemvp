@@ -39,7 +39,15 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		if dt.domainIdx > 0 {
 			dt.domainIdx--
 		}
+	case "u":
+		if snap, ok := dt.domainsUndo.Pop(); ok {
+			dt.domains = snap
+			if dt.domainIdx >= len(dt.domains) && dt.domainIdx > 0 {
+				dt.domainIdx = len(dt.domains) - 1
+			}
+		}
 	case "a":
+		dt.domainsUndo.Push(copySlice(dt.domains))
 		dt.domains = append(dt.domains, manifest.DomainDef{})
 		dt.domainIdx = len(dt.domains) - 1
 		dt.domainForm = defaultDomainFormFields(dt.dbNames())
@@ -57,6 +65,7 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 		return dt.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			dt.domainsUndo.Push(copySlice(dt.domains))
 			dt.domains = append(dt.domains[:dt.domainIdx], dt.domains[dt.domainIdx+1:]...)
 			if dt.domainIdx > 0 && dt.domainIdx >= len(dt.domains) {
 				dt.domainIdx = len(dt.domains) - 1
@@ -88,7 +97,6 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 			// Rebuild attr items
 			attrTypes, _ := attrTypesForSources(d.Databases, dt.dbEditor.Sources)
 			dt.attrItems = make([][]Field, len(d.Attributes))
-			attrNamesList := make([]string, len(d.Attributes))
 			for i, attr := range d.Attributes {
 				f := defaultAttrFields(attrTypes)
 				f = setFieldValue(f, "name", attr.Name)
@@ -100,10 +108,6 @@ func (dt DataTabEditor) updateDomainList(key tea.KeyMsg) (DataTabEditor, tea.Cmd
 				}
 				f = restoreMultiSelectValue(f, "validation", attr.Validation)
 				dt.attrItems[i] = f
-				attrNamesList[i] = attr.Name
-			}
-			if len(attrNamesList) > 0 {
-				dt.domainForm = setFieldValue(dt.domainForm, "attr_names", strings.Join(attrNamesList, ", "))
 			}
 			// Rebuild rel items
 			domOpts := dt.domainNames()
@@ -183,9 +187,6 @@ func (dt *DataTabEditor) saveDomainForm() {
 	d.Description = fieldGet(dt.domainForm, "description")
 	d.Databases = fieldGetMulti(dt.domainForm, "databases")
 
-	// Parse attr_names: comma-separated names create new attributes (if typed)
-	dt.processAttrNames()
-
 	// Save attrs
 	d.Attributes = make([]manifest.DomainAttribute, len(dt.attrItems))
 	for i, item := range dt.attrItems {
@@ -245,39 +246,6 @@ func (dt *DataTabEditor) saveDomainAttrItemsOnly() {
 			Validation:  fieldGet(item, "validation"),
 			Indexed:     fieldGet(item, "indexed") == "true",
 			Unique:      fieldGet(item, "unique") == "true",
-		}
-	}
-}
-
-// processAttrNames extracts comma-separated names from the attr_names field,
-// adds any missing attributes to attrItems, and clears the field.
-func (dt *DataTabEditor) processAttrNames() {
-	attrNamesRaw := fieldGet(dt.domainForm, "attr_names")
-	if attrNamesRaw == "" {
-		return
-	}
-	for _, p := range strings.Split(attrNamesRaw, ",") {
-		name := strings.TrimSpace(p)
-		if name == "" {
-			continue
-		}
-		found := false
-		for _, item := range dt.attrItems {
-			if fieldGet(item, "name") == name {
-				found = true
-				break
-			}
-		}
-		if !found {
-			f := defaultAttrFields(dt.currentDomainAttrTypes())
-			f = setFieldValue(f, "name", name)
-			dt.attrItems = append(dt.attrItems, f)
-		}
-	}
-	for i := range dt.domainForm {
-		if dt.domainForm[i].Key == "attr_names" {
-			dt.domainForm[i].Value = ""
-			break
 		}
 	}
 }
@@ -480,19 +448,19 @@ func (dt DataTabEditor) viewDomains(w int) []string {
 		}
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
 		lines = append(lines, renderFormFields(w, dt.domainForm, dt.domainFormIdx, dt.internalMode == ModeInsert, dt.formInput, dt.dd.Open, dt.dd.OptIdx)...)
-		lines = append(lines, "", StyleSectionDesc.Render("  A: edit attributes  R: edit relationships"))
+		lines = append(lines, "", StyleSectionDesc.Render("  A: edit fields  R: edit relationships"))
 		attrCount := len(dt.attrItems)
 		relCount := len(dt.relItems)
-		lines = append(lines, StyleSectionDesc.Render(fmt.Sprintf("  %d attribute(s)  %d relationship(s)", attrCount, relCount)))
+		lines = append(lines, StyleSectionDesc.Render(fmt.Sprintf("  %d field(s)  %d relationship(s)", attrCount, relCount)))
 		return lines
 
 	case domainViewAttrs:
 		var lines []string
 		if dt.domainIdx < len(dt.domains) {
-			lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(dt.domains[dt.domainIdx].Name)+StyleSectionDesc.Render(" › Attributes"), "")
+			lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(dt.domains[dt.domainIdx].Name)+StyleSectionDesc.Render(" › Fields"), "")
 		}
 		if len(dt.attrItems) == 0 {
-			lines = append(lines, StyleSectionDesc.Render("  (no attributes — press 'a' to add)"))
+			lines = append(lines, StyleSectionDesc.Render("  (no fields — press 'a' to add)"))
 		} else {
 			for i, item := range dt.attrItems {
 				attrName := fieldGet(item, "name")

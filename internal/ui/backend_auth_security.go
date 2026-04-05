@@ -361,7 +361,15 @@ func (be BackendEditor) updateAuthRoleList(key tea.KeyMsg) (BackendEditor, tea.C
 		if be.authRolesIdx > 0 {
 			be.authRolesIdx--
 		}
+	case "u":
+		if snap, ok := be.rolesUndo.Pop(); ok {
+			be.authRoles = snap
+			if be.authRolesIdx >= len(be.authRoles) && be.authRolesIdx > 0 {
+				be.authRolesIdx = len(be.authRoles) - 1
+			}
+		}
 	case "a":
+		be.rolesUndo.Push(copySlice(be.authRoles))
 		be.authRoles = append(be.authRoles, manifest.RoleDef{})
 		be.authRolesIdx = len(be.authRoles) - 1
 		be.authRoleForm = defaultRoleFormFields(be.permissionNames(), be.roleNamesExcept(be.authRolesIdx))
@@ -377,6 +385,7 @@ func (be BackendEditor) updateAuthRoleList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.rolesUndo.Push(copySlice(be.authRoles))
 			be.authRoles = append(be.authRoles[:be.authRolesIdx], be.authRoles[be.authRolesIdx+1:]...)
 			if be.authRolesIdx > 0 && be.authRolesIdx >= len(be.authRoles) {
 				be.authRolesIdx = len(be.authRoles) - 1
@@ -492,7 +501,15 @@ func (be BackendEditor) updateAuthPermList(key tea.KeyMsg) (BackendEditor, tea.C
 		if be.authPermsIdx > 0 {
 			be.authPermsIdx--
 		}
+	case "u":
+		if snap, ok := be.permsUndo.Pop(); ok {
+			be.authPerms = snap
+			if be.authPermsIdx >= len(be.authPerms) && be.authPermsIdx > 0 {
+				be.authPermsIdx = len(be.authPerms) - 1
+			}
+		}
 	case "a":
+		be.permsUndo.Push(copySlice(be.authPerms))
 		be.authPerms = append(be.authPerms, manifest.PermissionDef{})
 		be.authPermsIdx = len(be.authPerms) - 1
 		be.authPermForm = defaultPermFormFields()
@@ -508,6 +525,7 @@ func (be BackendEditor) updateAuthPermList(key tea.KeyMsg) (BackendEditor, tea.C
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.permsUndo.Push(copySlice(be.authPerms))
 			be.authPerms = append(be.authPerms[:be.authPermsIdx], be.authPerms[be.authPermsIdx+1:]...)
 			if be.authPermsIdx > 0 && be.authPermsIdx >= len(be.authPerms) {
 				be.authPermsIdx = len(be.authPerms) - 1

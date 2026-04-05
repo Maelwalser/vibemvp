@@ -35,7 +35,15 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		if ce.dtoIdx > 0 {
 			ce.dtoIdx--
 		}
+	case "u":
+		if snap, ok := ce.dtosUndo.Pop(); ok {
+			ce.dtos = snap
+			if ce.dtoIdx >= len(ce.dtos) && ce.dtoIdx > 0 {
+				ce.dtoIdx = len(ce.dtos) - 1
+			}
+		}
 	case "a":
+		ce.dtosUndo.Push(copySlice(ce.dtos))
 		ce.dtos = append(ce.dtos, manifest.DTODef{})
 		ce.dtoIdx = len(ce.dtos) - 1
 		ce.dtoForm = defaultDTOFormFields(ce.availableDomains)
@@ -52,6 +60,7 @@ func (ce ContractsEditor) updateDTOList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		return ce.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			ce.dtosUndo.Push(copySlice(ce.dtos))
 			ce.dtos = append(ce.dtos[:ce.dtoIdx], ce.dtos[ce.dtoIdx+1:]...)
 			if ce.dtoIdx > 0 && ce.dtoIdx >= len(ce.dtos) {
 				ce.dtoIdx = len(ce.dtos) - 1
@@ -169,7 +178,7 @@ func (ce ContractsEditor) updateDTOForm(key tea.KeyMsg) (ContractsEditor, tea.Cm
 		if f != nil && f.CanEditAsText() {
 			return ce.tryEnterInsert()
 		}
-	case "F":
+	case "A":
 		ce.saveDTOForm()
 		ce.populateDTOFieldsFromDomains()
 		ce.dtoFieldIdx = 0
@@ -400,7 +409,7 @@ func (ce ContractsEditor) viewDTOs(w int) []string {
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
 		lines = append(lines, renderFormFields(w, ce.visibleDTOFields(), ce.dtoFormIdx, ce.internalMode == ModeInsert, ce.formInput, ce.dd.Open, ce.dd.OptIdx)...)
-		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  F: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
+		lines = append(lines, "", StyleSectionDesc.Render(fmt.Sprintf("  A: edit fields  (%d field(s))", len(ce.dtoFieldItems))))
 		return lines
 
 	case ceViewSubList:

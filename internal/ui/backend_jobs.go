@@ -20,7 +20,15 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if be.jobsIdx > 0 {
 			be.jobsIdx--
 		}
+	case "u":
+		if snap, ok := be.jobsUndo.Pop(); ok {
+			be.jobQueues = snap
+			if be.jobsIdx >= len(be.jobQueues) && be.jobsIdx > 0 {
+				be.jobsIdx = len(be.jobQueues) - 1
+			}
+		}
 	case "a":
+		be.jobsUndo.Push(copySlice(be.jobQueues))
 		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
 		be.jobsIdx = len(be.jobQueues) - 1
 		be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs, be.Languages(), be.stackConfigNames())
@@ -36,6 +44,7 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.jobsUndo.Push(copySlice(be.jobQueues))
 			be.jobQueues = append(be.jobQueues[:be.jobsIdx], be.jobQueues[be.jobsIdx+1:]...)
 			if be.jobsIdx > 0 && be.jobsIdx >= len(be.jobQueues) {
 				be.jobsIdx = len(be.jobQueues) - 1

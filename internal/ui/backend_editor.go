@@ -205,6 +205,15 @@ type BackendEditor struct {
 	countBuf string
 	gBuf     bool
 	cBuf     bool
+
+	// Per-subtab undo stacks (structural add/delete only)
+	svcsUndo   UndoStack[svcSnapshot]
+	commsUndo  UndoStack[commSnapshot]
+	eventsUndo UndoStack[eventSnapshot]
+	stacksUndo UndoStack[[][]Field]
+	jobsUndo   UndoStack[[]manifest.JobQueueDef]
+	rolesUndo  UndoStack[[]manifest.RoleDef]
+	permsUndo  UndoStack[[]manifest.PermissionDef]
 }
 
 func newBackendEditor() BackendEditor {

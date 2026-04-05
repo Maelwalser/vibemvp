@@ -379,11 +379,19 @@ func (fe FrontendEditor) updateCompLibList(key tea.KeyMsg) (FrontendEditor, tea.
 		if fe.compIdx > 0 {
 			fe.compIdx--
 		}
+	case "u":
+		if snap, ok := fe.compsUndo.Pop(); ok {
+			fe.components = snap
+			if fe.compIdx >= len(fe.components) && fe.compIdx > 0 {
+				fe.compIdx = len(fe.components) - 1
+			}
+		}
 	case "a":
 		existing := make([]string, 0, n)
 		for _, c := range fe.components {
 			existing = append(existing, c.Name)
 		}
+		fe.compsUndo.Push(copySlice(fe.components))
 		fe.components = append(fe.components, manifest.PageComponentDef{})
 		fe.compIdx = len(fe.components) - 1
 		fe.compForm = defaultComponentFormFields()
@@ -393,6 +401,7 @@ func (fe FrontendEditor) updateCompLibList(key tea.KeyMsg) (FrontendEditor, tea.
 		return fe.tryEnterInsert()
 	case "d":
 		if n > 0 {
+			fe.compsUndo.Push(copySlice(fe.components))
 			fe.components = append(fe.components[:fe.compIdx], fe.components[fe.compIdx+1:]...)
 			if fe.compIdx > 0 && fe.compIdx >= len(fe.components) {
 				fe.compIdx = len(fe.components) - 1

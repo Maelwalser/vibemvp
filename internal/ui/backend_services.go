@@ -17,7 +17,16 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 		if ed.itemIdx > 0 {
 			ed.itemIdx--
 		}
+	case "u":
+		if snap, ok := be.svcsUndo.Pop(); ok {
+			ed.items = snap.items
+			be.Services = snap.services
+			if ed.itemIdx >= len(ed.items) && ed.itemIdx > 0 {
+				ed.itemIdx = len(ed.items) - 1
+			}
+		}
 	case "a":
+		be.svcsUndo.Push(svcSnapshot{items: copyFieldItems(ed.items), services: copySlice(be.Services)})
 		svc := manifest.ServiceDef{}
 		be.Services = append(be.Services, svc)
 		newFields := defaultServiceFields()
@@ -41,6 +50,7 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.svcsUndo.Push(svcSnapshot{items: copyFieldItems(ed.items), services: copySlice(be.Services)})
 			be.Services = append(be.Services[:ed.itemIdx], be.Services[ed.itemIdx+1:]...)
 			ed.items = append(ed.items[:ed.itemIdx], ed.items[ed.itemIdx+1:]...)
 			if ed.itemIdx > 0 && ed.itemIdx >= len(ed.items) {
@@ -394,7 +404,16 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if ed.itemIdx > 0 {
 			ed.itemIdx--
 		}
+	case "u":
+		if snap, ok := be.commsUndo.Pop(); ok {
+			ed.items = snap.items
+			be.CommLinks = snap.comms
+			if ed.itemIdx >= len(ed.items) && ed.itemIdx > 0 {
+				ed.itemIdx = len(ed.items) - 1
+			}
+		}
 	case "a":
+		be.commsUndo.Push(commSnapshot{items: copyFieldItems(ed.items), comms: copySlice(be.CommLinks)})
 		be.CommLinks = append(be.CommLinks, manifest.CommLink{})
 		ed.items = append(ed.items, be.withDTONames(be.withServiceNames(defaultCommFields())))
 		ed.itemIdx = len(ed.items) - 1
@@ -404,6 +423,7 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.commsUndo.Push(commSnapshot{items: copyFieldItems(ed.items), comms: copySlice(be.CommLinks)})
 			be.CommLinks = append(be.CommLinks[:ed.itemIdx], be.CommLinks[ed.itemIdx+1:]...)
 			ed.items = append(ed.items[:ed.itemIdx], ed.items[ed.itemIdx+1:]...)
 			if ed.itemIdx > 0 && ed.itemIdx >= len(ed.items) {
@@ -583,7 +603,16 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 				}
 			}
 		}
+	case "u":
+		if snap, ok := be.eventsUndo.Pop(); ok {
+			ed.items = snap.items
+			be.Events = snap.events
+			if be.activeField >= brokerCount+len(ed.items) && len(ed.items) > 0 {
+				be.activeField = brokerCount + len(ed.items) - 1
+			}
+		}
 	case "a":
+		be.eventsUndo.Push(eventSnapshot{items: copyFieldItems(ed.items), events: copySlice(be.Events)})
 		be.Events = append(be.Events, manifest.EventDef{})
 		ed.items = append(ed.items, be.withEventNames(defaultEventFields()))
 		ed.itemIdx = len(ed.items) - 1
@@ -601,6 +630,7 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 	case "d":
 		eventIdx := be.activeField - brokerCount
 		if eventIdx >= 0 && eventIdx < eventCount {
+			be.eventsUndo.Push(eventSnapshot{items: copyFieldItems(ed.items), events: copySlice(be.Events)})
 			be.Events = append(be.Events[:eventIdx], be.Events[eventIdx+1:]...)
 			ed.items = append(ed.items[:eventIdx], ed.items[eventIdx+1:]...)
 			if be.activeField > brokerCount && be.activeField >= brokerCount+len(ed.items) {

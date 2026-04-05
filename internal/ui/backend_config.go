@@ -20,7 +20,16 @@ func (be BackendEditor) updateStackConfigList(key tea.KeyMsg) (BackendEditor, te
 		if ed.itemIdx > 0 {
 			ed.itemIdx--
 		}
+	case "u":
+		if snap, ok := be.stacksUndo.Pop(); ok {
+			ed.items = snap
+			if ed.itemIdx >= len(ed.items) && ed.itemIdx > 0 {
+				ed.itemIdx = len(ed.items) - 1
+			}
+			be.applyStackConfigNamesToServices()
+		}
 	case "a":
+		be.stacksUndo.Push(copyFieldItems(ed.items))
 		newFields := defaultStackConfigFields()
 		existing := make([]string, 0, len(ed.items))
 		for _, item := range ed.items {
@@ -37,6 +46,7 @@ func (be BackendEditor) updateStackConfigList(key tea.KeyMsg) (BackendEditor, te
 		be.activeField = 0
 	case "d":
 		if n > 0 {
+			be.stacksUndo.Push(copyFieldItems(ed.items))
 			ed.items = append(ed.items[:ed.itemIdx], ed.items[ed.itemIdx+1:]...)
 			if ed.itemIdx > 0 && ed.itemIdx >= len(ed.items) {
 				ed.itemIdx = len(ed.items) - 1

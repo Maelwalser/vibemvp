@@ -104,6 +104,11 @@ type FrontendEditor struct {
 	width        int
 
 	cBuf bool
+
+	// Per-subtab undo stacks (structural add/delete only)
+	pagesUndo  UndoStack[[]manifest.PageDef]
+	assetsUndo UndoStack[[]manifest.AssetDef]
+	compsUndo  UndoStack[[]manifest.PageComponentDef]
 }
 
 func newFrontendEditor() FrontendEditor {
@@ -471,15 +476,15 @@ func (fe FrontendEditor) HintLine() string {
 		if fe.compSubView == ceViewForm {
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "A", "actions", "b/Esc", "back")
 		}
-		return hintBar("j/k", "navigate", "a", "add", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		return hintBar("j/k", "navigate", "a", "add", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 	case feTabPages:
 		if fe.pageSubView == ceViewList {
-			return hintBar("j/k", "navigate", "a", "add page", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add page", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		}
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	case feTabAssets:
 		if fe.assetSubView == ceViewList {
-			return hintBar("j/k", "navigate", "a", "add asset", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+			return hintBar("j/k", "navigate", "a", "add asset", "d", "delete", "u", "undo", "Enter", "edit", "h/l", "sub-tab")
 		}
 		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	}

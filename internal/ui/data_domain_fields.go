@@ -17,8 +17,6 @@ func defaultDomainFormFields(dbOptions []string) []Field {
 			Options: dbOptions,
 			Value:   placeholderFor(dbOptions, "(no databases configured)"),
 		},
-		{Key: "attr_names", Label: "attr_names    ", Kind: KindText}, // Hint: type comma-separated attribute names to batch-create attributes
-
 	}
 }
 
