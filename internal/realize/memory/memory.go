@@ -26,6 +26,20 @@ type TaskOutput struct {
 	Files  []FileExcerpt
 }
 
+// ConstructorSig records one exported constructor or factory function signature
+// extracted from a committed file at its original, untruncated content.
+// Stored in SharedMemory so downstream prompts receive accurate signatures even
+// when file excerpts are truncated by the shared memory budget.
+type ConstructorSig struct {
+	// File is the module-relative source path, e.g. "internal/repository/postgres/user.go".
+	File string
+	// Package is the directory portion of File, e.g. "internal/repository/postgres".
+	Package string
+	// Signature is the full function declaration line with the body stripped,
+	// e.g. "func NewUserRepository(db *pgxpool.Pool) (*UserRepository, error)".
+	Signature string
+}
+
 // TypeEntry records where an exported type is first defined across the project.
 // Used to build the cross-task type registry that prevents duplicate declarations.
 type TypeEntry struct {
@@ -47,6 +61,7 @@ type SharedMemory struct {
 	outputs      map[string]*TaskOutput
 	rawPaths     map[string][]string  // task ID → committed file paths (untruncated)
 	typeRegistry map[string]TypeEntry // exported type name → first-seen location
+	constructors []ConstructorSig     // all constructor sigs extracted at commit time
 }
 
 // New returns an empty SharedMemory.
@@ -124,6 +139,39 @@ func (m *SharedMemory) RegisterTypes(types map[string]TypeEntry) {
 			m.typeRegistry[name] = entry
 		}
 	}
+}
+
+// RegisterConstructors appends constructor signatures extracted from file to the
+// shared registry. Called at commit time on untruncated file content so that
+// downstream prompts always receive accurate signatures regardless of excerpt
+// truncation. Safe for concurrent use.
+func (m *SharedMemory) RegisterConstructors(file string, sigs []string) {
+	if len(sigs) == 0 {
+		return
+	}
+	pkg := filepath.Dir(file)
+	if pkg == "." {
+		pkg = ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, sig := range sigs {
+		m.constructors = append(m.constructors, ConstructorSig{
+			File:      file,
+			Package:   pkg,
+			Signature: sig,
+		})
+	}
+}
+
+// AllConstructors returns a snapshot of every constructor signature registered so far.
+// Safe for concurrent use.
+func (m *SharedMemory) AllConstructors() []ConstructorSig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]ConstructorSig, len(m.constructors))
+	copy(result, m.constructors)
+	return result
 }
 
 // TypeRegistry returns a snapshot of all exported types seen so far.

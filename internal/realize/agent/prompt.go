@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/vibe-menu/internal/realize/dag"
-	"github.com/vibe-menu/internal/realize/memory"
 	"github.com/vibe-menu/internal/realize/skills"
 )
 
@@ -145,23 +144,31 @@ func UserMessage(ac *Context) (string, error) {
 		}
 	}
 
-	// Highlight constructor signatures from dependency outputs so that tasks like
-	// bootstrap don't mishandle multi-return constructors (e.g. ignore an error)
-	// or call them with wrong argument counts.
-	if len(ac.DependencyOutputs) > 0 && ac.AttemptNumber == 0 {
-		if ctors := extractConstructorSignatures(ac.DependencyOutputs); len(ctors) > 0 {
-			b.WriteString("\n## Critical Constructor Signatures\n\n")
-			b.WriteString("Call these constructors/factories with the **exact** signature shown.\n")
-			b.WriteString("The `// from:` comment tells you where to import from:\n")
-			b.WriteString("- Go: strip filename → `internal/repository/postgres/user.go` → `import \"{module_path}/internal/repository/postgres\"`\n")
-			b.WriteString("- TypeScript: use relative import `./repository/user.repository`\n")
-			b.WriteString("- Python: use dotted module path `app.repository.user_repository`\n\n")
-			b.WriteString("```\n")
-			for _, sig := range ctors {
-				b.WriteString(sig + "\n")
+	// Inject constructor signatures from shared memory. These are extracted at
+	// commit time from the full, untruncated file content, so they are never lost
+	// to excerpt truncation. Covers a broader set of naming conventions than the
+	// older excerpt-based scan (New*, Make*, Create*, Build*, Open*, Must*, and
+	// method receivers).
+	if len(ac.AllConstructors) > 0 && ac.AttemptNumber == 0 {
+		b.WriteString("\n## Critical Constructor Signatures\n\n")
+		b.WriteString("Call these constructors/factories with the **exact** signature shown.\n")
+		b.WriteString("The `// from:` comment tells you where to import from:\n")
+		b.WriteString("- Go: strip filename → `internal/repository/postgres/user.go` → `import \"{module_path}/internal/repository/postgres\"`\n")
+		b.WriteString("- TypeScript: use relative import `./repository/user.repository`\n")
+		b.WriteString("- Python: use dotted module path `app.repository.user_repository`\n\n")
+		b.WriteString("```\n")
+		prevFile := ""
+		for _, c := range ac.AllConstructors {
+			if c.File != prevFile {
+				if prevFile != "" {
+					b.WriteString("\n")
+				}
+				b.WriteString("// from: " + c.File + "\n")
+				prevFile = c.File
 			}
-			b.WriteString("```\n")
+			b.WriteString(c.Signature + "\n")
 		}
+		b.WriteString("```\n")
 	}
 
 	if ac.PreviousErrors != "" {
@@ -408,220 +415,6 @@ func errorPatternHints(errors string) string {
 		b.WriteString(m + "\n")
 	}
 	return b.String()
-}
-
-// extractConstructorSignatures scans dependency output excerpts for exported
-// constructor/factory functions and returns their signature lines grouped by
-// source file. Supports Go (func New*), TypeScript (export class/function create*),
-// and Python (class __init__ / def create_*). This is injected into the prompt so
-// downstream tasks (especially bootstrap/main wiring) call constructors with the
-// correct argument count, return signature, and import path.
-func extractConstructorSignatures(deps []*memory.TaskOutput) []string {
-	type entry struct {
-		file string
-		sig  string
-	}
-	seen := make(map[string]bool)
-	var entries []entry
-
-	for _, dep := range deps {
-		for _, f := range dep.Files {
-			lower := strings.ToLower(f.Path)
-			if strings.HasSuffix(lower, "_test.go") ||
-				strings.HasSuffix(lower, ".spec.ts") ||
-				strings.HasSuffix(lower, "_test.py") {
-				continue
-			}
-			switch {
-			case strings.HasSuffix(lower, ".go"):
-				for _, sig := range extractGoCtorLines(f.Content) {
-					key := f.Path + "|" + sig
-					if !seen[key] {
-						seen[key] = true
-						entries = append(entries, entry{file: f.Path, sig: sig})
-					}
-				}
-			case strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".tsx"):
-				for _, sig := range extractTSCtorLines(f.Content) {
-					key := f.Path + "|" + sig
-					if !seen[key] {
-						seen[key] = true
-						entries = append(entries, entry{file: f.Path, sig: sig})
-					}
-				}
-			case strings.HasSuffix(lower, ".py"):
-				for _, sig := range extractPyCtorLines(f.Content) {
-					key := f.Path + "|" + sig
-					if !seen[key] {
-						seen[key] = true
-						entries = append(entries, entry{file: f.Path, sig: sig})
-					}
-				}
-			}
-		}
-	}
-
-	// Group by file, emitting a "// from:" comment before each new file's sigs.
-	// Sort entries by file then sig for determinism.
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].file != entries[j].file {
-			return entries[i].file < entries[j].file
-		}
-		return entries[i].sig < entries[j].sig
-	})
-
-	var out []string
-	prevFile := ""
-	for _, e := range entries {
-		if e.file != prevFile {
-			if prevFile != "" {
-				out = append(out, "")
-			}
-			out = append(out, "// from: "+e.file)
-			prevFile = e.file
-		}
-		out = append(out, e.sig)
-	}
-	return out
-}
-
-// extractGoCtorLines returns exported constructor/factory function signatures
-// from Go source content. Matches func New* and func Create* at package level.
-func extractGoCtorLines(content string) []string {
-	var sigs []string
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if (strings.HasPrefix(trimmed, "func New") || strings.HasPrefix(trimmed, "func Create")) &&
-			strings.Contains(trimmed, "(") {
-			sig := strings.TrimSuffix(trimmed, " {")
-			sig = strings.TrimSuffix(sig, "{")
-			sig = strings.TrimSpace(sig)
-			sigs = append(sigs, sig)
-		}
-	}
-	return sigs
-}
-
-// extractTSCtorLines extracts exported class names with their constructor parameter
-// list, and exported factory functions (create*) from TypeScript source.
-func extractTSCtorLines(content string) []string {
-	lines := strings.Split(content, "\n")
-	var sigs []string
-	inClass := false
-	className := ""
-	depth := 0
-
-	for i := 0; i < len(lines); i++ {
-		trimmed := strings.TrimSpace(lines[i])
-
-		// Detect exported class declarations.
-		if (strings.HasPrefix(trimmed, "export class ") ||
-			strings.HasPrefix(trimmed, "export default class ")) &&
-			strings.Contains(trimmed, "{") {
-			// Extract class name.
-			parts := strings.Fields(trimmed)
-			for j, p := range parts {
-				if p == "class" && j+1 < len(parts) {
-					className = strings.TrimRight(parts[j+1], "{")
-					break
-				}
-			}
-			inClass = true
-			depth = 1
-			continue
-		}
-		if inClass {
-			depth += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
-			if depth <= 0 {
-				inClass = false
-				className = ""
-				depth = 0
-				continue
-			}
-			// Look for constructor inside class.
-			if strings.HasPrefix(trimmed, "constructor(") {
-				ctorLine := className + " — " + trimmed
-				ctorLine = strings.TrimSuffix(ctorLine, " {")
-				ctorLine = strings.TrimSuffix(ctorLine, "{")
-				sigs = append(sigs, ctorLine)
-			}
-			continue
-		}
-
-		// Exported factory functions: export function create*(...) or export async function create*
-		if (strings.HasPrefix(trimmed, "export function create") ||
-			strings.HasPrefix(trimmed, "export async function create") ||
-			strings.HasPrefix(trimmed, "export function build") ||
-			strings.HasPrefix(trimmed, "export async function build")) &&
-			strings.Contains(trimmed, "(") {
-			sig := strings.TrimSuffix(trimmed, " {")
-			sig = strings.TrimSuffix(sig, "{")
-			sigs = append(sigs, sig)
-		}
-	}
-	return sigs
-}
-
-// extractPyCtorLines extracts class names with their __init__ signatures and
-// top-level factory/creator functions from Python source.
-func extractPyCtorLines(content string) []string {
-	lines := strings.Split(content, "\n")
-	var sigs []string
-	inClass := false
-	className := ""
-	classIndent := 0
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-
-		// Detect class declarations.
-		if strings.HasPrefix(trimmed, "class ") && strings.Contains(trimmed, ":") {
-			parts := strings.Fields(trimmed)
-			if len(parts) >= 2 {
-				name := parts[1]
-				name = strings.Split(name, "(")[0]
-				name = strings.TrimSuffix(name, ":")
-				className = name
-				// Measure indent of class definition.
-				classIndent = len(line) - len(strings.TrimLeft(line, " \t"))
-				inClass = true
-			}
-			continue
-		}
-
-		if inClass {
-			currentIndent := len(line) - len(strings.TrimLeft(line, " \t"))
-			if trimmed == "" {
-				continue
-			}
-			// Class ends when a new top-level statement starts at same or lower indent.
-			if currentIndent <= classIndent && trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-				inClass = false
-				className = ""
-			}
-			if inClass && strings.HasPrefix(trimmed, "def __init__(") {
-				sig := className + ".__init__" + strings.TrimPrefix(trimmed, "def __init__")
-				sig = strings.TrimSuffix(sig, ":")
-				sigs = append(sigs, sig)
-				inClass = false // one __init__ per class is enough
-				className = ""
-			}
-			continue
-		}
-
-		// Top-level factory functions.
-		if (strings.HasPrefix(trimmed, "def create_") ||
-			strings.HasPrefix(trimmed, "def build_") ||
-			strings.HasPrefix(trimmed, "def get_") ||
-			strings.HasPrefix(trimmed, "async def create_") ||
-			strings.HasPrefix(trimmed, "async def build_")) &&
-			strings.Contains(trimmed, "(") {
-			sig := strings.TrimSuffix(trimmed, ":")
-			sigs = append(sigs, sig)
-		}
-	}
-	return sigs
 }
 
 // outputFormatInstructions describes the required response format to the agent.

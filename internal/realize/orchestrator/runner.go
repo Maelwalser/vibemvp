@@ -177,6 +177,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			AttemptNumber:        attempt,
 			DepsContext:          r.depsContext,
 			ExistingTypeRegistry: r.memory.TypeRegistry(),
+			AllConstructors:      r.memory.AllConstructors(),
 		}
 
 		result, err := a.Run(ctx, ac)
@@ -302,8 +303,11 @@ func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.Gene
 	// Record: passes prefixedFiles for rawPaths (disk staging) but Record internally
 	// strips outputDir when building excerpts for agent context.
 	r.memory.Record(r.task, prefixedFiles, outputDir)
-	// Register types from un-prefixed files so Package paths are module-relative.
+	// Register types and constructors from un-prefixed files so package paths are
+	// module-relative. Constructors are extracted from full content here — before
+	// any excerpt truncation — so downstream prompts see accurate signatures.
 	r.registerExportedTypes(files)
+	r.registerConstructors(files)
 	if err := r.state.MarkCompleted(r.task.ID); err != nil {
 		r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
 	}
@@ -324,6 +328,18 @@ func (r *TaskRunner) registerExportedTypes(files []dag.GeneratedFile) {
 	}
 	if len(types) > 0 {
 		r.memory.RegisterTypes(types)
+	}
+}
+
+// registerConstructors extracts exported constructor and factory signatures from
+// each committed file (at original, untruncated content) and stores them in
+// shared memory. This ensures downstream tasks — especially bootstrap wiring — see
+// accurate signatures even when file excerpts are truncated by the memory budget.
+func (r *TaskRunner) registerConstructors(files []dag.GeneratedFile) {
+	for _, f := range files {
+		if sigs := memory.ExtractConstructorSigs(f.Path, f.Content); len(sigs) > 0 {
+			r.memory.RegisterConstructors(f.Path, sigs)
+		}
 	}
 }
 
