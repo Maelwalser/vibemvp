@@ -551,19 +551,8 @@ func buildArchGraph(mf *manifest.Manifest) ([]archNode, []archEdge) {
 		})
 	}
 
-	// External APIs — label + edge from the calling service when configured
-	for _, api := range mf.Contracts.ExternalAPIs {
-		if api.Provider == "" {
-			continue
-		}
-		nodes = append(nodes, archNode{
-			id:    "ext." + api.Provider,
-			kind:  archExternalAPI,
-			label: api.Provider,
-		})
-	}
-
-	// File storages — each one may be linked to a specific service
+	// File storages — appended before External APIs to match the visual column 4 layout:
+	// DATA SOURCES → OBJECT STORAGE → EXTERNAL APIS (top to bottom).
 	for i, fs := range mf.Data.FileStorages {
 		if fs.Technology == "" {
 			continue
@@ -578,6 +567,18 @@ func buildArchGraph(mf *manifest.Manifest) ([]archNode, []archEdge) {
 			kind:        archFileStorage,
 			label:       label,
 			environment: fs.Environment,
+		})
+	}
+
+	// External APIs — label + edge from the calling service when configured
+	for _, api := range mf.Contracts.ExternalAPIs {
+		if api.Provider == "" {
+			continue
+		}
+		nodes = append(nodes, archNode{
+			id:    "ext." + api.Provider,
+			kind:  archExternalAPI,
+			label: api.Provider,
 		})
 	}
 
@@ -2108,6 +2109,7 @@ type colorRange struct {
 	xStart, xEnd int
 	yStart, yEnd int
 	color        string
+	bold         bool
 	priority     int
 }
 
@@ -2175,13 +2177,19 @@ func colorizeClipped(lines []string, data archDiagramData, scrollX, scrollY int)
 		})
 	}
 
-	// Selected item blink — priority 3
+	// Selected item highlight — priority 3.
+	// Blinks between pure white (bold) and bright gold (bold) for nodes,
+	// and between bright sky-blue (bold) and white (bold) for edges,
+	// so the selection always pops clearly against the muted palette.
+	const selColorA = "#FFFFFF" // bright white — "on" frame for nodes, "off" for edges
+	const selColorB = "#F0CC6A" // bright gold  — "off" frame for nodes
+	const selEdgeA = "#6DD9D9"  // bright teal  — "on" frame for edges
 	if data.selectedID != "" {
 		if strings.HasPrefix(data.selectedID, "edge.") {
 			// Use precise path segments so only actual edge pixels blink.
-			edgeColor := clrCyan
+			edgeColor := selEdgeA
 			if AnimFrame%2 == 0 {
-				edgeColor = clrFg
+				edgeColor = selColorA
 			}
 			if segs, ok := data.edgePathMap[data.selectedID]; ok && len(segs) > 0 {
 				for _, seg := range segs {
@@ -2191,6 +2199,7 @@ func colorizeClipped(lines []string, data archDiagramData, scrollX, scrollY int)
 						yStart:   seg.y1 - scrollY,
 						yEnd:     seg.y2 - scrollY,
 						color:    edgeColor,
+						bold:     true,
 						priority: 3,
 					})
 				}
@@ -2202,15 +2211,16 @@ func colorizeClipped(lines []string, data archDiagramData, scrollX, scrollY int)
 					yStart:   eb.y1 - scrollY,
 					yEnd:     eb.y2 - scrollY,
 					color:    edgeColor,
+					bold:     true,
 					priority: 3,
 				})
 			}
 		} else {
-			// Color the selected node box
+			// Highlight the selected node box with bold so it pops.
 			if p, ok := data.nodePositions[data.selectedID]; ok {
-				blinkColor := clrFg
+				blinkColor := selColorA
 				if AnimFrame%2 == 0 {
-					blinkColor = clrYellow
+					blinkColor = selColorB
 				}
 				ranges = append(ranges, colorRange{
 					xStart:   p.x - scrollX,
@@ -2218,6 +2228,7 @@ func colorizeClipped(lines []string, data archDiagramData, scrollX, scrollY int)
 					yStart:   p.y - scrollY,
 					yEnd:     p.y + p.h - scrollY,
 					color:    blinkColor,
+					bold:     true,
 					priority: 3,
 				})
 			}
@@ -2239,6 +2250,7 @@ func applyColorRanges(line string, y int, ranges []colorRange) string {
 	}
 
 	colorAt := make([]string, len(runes))
+	boldAt := make([]bool, len(runes))
 	prioAt := make([]int, len(runes))
 
 	for _, cr := range ranges {
@@ -2256,6 +2268,7 @@ func applyColorRanges(line string, y int, ranges []colorRange) string {
 		for x := start; x < end; x++ {
 			if cr.priority >= prioAt[x] {
 				colorAt[x] = cr.color
+				boldAt[x] = cr.bold
 				prioAt[x] = cr.priority
 			}
 		}
@@ -2265,13 +2278,21 @@ func applyColorRanges(line string, y int, ranges []colorRange) string {
 	i := 0
 	for i < len(runes) {
 		col := colorAt[i]
+		bld := boldAt[i]
 		j := i + 1
-		for j < len(runes) && colorAt[j] == col {
+		for j < len(runes) && colorAt[j] == col && boldAt[j] == bld {
 			j++
 		}
 		chunk := string(runes[i:j])
-		if col != "" {
-			chunk = lipgloss.NewStyle().Foreground(lipgloss.Color(col)).Render(chunk)
+		if col != "" || bld {
+			style := lipgloss.NewStyle()
+			if col != "" {
+				style = style.Foreground(lipgloss.Color(col))
+			}
+			if bld {
+				style = style.Bold(true)
+			}
+			chunk = style.Render(chunk)
 		}
 		sb.WriteString(chunk)
 		i = j
