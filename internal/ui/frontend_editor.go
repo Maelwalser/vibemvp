@@ -816,3 +816,46 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	}
 	return fe, nil
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list view or when no field can be resolved.
+func (fe *FrontendEditor) CurrentField() *Field {
+	switch fe.activeTab {
+	case feTabTech:
+		visible := fe.visibleTechFields()
+		if fe.techFormIdx >= 0 && fe.techFormIdx < len(visible) {
+			return fe.techFieldByKey(visible[fe.techFormIdx].Key)
+		}
+	case feTabTheme:
+		if fe.themeFormIdx >= 0 && fe.themeFormIdx < len(fe.themeFields) {
+			return &fe.themeFields[fe.themeFormIdx]
+		}
+	case feTabComponents:
+		if fe.inCompAction && fe.actionSubView == ceViewForm && fe.actionFormIdx >= 0 && fe.actionFormIdx < len(fe.actionForm) {
+			return &fe.actionForm[fe.actionFormIdx]
+		} else if fe.compSubView == ceViewForm && fe.compFormIdx >= 0 && fe.compFormIdx < len(fe.compForm) {
+			return &fe.compForm[fe.compFormIdx]
+		}
+	case feTabPages:
+		if fe.pageSubView == ceViewForm && fe.pageFormIdx >= 0 && fe.pageFormIdx < len(fe.pageForm) {
+			return &fe.pageForm[fe.pageFormIdx]
+		}
+	case feTabNav:
+		if fe.navFormIdx >= 0 && fe.navFormIdx < len(fe.navFields) {
+			return &fe.navFields[fe.navFormIdx]
+		}
+	case feTabI18n:
+		if fe.i18nFormIdx >= 0 && fe.i18nFormIdx < len(fe.i18nFields) {
+			return &fe.i18nFields[fe.i18nFormIdx]
+		}
+	case feTabA11ySEO:
+		if fe.a11yFormIdx >= 0 && fe.a11yFormIdx < len(fe.a11yFields) {
+			return &fe.a11yFields[fe.a11yFormIdx]
+		}
+	case feTabAssets:
+		if fe.assetSubView == ceViewForm && fe.assetFormIdx >= 0 && fe.assetFormIdx < len(fe.assetForm) {
+			return &fe.assetForm[fe.assetFormIdx]
+		}
+	}
+	return nil
+}

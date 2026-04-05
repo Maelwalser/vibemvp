@@ -488,3 +488,11 @@ func (r RealizeEditor) View(w, h int) string {
 
 	return fillTildes(lines, h)
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+func (r *RealizeEditor) CurrentField() *Field {
+	if r.activeIdx >= 0 && r.activeIdx < len(r.fields) {
+		return &r.fields[r.activeIdx]
+	}
+	return nil
+}

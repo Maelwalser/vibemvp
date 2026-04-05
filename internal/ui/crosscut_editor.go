@@ -547,3 +547,23 @@ func (cc CrossCutEditor) View(w, h int) string {
 
 	return fillTildes(lines, h)
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when the tab is not configured or index is out of range.
+func (cc *CrossCutEditor) CurrentField() *Field {
+	switch cc.activeTab {
+	case ccTabTesting:
+		if cc.testingEnabled && cc.testFormIdx >= 0 && cc.testFormIdx < len(cc.testingFields) {
+			return &cc.testingFields[cc.testFormIdx]
+		}
+	case ccTabDocs:
+		if cc.docsEnabled && cc.docsFormIdx >= 0 && cc.docsFormIdx < len(cc.docsFields) {
+			return &cc.docsFields[cc.docsFormIdx]
+		}
+	case ccTabStandards:
+		if cc.standardsEnabled && cc.standardsFormIdx >= 0 && cc.standardsFormIdx < len(cc.standardsFields) {
+			return &cc.standardsFields[cc.standardsFormIdx]
+		}
+	}
+	return nil
+}

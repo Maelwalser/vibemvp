@@ -106,54 +106,74 @@ func (m Model) renderHeader(w int) string {
 	return StyleHeaderBar.Width(w).Render(line)
 }
 
-// renderContent renders the main editor area with an ASCII art side panel.
+// renderContent renders the main editor area with a description side panel.
 //
 // Panel sizing strategy:
-//   - Always show the panel when the terminal is ≥ 120 columns wide.
-//   - Give the art as much horizontal space as possible up to its natural width.
-//   - If the available space is narrower than the art, center-crop horizontally
-//     so the most interesting content (the center of symmetric art) stays visible.
-//   - Never crop vertically — art is shown top-to-bottom and leaves the lower
-//     portion of the panel empty if shorter than the content area.
+//   - Always show a 44-column panel when the terminal is ≥ 120 columns wide.
+//   - When a KindSelect field is highlighted and a description exists, show
+//     the field/option description panel.
+//   - Otherwise show a section overview panel.
 //   - Below 120 columns the panel is hidden entirely.
 func (m Model) renderContent(w int) string {
 	ch := m.contentHeight()
 
-	const minFormW = 72  // minimum columns to keep the form usable
-	const minArtW = 36   // minimum art panel width worth showing
-	const minTermW = 120 // minimum terminal width to attempt the panel
+	const minFormW = 72   // minimum columns to keep the form usable
+	const descPanelW = 44 // fixed width for the right panel
+	const minTermW = 120  // minimum terminal width to attempt the panel
 
-	artW := 0
-	art := SectionAsciiArt(m.activeSection)
-	if natW := ArtNaturalWidth(art); natW > 0 && w >= minTermW {
-		available := w - minFormW - 1 // 1 for │
-		artW = natW
-		if artW > available {
-			artW = available // center-crop will handle the rest
-		}
-		if artW < minArtW {
-			artW = 0 // not enough room to be useful
-		}
-	}
-
-	if artW > 0 {
-		contentW := w - artW - 1
-		var leftContent string
-		if e := m.activeEditor(); e != nil {
-			leftContent = e.View(contentW, ch)
+	if w >= minTermW && (w-minFormW-1) >= descPanelW {
+		contentW := w - descPanelW - 1
+		label, value, desc := m.getActiveFieldDescription()
+		var panelLines []string
+		if desc != "" {
+			panelLines = FormatDescriptionPanel(label, value, desc, descPanelW, ch)
 		} else {
-			sec := m.sections[m.activeSection]
-			leftContent = m.renderFieldList(contentW, ch, sec)
+			panelLines = FormatSectionPanel(m.activeSection, descPanelW, ch)
 		}
-		return withSidePanel(leftContent, art, contentW, artW, ch)
+		return withDescriptionPanel(m.renderLeft(contentW, ch), panelLines, contentW, descPanelW, ch)
 	}
 
-	// No panel — render the editor at full width.
+	// Narrow terminal — render the editor at full width.
+	return m.renderLeft(w, ch)
+}
+
+// renderLeft renders the left-side content area (editor or field list).
+func (m Model) renderLeft(w, h int) string {
 	if e := m.activeEditor(); e != nil {
-		return e.View(w, ch)
+		return e.View(w, h)
 	}
 	sec := m.sections[m.activeSection]
-	return m.renderFieldList(w, ch, sec)
+	return m.renderFieldList(w, h, sec)
+}
+
+// getActiveFieldDescription returns display info for the currently highlighted
+// KindSelect field. Returns ("", "", "") when no description is registered.
+func (m Model) getActiveFieldDescription() (label, value, desc string) {
+	var f *Field
+	switch m.activeSection {
+	case 1:
+		f = m.backendEditor.CurrentField()
+	case 2:
+		f = m.dataTabEditor.CurrentField()
+	case 3:
+		f = m.contractsEditor.CurrentField()
+	case 4:
+		f = m.frontendEditor.CurrentField()
+	case 5:
+		f = m.infraEditor.CurrentField()
+	case 6:
+		f = m.crossCutEditor.CurrentField()
+	case 7:
+		f = m.realizeEditor.CurrentField()
+	}
+	if f == nil || (f.Kind != KindSelect && f.Kind != KindMultiSelect) {
+		return "", "", ""
+	}
+	d := GetOptionDescription(f.Key, f.Value)
+	if d == "" {
+		return "", "", ""
+	}
+	return strings.TrimSpace(f.Label), f.Value, d
 }
 
 func (m Model) renderFieldList(w, h int, sec Section) string {

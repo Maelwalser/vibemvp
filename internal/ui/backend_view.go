@@ -127,6 +127,12 @@ func (be *BackendEditor) currentEditableFields() *[]Field {
 	return nil
 }
 
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list/non-form views (services list, comm list, etc.).
+func (be *BackendEditor) CurrentField() *Field {
+	return be.mutableFieldPtr()
+}
+
 // mutableFieldPtr returns a pointer to the active field for the current tab.
 // For the ENV tab, it resolves through the visible fields to find the correct
 // pointer in the underlying EnvFields slice.

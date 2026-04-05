@@ -4,8 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/vibe-menu/internal/realize/orchestrator"
 	"os"
+
+	"github.com/vibe-menu/internal/bundled"
+	"github.com/vibe-menu/internal/realize/orchestrator"
+	"github.com/vibe-menu/internal/realize/skills"
 )
 
 func main() {
@@ -19,6 +22,14 @@ func main() {
 	provider := flag.String("provider", "", "default LLM provider: Claude, Gemini, ChatGPT, Mistral, Llama")
 	apiKey := flag.String("api-key", "", "API key for the default provider (falls back to env var)")
 	flag.Parse()
+
+	// Auto-extract bundled skills when the target directory is absent.
+	if _, err := os.Stat(*skillsDir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "realize: extracting bundled skills to %s\n", *skillsDir)
+		if extractErr := skills.Extract(*skillsDir, bundled.SkillsFS, "skills"); extractErr != nil {
+			fmt.Fprintf(os.Stderr, "realize: warning: could not extract bundled skills: %v\n", extractErr)
+		}
+	}
 
 	p := *parallelism
 	if p <= 0 {

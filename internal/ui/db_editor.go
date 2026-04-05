@@ -340,6 +340,15 @@ func (db *DBEditor) saveFormBack() {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list view.
+func (db *DBEditor) CurrentField() *Field {
+	if db.view == dbeViewForm && db.formIdx >= 0 && db.formIdx < len(db.dbForm) {
+		return &db.dbForm[db.formIdx]
+	}
+	return nil
+}
+
 func (db DBEditor) View(w, h int) string {
 	db.width = w
 	db.formInput.Width = w - 22

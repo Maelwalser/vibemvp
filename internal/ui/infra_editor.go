@@ -904,3 +904,27 @@ func (ie InfraEditor) viewEnvForm(w int) []string {
 	lines = append(lines, renderFormFields(w, ie.envForm, ie.envFormIdx, ie.internalMode == ModeInsert, ie.formInput, ie.dd.Open, ie.dd.OptIdx)...)
 	return lines
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list view or when no field can be resolved.
+func (ie *InfraEditor) CurrentField() *Field {
+	switch ie.activeTab {
+	case infraTabNetworking:
+		if ie.netEnabled && ie.netFormIdx >= 0 && ie.netFormIdx < len(ie.networkingFields) {
+			return &ie.networkingFields[ie.netFormIdx]
+		}
+	case infraTabCICD:
+		if ie.cicdEnabled && ie.cicdFormIdx >= 0 && ie.cicdFormIdx < len(ie.cicdFields) {
+			return &ie.cicdFields[ie.cicdFormIdx]
+		}
+	case infraTabObservability:
+		if ie.obsEnabled && ie.obsFormIdx >= 0 && ie.obsFormIdx < len(ie.obsFields) {
+			return &ie.obsFields[ie.obsFormIdx]
+		}
+	case infraTabEnvironments:
+		if ie.envView == envViewForm && ie.envFormIdx >= 0 && ie.envFormIdx < len(ie.envForm) {
+			return &ie.envForm[ie.envFormIdx]
+		}
+	}
+	return nil
+}

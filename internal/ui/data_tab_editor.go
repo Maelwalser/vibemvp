@@ -701,3 +701,29 @@ func (dt DataTabEditor) View(w, h int) string {
 	lines = append(lines, contentLines...)
 	return fillTildes(lines, h)
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list/sub-editor views.
+func (dt *DataTabEditor) CurrentField() *Field {
+	switch dt.activeTab {
+	case dataTabCaching:
+		if dt.cachingSubView == cachingViewForm && dt.cachingFormIdx >= 0 && dt.cachingFormIdx < len(dt.cachingForm) {
+			return &dt.cachingForm[dt.cachingFormIdx]
+		}
+	case dataTabFileStorage:
+		if dt.fsSubView == fsViewForm && dt.fsFormIdx >= 0 && dt.fsFormIdx < len(dt.fsForm) {
+			return &dt.fsForm[dt.fsFormIdx]
+		}
+	case dataTabGovernance:
+		if dt.govSubView == govViewForm && dt.govFormIdx >= 0 && dt.govFormIdx < len(dt.govForm) {
+			return &dt.govForm[dt.govFormIdx]
+		}
+	case dataTabDomains:
+		if dt.domainSubView == domainViewForm && dt.domainFormIdx >= 0 && dt.domainFormIdx < len(dt.domainForm) {
+			return &dt.domainForm[dt.domainFormIdx]
+		}
+	case dataTabDatabases:
+		return dt.dbEditor.CurrentField()
+	}
+	return nil
+}

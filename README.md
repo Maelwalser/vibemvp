@@ -1,8 +1,10 @@
 # VibeMenu
+                                                                            
+What vibe is on the menu today?
 
-An interactive Terminal User Interface (TUI) for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
+A TUI for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
 
-Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and a Tokyo Night dark theme throughout.
+(Still in development, may have issues; TODO Final task in flow needs fixing)
 
 ---
 
@@ -24,60 +26,65 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and a Tokyo 
 
 ## Installation
 
+### macOS / Linux — install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vibe-menu/vibemenu/main/install.sh | bash
 ```
 
----
+Installs `vibemenu` and `realize` to `/usr/local/bin` (override with `INSTALL_DIR`).
+
+### Specific version
+
+```bash
+VIBEMENU_VERSION=v1.0.0 bash install.sh
+```
+
+### Manual download
+
+Pre-built binaries for every platform are attached to each [GitHub Release](https://github.com/vibe-menu/vibemenu/releases):
+
+| Platform | Archive |
+|----------|---------|
+| Linux x86-64 | `vibemenu-<version>-linux-amd64.tar.gz` |
+| Linux ARM64 | `vibemenu-<version>-linux-arm64.tar.gz` |
+| macOS x86-64 | `vibemenu-<version>-darwin-amd64.tar.gz` |
+| macOS Apple Silicon | `vibemenu-<version>-darwin-arm64.tar.gz` |
+| Windows x86-64 | `vibemenu-<version>-windows-amd64.zip` |
+
+Each archive contains two binaries: `vibemenu` (TUI editor) and `realize` (code generation).
+
+### Build from source
+
+```bash
+git clone https://github.com/vibe-menu/vibemenu
+cd vibemenu
+go build -o vibemenu ./cmd/agent
+go build -o realize  ./cmd/realize
+```
+
+Requires Go 1.26+.
+
+### Skills (bundled — no extra setup needed)
+
+Skill files are **embedded in the `realize` binary**. On first run, they are
+automatically extracted to `.vibemenu/skills/` in the current directory:
+
+```
+realize --manifest manifest.json
+# realize: extracting bundled skills to .vibemenu/skills
+```
+
+Existing files are never overwritten, so you can safely customise the skills
+directory. Point `realize` at a different location with `--skills`:
+
+```bash
+realize --skills /path/to/custom/skills --manifest manifest.json
 ```
 
 ---
 
 ## The TUI Editor
-
-VibeMenu uses vim-modal editing with three modes:
-
-| Mode | How to Enter | Description |
-|------|-------------|-------------|
-| **Normal** | `Esc` | Navigation between sections and fields |
-| **Insert** | `i` | Text input for the active field |
-| **Command** | `:` | Run editor commands (`:w`, `:q`, etc.) |
-
-### Key Bindings
-
-#### Global (Normal Mode)
-
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Next / previous main section |
-| `j` / `k` | Move down / up within a section |
-| `Space` | Cycle through select field options |
-| `i` | Enter insert mode |
-| `:` | Enter command mode |
-| `Ctrl+S` | Save manifest |
-| `Shift+M` | Open Provider Menu modal |
-| `Ctrl+C` | Quit |
-
-#### Command Mode
-
-| Command | Action |
-|---------|--------|
-| `:w` / `:write` | Save manifest |
-| `:q` / `:quit` | Quit without saving |
-| `:wq` / `:x` | Save and quit |
-| `:tabn` / `:bn` | Next section |
-| `:tabp` / `:bp` | Previous section |
-| `:1` – `:8` | Jump directly to section N |
-
-#### List / Form Views
-
-| Key | Action |
-|-----|--------|
-| `a` | Add a new item |
-| `d` | Delete the selected item |
-| `Enter` / `i` | Edit selected item |
-| `h` / `l` | Switch sub-tabs |
-| `b` / `Esc` | Back to parent / exit insert mode |
-| `F` | Drill into nested fields (DTOs) |
-| `A` | Drill into attributes (Domains) |
 
 ### Sections Overview
 
@@ -165,16 +172,7 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
     "tier_fast": "claude-haiku-4-5-20251001",
     "tier_medium": "claude-sonnet-4-6",
     "tier_slow": "claude-opus-4-6",
-    "section_models": {
-      "backend": "Claude · Sonnet",
-      "data": "Gemini · Flash"
-    }
   },
-
-  "configured_providers": {
-    "Claude":  { "provider": "Claude",  "model": "Sonnet", "auth": "api_key", "credential": "..." },
-    "Gemini":  { "provider": "Gemini",  "model": "Pro",    "auth": "oauth",   "credential": "..." }
-  }
 }
 ```
 
@@ -228,32 +226,6 @@ Per-section overrides in `section_models` use the format `"Provider · Tier"` (e
 ## Code Generation (`realize`)
 
 The `realize` binary reads `manifest.json` and drives a parallel, agentic code-generation pipeline.
-
-### CLI Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--manifest` | `manifest.json` | Path to the manifest file |
-| `--output` | `output` | Directory for generated code |
-| `--skills` | `.vibemenu/skills` | Directory for skill markdown files |
-| `--retries` | `3` | Max verification retry attempts per task |
-| `--parallel` | `1` | Max concurrent tasks |
-| `--dry-run` | `false` | Print task plan without running agents |
-| `--verbose` | `false` | Print token usage and thinking logs |
-| `--provider` | — | Default LLM provider (overrides manifest) |
-| `--api-key` | — | API key for the default provider (overrides env var) |
-
-**Example:**
-
-```bash
-./realize \
-  --manifest manifest.json \
-  --output ./my-project \
-  --parallel 4 \
-  --provider Claude \
-  --retries 5 \
-  --verbose
-```
 
 ### Model Tiering
 

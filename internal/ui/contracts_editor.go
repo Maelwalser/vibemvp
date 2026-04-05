@@ -652,3 +652,40 @@ func (ce ContractsEditor) tryEnterInsert() (ContractsEditor, tea.Cmd) {
 	}
 	return ce, nil
 }
+
+// CurrentField returns the currently highlighted form field for the description panel.
+// Returns nil when in list view or when no field can be resolved.
+func (ce *ContractsEditor) CurrentField() *Field {
+	switch ce.activeTab {
+	case contractsTabDTOs:
+		switch ce.dtoSubView {
+		case ceViewForm:
+			if ce.dtoFormIdx >= 0 && ce.dtoFormIdx < len(ce.dtoForm) {
+				return &ce.dtoForm[ce.dtoFormIdx]
+			}
+		case ceViewSubForm:
+			if ce.dtoFieldFormIdx >= 0 && ce.dtoFieldFormIdx < len(ce.dtoFieldForm) {
+				return &ce.dtoFieldForm[ce.dtoFieldFormIdx]
+			}
+		}
+	case contractsTabEndpoints:
+		if ce.epSubView == ceViewForm {
+			visible := ce.visibleEPFields()
+			if ce.epFormIdx >= 0 && ce.epFormIdx < len(visible) {
+				return ce.epFieldByKey(visible[ce.epFormIdx].Key)
+			}
+		}
+	case contractsTabVersioning:
+		if ce.verFormIdx >= 0 && ce.verFormIdx < len(ce.versioningFields) {
+			return &ce.versioningFields[ce.verFormIdx]
+		}
+	case contractsTabExternal:
+		if ce.extSubView == ceViewForm {
+			visible := ce.visibleExtFormFields()
+			if ce.extFormIdx >= 0 && ce.extFormIdx < len(visible) {
+				return ce.extFormFieldByKey(visible[ce.extFormIdx].Key)
+			}
+		}
+	}
+	return nil
+}
