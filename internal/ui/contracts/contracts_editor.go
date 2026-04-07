@@ -149,10 +149,148 @@ func (ce *ContractsEditor) SetDomainDefs(domains []manifest.DomainDef) {
 // ── ToManifest ────────────────────────────────────────────────────────────────
 
 func (ce ContractsEditor) ToManifestContractsPillar() manifest.ContractsPillar {
+	// Clean protocol-specific fields from endpoints so stale values from a
+	// previous protocol selection don't leak into the manifest.
+	endpoints := make([]manifest.EndpointDef, len(ce.endpoints))
+	for i, ep := range ce.endpoints {
+		switch ep.Protocol {
+		case "REST":
+			ep.GraphQLOpType = ""
+			ep.GRPCStreamType = ""
+			ep.WSDirection = ""
+		case "GraphQL":
+			ep.HTTPMethod = ""
+			ep.GRPCStreamType = ""
+			ep.WSDirection = ""
+		case "gRPC":
+			ep.HTTPMethod = ""
+			ep.GraphQLOpType = ""
+			ep.WSDirection = ""
+		case "WebSocket message":
+			ep.HTTPMethod = ""
+			ep.GraphQLOpType = ""
+			ep.GRPCStreamType = ""
+		case "Event":
+			ep.HTTPMethod = ""
+			ep.GraphQLOpType = ""
+			ep.GRPCStreamType = ""
+			ep.WSDirection = ""
+			ep.PaginationStrategy = ""
+		}
+		endpoints[i] = ep
+	}
+
+	// Clean protocol-specific fields from DTOs.
+	dtos := make([]manifest.DTODef, len(ce.dtos))
+	for i, dto := range ce.dtos {
+		if dto.Protocol != "Protobuf" {
+			dto.ProtoPackage = ""
+			dto.ProtoSyntax = ""
+			dto.ProtoOptions = ""
+		}
+		if dto.Protocol != "Avro" {
+			dto.AvroNamespace = ""
+			dto.SchemaRegistry = ""
+		}
+		if dto.Protocol != "Thrift" {
+			dto.ThriftNamespace = ""
+			dto.ThriftLanguage = ""
+		}
+		if dto.Protocol != "FlatBuffers" && dto.Protocol != "Cap'n Proto" {
+			dto.Namespace = ""
+		}
+		// Clean protocol-specific fields from DTO fields.
+		if len(dto.Fields) > 0 {
+			fields := make([]manifest.DTOField, len(dto.Fields))
+			for j, f := range dto.Fields {
+				if dto.Protocol != "Protobuf" {
+					f.FieldNumber = ""
+					f.ProtoModifier = ""
+					f.JsonName = ""
+				}
+				if dto.Protocol != "Thrift" && dto.Protocol != "Cap'n Proto" {
+					f.FieldID = ""
+				}
+				if dto.Protocol != "Thrift" {
+					f.ThriftModifier = ""
+				}
+				if dto.Protocol != "FlatBuffers" {
+					f.Deprecated = false
+				}
+				fields[j] = f
+			}
+			dto.Fields = fields
+		}
+		dtos[i] = dto
+	}
+
+	// Clean protocol-specific fields from external APIs and their interactions.
+	externalAPIs := make([]manifest.ExternalAPIDef, len(ce.externalAPIs))
+	for i, api := range ce.externalAPIs {
+		proto := api.Protocol
+		if proto == "" {
+			proto = "REST"
+		}
+		// base_url shown for all except Webhook
+		if proto == "Webhook" {
+			api.BaseURL = ""
+		}
+		// rate_limit only for REST/GraphQL
+		if proto != "REST" && proto != "GraphQL" {
+			api.RateLimit = ""
+		}
+		// webhook_endpoint only for REST/Webhook
+		if proto != "REST" && proto != "Webhook" {
+			api.WebhookEndpoint = ""
+		}
+		// gRPC-only
+		if proto != "gRPC" {
+			api.TLSMode = ""
+		}
+		// WebSocket-only
+		if proto != "WebSocket" {
+			api.WSSubprotocol = ""
+			api.MessageFormat = ""
+		}
+		// Webhook-only
+		if proto != "Webhook" {
+			api.HMACHeader = ""
+			api.RetryPolicy = ""
+		}
+		// SOAP-only
+		if proto != "SOAP" {
+			api.SOAPVersion = ""
+		}
+		// Clean protocol-specific fields from interactions.
+		if len(api.Interactions) > 0 {
+			interactions := make([]manifest.ExternalAPIInteraction, len(api.Interactions))
+			for j, it := range api.Interactions {
+				if proto != "REST" {
+					it.HTTPMethod = ""
+				}
+				if proto != "GraphQL" {
+					it.GQLOperation = ""
+				}
+				if proto != "gRPC" {
+					it.GRPCStreamType = ""
+				}
+				if proto != "WebSocket" {
+					it.WSDirection = ""
+				}
+				if proto == "Webhook" {
+					it.Path = ""
+				}
+				interactions[j] = it
+			}
+			api.Interactions = interactions
+		}
+		externalAPIs[i] = api
+	}
+
 	p := manifest.ContractsPillar{
-		DTOs:         ce.dtos,
-		Endpoints:    ce.endpoints,
-		ExternalAPIs: ce.externalAPIs,
+		DTOs:         dtos,
+		Endpoints:    endpoints,
+		ExternalAPIs: externalAPIs,
 	}
 	if ce.versioningEnabled {
 		strategies := make(map[string]string)

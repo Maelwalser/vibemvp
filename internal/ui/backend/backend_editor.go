@@ -370,11 +370,16 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		case "G":
 			be.dropdownIdx = len(beArchOptions) - 1
 		case "enter", " ":
+			oldArch := beArchOptions[be.ArchIdx].value
 			be.ArchIdx = be.dropdownIdx
 			be.dropdownOpen = false
 			be.ArchConfirmed = true
 			be.activeTabIdx = 0
 			be.activeField = 0
+			newArch := beArchOptions[be.ArchIdx].value
+			if oldArch != newArch {
+				be = be.resetForArchChange(newArch)
+			}
 		case "esc":
 			be.dropdownOpen = false
 		}
@@ -387,3 +392,77 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	}
 	return be, nil
 }
+
+// resetForArchChange clears architecture-specific state that is not valid for
+// the new architecture pattern. This ensures stale data from a previous arch
+// (e.g. stack configs from microservices) does not leak into the manifest.
+func (be BackendEditor) resetForArchChange(newArch string) BackendEditor {
+	newTabs := subTabsForArch(newArch)
+	hasTab := func(t backendSubTab) bool {
+		for _, tab := range newTabs {
+			if tab == t {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Monolith uses pillar-level lang/fw; clear stack configs.
+	// Non-monolith uses stack configs; reset monolith-level env fields.
+	if newArch == "monolith" {
+		be.stackConfigEditor = newBeListEditor()
+		be.StackConfigs = nil
+	} else {
+		be.EnvFields = defaultEnvFields()
+		be.envEnabled = false
+	}
+
+	// Clear comm links if COMM tab is no longer available.
+	if !hasTab(beTabComm) {
+		be.commEditor = newBeListEditor()
+		be.CommLinks = nil
+	}
+
+	// Clear messaging + events if MESSAGING tab is no longer available.
+	if !hasTab(beTabMessaging) {
+		be.MessagingFields = defaultMessagingFields()
+		be.eventEditor = newBeListEditor()
+		be.Events = nil
+	}
+
+	// Clear API gateway if API GW tab is no longer available.
+	if !hasTab(beTabAPIGW) {
+		be.APIGWFields = defaultAPIGWFields()
+		be.apiGWEnabled = false
+	}
+
+	// Clear service fields that are architecture-specific.
+	for i := range be.Services {
+		if newArch == "monolith" {
+			be.Services[i].ConfigRef = ""
+			be.Services[i].ServiceDiscovery = ""
+			be.Services[i].Environment = ""
+		}
+		if newArch != "hybrid" {
+			be.Services[i].PatternTag = ""
+		}
+	}
+	for i := range be.serviceEditor.items {
+		if newArch == "monolith" {
+			be.serviceEditor.items[i] = core.SetFieldValue(be.serviceEditor.items[i], "config_ref", "")
+			be.serviceEditor.items[i] = core.SetFieldValue(be.serviceEditor.items[i], "service_discovery", "")
+			be.serviceEditor.items[i] = core.SetFieldValue(be.serviceEditor.items[i], "environment", "")
+		}
+		if newArch != "hybrid" {
+			be.serviceEditor.items[i] = core.SetFieldValue(be.serviceEditor.items[i], "pattern_tag", "")
+		}
+	}
+
+	// Monolith doesn't need inter-service mTLS.
+	if newArch == "monolith" {
+		be.securityFields = core.SetFieldValue(be.securityFields, "internal_mtls", "Disabled")
+	}
+
+	return be
+}
+

@@ -50,23 +50,57 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 	// Language/framework fields are always hidden from the service form — they are
 	// never set per-service. For monolith they live at the pillar level; for all
 	// other arches they live in the referenced stack config. Strip them from every
-	// service to keep the manifest clean.
+	// service to keep the manifest clean. Also strip architecture-specific fields
+	// that don't apply to the current arch.
 	services := make([]manifest.ServiceDef, len(be.Services))
 	for i, s := range be.Services {
 		s.Language = ""
 		s.LanguageVersion = ""
 		s.Framework = ""
 		s.FrameworkVersion = ""
+		if arch == "monolith" {
+			s.ConfigRef = ""
+			s.ServiceDiscovery = ""
+			s.Environment = ""
+		}
+		if arch != "hybrid" {
+			s.PatternTag = ""
+		}
 		services[i] = s
 	}
 
 	bp := manifest.BackendPillar{
-		ArchPattern:  manifest.ArchPattern(arch),
-		StackConfigs: stackConfigs,
-		Services:     services,
-		CommLinks:    be.CommLinks,
-		Auth:         auth,
-		JobQueues:    be.jobQueues,
+		ArchPattern: manifest.ArchPattern(arch),
+		Services:    services,
+		Auth:        auth,
+		JobQueues:   be.jobQueues,
+	}
+
+	// Stack configs only apply to non-monolith architectures.
+	if arch != "monolith" {
+		bp.StackConfigs = stackConfigs
+	}
+
+	// Comm links only apply to architectures with a COMM tab.
+	tabs := subTabsForArch(arch)
+	hasTab := func(t backendSubTab) bool {
+		for _, tab := range tabs {
+			if tab == t {
+				return true
+			}
+		}
+		return false
+	}
+	if hasTab(beTabComm) {
+		// Strip response_dtos from non-bidirectional comm links.
+		links := make([]manifest.CommLink, len(be.CommLinks))
+		for i, l := range be.CommLinks {
+			if l.Direction != "Bidirectional (↔)" {
+				l.ResponseDTOs = nil
+			}
+			links[i] = l
+		}
+		bp.CommLinks = links
 	}
 	if be.secEnabled {
 		bp.WAF = &manifest.WAFConfig{
@@ -77,11 +111,10 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			RateLimitStrategy: core.NoneToEmpty(core.FieldGet(be.securityFields, "rate_limit_strategy")),
 			RateLimitBackend:  core.NoneToEmpty(core.FieldGet(be.securityFields, "rate_limit_backend")),
 			DDoSProtection:    core.NoneToEmpty(core.FieldGet(be.securityFields, "ddos_protection")),
-			InternalMTLS:      core.FieldGet(be.securityFields, "internal_mtls") == "Enabled",
+			InternalMTLS:      arch != "monolith" && core.FieldGet(be.securityFields, "internal_mtls") == "Enabled",
 		}
 	}
 
-	tabs := subTabsForArch(arch)
 	for _, t := range tabs {
 		if t == beTabMessaging {
 			msgEnv := core.FieldGet(be.MessagingFields, "environment")

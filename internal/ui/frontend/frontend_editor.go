@@ -271,39 +271,109 @@ func (fe FrontendEditor) assetNames() []string {
 func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 	assets := make([]manifest.AssetDef, len(fe.assets))
 	copy(assets, fe.assets)
+
+	// Clean action-type-specific fields from component actions so stale
+	// values from a previous action_type don't leak into the manifest.
 	components := make([]manifest.PageComponentDef, len(fe.components))
-	copy(components, fe.components)
+	for i, comp := range fe.components {
+		if len(comp.Actions) > 0 {
+			actions := make([]manifest.ComponentActionDef, len(comp.Actions))
+			for j, a := range comp.Actions {
+				extras := actionTypeVisibleExtras[a.ActionType]
+				if !extras["endpoint"] {
+					a.Endpoint = ""
+					a.HttpMethod = ""
+					a.RequestBody = ""
+				}
+				if !extras["success_action"] {
+					a.SuccessAction = ""
+				}
+				if !extras["error_action"] {
+					a.ErrorAction = ""
+				}
+				if !extras["form_target"] {
+					a.FormTarget = ""
+				}
+				if !extras["modal_target"] {
+					a.ModalTarget = ""
+				}
+				if !extras["target_page"] {
+					a.TargetPage = ""
+				}
+				if !extras["toast_message"] {
+					a.ToastMessage = ""
+					a.ToastType = ""
+				}
+				if !extras["confirm_dialog"] {
+					a.ConfirmDialog = ""
+				}
+				if !extras["state_key"] {
+					a.StateKey = ""
+					a.StateValue = ""
+				}
+				if !extras["custom_handler"] {
+					a.CustomHandler = ""
+				}
+				actions[j] = a
+			}
+			comp.Actions = actions
+		}
+		components[i] = comp
+	}
+
+	// Clean page auth_roles when auth is not required.
+	pages := make([]manifest.PageDef, len(fe.pages))
+	for i, pg := range fe.pages {
+		if pg.AuthRequired != "true" {
+			pg.AuthRoles = ""
+		}
+		pages[i] = pg
+	}
+
 	p := manifest.FrontendPillar{
 		Components: components,
-		Pages:      fe.pages,
+		Pages:      pages,
 		Assets:     assets,
 	}
 	if fe.techEnabled {
+		platform := core.NoneToEmpty(core.FieldGet(fe.techFields, "platform"))
+		isWeb := platform == "Web (SPA)" || platform == "Web (SSR/SSG)"
+
+		// Helper to suppress web-only field values for non-web platforms.
+		webOnly := func(key string) string {
+			if !isWeb {
+				return ""
+			}
+			return core.NoneToEmpty(core.FieldGet(fe.techFields, key))
+		}
+
 		p.Tech = &manifest.FrontendTechConfig{
 			Language:           core.NoneToEmpty(core.FieldGet(fe.techFields, "language")),
 			LanguageVersion:    core.FieldGet(fe.techFields, "language_version"),
-			Platform:           core.NoneToEmpty(core.FieldGet(fe.techFields, "platform")),
+			Platform:           platform,
 			Framework:          core.NoneToEmpty(core.FieldGet(fe.techFields, "framework")),
 			FrameworkVersion:   core.FieldGet(fe.techFields, "framework_version"),
-			MetaFramework:      core.NoneToEmpty(core.FieldGet(fe.techFields, "meta_framework")),
+			MetaFramework:      webOnly("meta_framework"),
 			PackageManager:     core.NoneToEmpty(core.FieldGet(fe.techFields, "pkg_manager")),
-			Styling:            core.NoneToEmpty(core.FieldGet(fe.techFields, "styling")),
-			ComponentLib:       core.NoneToEmpty(core.FieldGet(fe.techFields, "component_lib")),
+			Styling:            webOnly("styling"),
+			ComponentLib:       webOnly("component_lib"),
 			StateManagement:    core.NoneToEmpty(core.FieldGet(fe.techFields, "state_mgmt")),
 			DataFetching:       core.NoneToEmpty(core.FieldGet(fe.techFields, "data_fetching")),
 			FormHandling:       core.NoneToEmpty(core.FieldGet(fe.techFields, "form_handling")),
 			Validation:         core.NoneToEmpty(core.FieldGet(fe.techFields, "validation")),
-			PWASupport:         core.NoneToEmpty(core.FieldGet(fe.techFields, "pwa_support")),
+			PWASupport:         webOnly("pwa_support"),
 			RealtimeStrategy:   core.NoneToEmpty(core.FieldGet(fe.techFields, "realtime")),
-			ImageOptimization:  core.NoneToEmpty(core.FieldGet(fe.techFields, "image_opt")),
+			ImageOptimization:  webOnly("image_opt"),
 			AuthFlowType:       core.NoneToEmpty(core.FieldGet(fe.techFields, "auth_flow")),
 			ErrorBoundary:      core.NoneToEmpty(core.FieldGet(fe.techFields, "error_boundary")),
-			BundleOptimization: core.NoneToEmpty(core.FieldGet(fe.techFields, "bundle_opt")),
+			BundleOptimization: webOnly("bundle_opt"),
 		}
 		// Legacy compatibility
-		p.Rendering = manifest.RenderingMode(core.NoneToEmpty(core.FieldGet(fe.techFields, "platform")))
+		p.Rendering = manifest.RenderingMode(platform)
 		p.Framework = core.NoneToEmpty(core.FieldGet(fe.techFields, "framework"))
-		p.Styling = core.NoneToEmpty(core.FieldGet(fe.techFields, "styling"))
+		if isWeb {
+			p.Styling = core.NoneToEmpty(core.FieldGet(fe.techFields, "styling"))
+		}
 	}
 	if fe.themeEnabled {
 		p.Theme = &manifest.FrontendTheme{
