@@ -30,6 +30,14 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			RefreshToken: core.NoneToEmpty(core.FieldGet(be.AuthFields, "refresh_token")),
 			MFA:          core.NoneToEmpty(core.FieldGet(be.AuthFields, "mfa")),
 		}
+		// Clean hidden auth fields so incompatible values don't leak.
+		if be.isAuthFieldHidden("session_mgmt") {
+			auth.SessionMgmt = ""
+		}
+		if be.isAuthFieldHidden("token_storage") {
+			auth.TokenStorage = ""
+			auth.RefreshToken = ""
+		}
 	}
 
 	// Derive stack configs from the list editor items.
@@ -112,6 +120,10 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			RateLimitBackend:  core.NoneToEmpty(core.FieldGet(be.securityFields, "rate_limit_backend")),
 			DDoSProtection:    core.NoneToEmpty(core.FieldGet(be.securityFields, "ddos_protection")),
 			InternalMTLS:      arch != "monolith" && core.FieldGet(be.securityFields, "internal_mtls") == "Enabled",
+		}
+		// Clean hidden security fields.
+		if be.isSecurityFieldHidden("rate_limit_backend") {
+			bp.WAF.RateLimitBackend = ""
 		}
 	}
 

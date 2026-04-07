@@ -256,13 +256,65 @@ func (dt DataTabEditor) DomainNames() []string {
 // ── ToManifest ────────────────────────────────────────────────────────────────
 
 func (dt DataTabEditor) ToManifestDataPillar() manifest.DataPillar {
+	// Clean disabled fields from database sources so incompatible values
+	// (e.g. consistency on PostgreSQL) don't leak into the manifest.
+	// Rules mirror isDBFormFieldDisabled() in db_editor_fields.go.
+	databases := make([]manifest.DBSourceDef, len(dt.dbEditor.Sources))
+	for i, db := range dt.dbEditor.Sources {
+		dbType := string(db.Type)
+		if dbType != "PostgreSQL" && dbType != "MySQL" {
+			db.SSLMode = ""
+		}
+		if dbType != "Cassandra" && dbType != "MongoDB" && dbType != "DynamoDB" {
+			db.Consistency = ""
+		}
+		if dbType == "Redis" || dbType == "Memcached" || dbType == "SQLite" {
+			db.Replication = ""
+		}
+		if dbType == "Redis" || dbType == "Memcached" {
+			db.PoolMinSize = 0
+			db.PoolMaxSize = 0
+		}
+		databases[i] = db
+	}
+
+	// Clean caching: cache_db only applies to "Dedicated cache" layer.
+	cachings := make([]manifest.CachingConfig, len(dt.cachings))
+	for i, c := range dt.cachings {
+		if c.Layer != "Dedicated cache" {
+			c.CacheDB = ""
+		}
+		cachings[i] = c
+	}
+
+	// Clean governance: migration_tool and archival_storage depend on DB categories.
+	governances := make([]manifest.DataGovernanceConfig, len(dt.governances))
+	for i, g := range dt.governances {
+		var cats []string
+		for _, alias := range g.Databases {
+			for _, src := range dt.dbEditor.Sources {
+				if src.Alias == alias {
+					cats = append(cats, govDbCategory(string(src.Type), src.IsCache))
+					break
+				}
+			}
+		}
+		if allGovCategories(cats, "cache") || allGovCategories(cats, "analytics") {
+			g.MigrationTool = ""
+		}
+		if allGovCategories(cats, "cache") {
+			g.ArchivalStorage = ""
+		}
+		governances[i] = g
+	}
+
 	return manifest.DataPillar{
-		Databases:    dt.dbEditor.Sources,
+		Databases:    databases,
 		Domains:      dt.Domains,
 		Entities:     dt.dataEditor.Entities,
 		FileStorages: dt.fileStorages,
-		Cachings:     dt.cachings,
-		Governances:  dt.governances,
+		Cachings:     cachings,
+		Governances:  governances,
 	}
 }
 

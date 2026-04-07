@@ -179,6 +179,11 @@ func (ie InfraEditor) primaryCloudProvider() string {
 func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 	var p manifest.InfraPillar
 	if ie.netEnabled {
+		corsStrategy := core.NoneToEmpty(core.FieldGet(ie.networkingFields, "cors_strategy"))
+		corsOrigins := core.FieldGet(ie.networkingFields, "cors_origins")
+		if corsStrategy != "Strict allowlist" {
+			corsOrigins = ""
+		}
 		p.Networking = &manifest.NetworkingConfig{
 			DNSProvider:     core.NoneToEmpty(core.FieldGet(ie.networkingFields, "dns_provider")),
 			TLSSSL:          core.NoneToEmpty(core.FieldGet(ie.networkingFields, "tls_ssl")),
@@ -187,8 +192,8 @@ func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 			PrimaryDomain:   core.FieldGet(ie.networkingFields, "primary_domain"),
 			DomainStrategy:  core.NoneToEmpty(core.FieldGet(ie.networkingFields, "domain_strategy")),
 			CORSEnforcement: core.NoneToEmpty(core.FieldGet(ie.networkingFields, "cors_infra")),
-			CORSStrategy:    core.NoneToEmpty(core.FieldGet(ie.networkingFields, "cors_strategy")),
-			CORSOrigins:     core.FieldGet(ie.networkingFields, "cors_origins"),
+			CORSStrategy:    corsStrategy,
+			CORSOrigins:     corsOrigins,
 			SSLCertMgmt:     core.NoneToEmpty(core.FieldGet(ie.networkingFields, "ssl_cert")),
 		}
 	}

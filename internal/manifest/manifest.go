@@ -17,10 +17,28 @@ func clearSentinels(v interface{}) {
 	clearSentinelsValue(reflect.ValueOf(v))
 }
 
+// sentinelSet contains exact-match sentinel values that should be treated as
+// empty (unset) when serialising the manifest.
 var sentinelSet = map[string]bool{
 	"None":             true,
 	"none":             true,
+	"N/A":              true,
 	"Platform default": true,
+	"None (external)":  true,
+}
+
+// isSentinel returns true if s is a known sentinel that should be cleared.
+// It matches the static sentinelSet plus any string of the form "(…)" which
+// covers all UI placeholder values like "(none)", "(no environments configured)",
+// "(no services configured)", etc.
+func isSentinel(s string) bool {
+	if sentinelSet[s] {
+		return true
+	}
+	if len(s) >= 2 && s[0] == '(' && s[len(s)-1] == ')' {
+		return true
+	}
+	return false
 }
 
 func clearSentinelsValue(rv reflect.Value) {
@@ -43,12 +61,30 @@ func clearSentinelsValue(rv reflect.Value) {
 			clearSentinelsValue(rv.Field(i))
 		}
 	case reflect.String:
-		if sentinelSet[rv.String()] && rv.CanSet() {
+		if isSentinel(rv.String()) && rv.CanSet() {
 			rv.SetString("")
 		}
 	case reflect.Slice:
 		for i := 0; i < rv.Len(); i++ {
 			clearSentinelsValue(rv.Index(i))
+		}
+		// For []string slices, remove entries that were cleared to "" so
+		// placeholder values like "(no databases configured)" don't leave
+		// empty strings in the serialized array.
+		if rv.Type().Elem().Kind() == reflect.String && rv.CanSet() {
+			j := 0
+			for i := 0; i < rv.Len(); i++ {
+				if rv.Index(i).String() != "" {
+					if i != j {
+						rv.Index(j).Set(rv.Index(i))
+					}
+					j++
+				}
+			}
+			rv.SetLen(j)
+			if j == 0 {
+				rv.Set(reflect.Zero(rv.Type()))
+			}
 		}
 	case reflect.Map:
 		if rv.IsNil() {
@@ -56,7 +92,7 @@ func clearSentinelsValue(rv reflect.Value) {
 		}
 		for _, key := range rv.MapKeys() {
 			val := rv.MapIndex(key)
-			if val.Kind() == reflect.String && sentinelSet[val.String()] {
+			if val.Kind() == reflect.String && isSentinel(val.String()) {
 				rv.SetMapIndex(key, reflect.Value{}) // delete entry
 			}
 		}

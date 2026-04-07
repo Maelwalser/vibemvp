@@ -276,6 +276,126 @@ func TestMarshalJSON_SentinelValuesOmitted(t *testing.T) {
 	}
 }
 
+func TestMarshalJSON_PlaceholderValuesOmitted(t *testing.T) {
+	// UI placeholder values like "(none)", "(no environments configured)", "N/A"
+	// must be stripped from the JSON output.
+	m := Manifest{
+		Data: DataPillar{
+			Databases: []DBSourceDef{
+				{
+					Alias:       "primary",
+					Type:        DBPostgres,
+					Consistency: "strong",  // incompatible with PostgreSQL
+					Environment: "(none)",  // placeholder
+					SSLMode:     "require", // valid for PostgreSQL
+				},
+			},
+			Governances: []DataGovernanceConfig{
+				{
+					Name:            "policy",
+					MigrationTool:   "N/A",
+					ArchivalStorage: "(none)",
+					Databases:       []string{"(no databases configured)"},
+				},
+			},
+			FileStorages: []FileStorageDef{
+				{
+					Technology:  "S3",
+					Environment: "(no environments configured)",
+				},
+			},
+			Cachings: []CachingConfig{
+				{
+					Name:     "redis-cache",
+					Layer:    "Dedicated cache",
+					CacheDB:  "(no cache DBs configured)",
+					Entities: "(no domains or DTOs configured)",
+				},
+			},
+		},
+		Backend: BackendPillar{
+			Services: []ServiceDef{
+				{Name: "api", Environment: "(no environments configured)"},
+			},
+			Auth: &AuthConfig{
+				Strategy:    "JWT (stateless)",
+				ServiceUnit: "(no services configured)",
+			},
+		},
+		Contracts: ContractsPillar{
+			Endpoints: []EndpointDef{
+				{
+					NamePath:    "/api/test",
+					Protocol:    "REST",
+					ServiceUnit: "(no services configured)",
+					RequestDTO:  "(no DTOs configured)",
+					AuthRoles:   "(no roles configured)",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// None of these placeholder values should appear in the output.
+	banned := []string{
+		`"(none)"`,
+		`"(no environments configured)"`,
+		`"(no services configured)"`,
+		`"(no databases configured)"`,
+		`"(no DTOs configured)"`,
+		`"(no roles configured)"`,
+		`"(no cache DBs configured)"`,
+		`"(no domains or DTOs configured)"`,
+		`"N/A"`,
+		`"None (external)"`,
+	}
+	for _, sentinel := range banned {
+		if contains(jsonStr, sentinel) {
+			t.Errorf("placeholder %s should be stripped from JSON output, but found in:\n%s", sentinel, jsonStr)
+		}
+	}
+
+	// Verify legitimate values are preserved.
+	var raw map[string]any
+	json.Unmarshal(data, &raw)
+
+	dataRaw := raw["data"].(map[string]any)
+	dbs := dataRaw["databases"].([]any)
+	db := dbs[0].(map[string]any)
+	if db["alias"] != "primary" {
+		t.Error("alias should be preserved")
+	}
+	if db["ssl_mode"] != "require" {
+		t.Error("ssl_mode should be preserved for PostgreSQL")
+	}
+	if _, ok := db["environment"]; ok {
+		t.Error("environment=(none) should be omitted")
+	}
+
+	// Governance databases slice should be empty (placeholder removed).
+	govs := dataRaw["governances"].([]any)
+	gov := govs[0].(map[string]any)
+	if _, ok := gov["databases"]; ok {
+		t.Error("governance databases containing only placeholders should be omitted")
+	}
+	if _, ok := gov["migration_tool"]; ok {
+		t.Error("migration_tool=N/A should be omitted")
+	}
+
+	// File storage environment should be cleared.
+	fsSlice := dataRaw["file_storages"].([]any)
+	fs := fsSlice[0].(map[string]any)
+	if _, ok := fs["environment"]; ok {
+		t.Error("file_storage environment placeholder should be omitted")
+	}
+}
+
 func TestMarshalJSON_FalseBoolsOmitted(t *testing.T) {
 	m := Manifest{
 		Data: DataPillar{

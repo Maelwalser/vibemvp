@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-07T21:58:45.990463459+02:00",
+  "created_at": "2026-04-07T22:35:16.364542313+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
@@ -7,7 +7,6 @@
         "alias": "primary",
         "type": "PostgreSQL",
         "ssl_mode": "require",
-        "consistency": "strong",
         "replication": "single-node"
       }
     ],
@@ -65,85 +64,68 @@
   },
   "backend": {
     "arch_pattern": "monolith",
-    "stack_configs": [
-      {
-        "name": "stack",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      },
-      {
-        "name": "stack1",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      },
-      {
-        "name": "stack2",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      }
-    ],
     "services": [
       {
         "name": "auth-api",
         "responsibility": "Handles user registration, login, token refresh, and logout",
-        "pattern_tag": "Monolith part",
         "technologies": [
           "REST"
         ],
+        "health_deps": [
+          "primary"
+        ],
         "repositories": [
           {
-            "name": "repository",
+            "name": "UserRepository",
             "entity_ref": "User",
             "target_db": "primary",
-            "selected_fields": [
-              "id",
-              "email",
-              "password_hash",
-              "is_active",
-              "refresh_token",
-              "refresh_token_expires_at",
-              "created_at",
-              "updated_at"
-            ],
             "operations": [
               {
-                "name": "op",
-                "op_type": "read-one",
+                "name": "FindByEmail",
+                "op_type": "query",
+                "filter_by": [
+                  "email"
+                ],
                 "result_shape": "Single item"
+              },
+              {
+                "name": "FindByID",
+                "op_type": "query",
+                "filter_by": [
+                  "id"
+                ],
+                "result_shape": "Single item"
+              },
+              {
+                "name": "Create",
+                "op_type": "insert",
+                "result_shape": "Single item"
+              },
+              {
+                "name": "UpdateRefreshToken",
+                "op_type": "update",
+                "filter_by": [
+                  "id"
+                ],
+                "description": "Update refresh_token and refresh_token_expires_at for a user"
+              },
+              {
+                "name": "ClearRefreshToken",
+                "op_type": "update",
+                "filter_by": [
+                  "id"
+                ],
+                "description": "Nullify refresh_token and refresh_token_expires_at on logout"
               }
             ]
           }
         ]
       }
     ],
-    "comm_links": [
-      {
-        "from": "auth-api",
-        "to": "service",
-        "direction": "Unidirectional (→)",
-        "protocol": "REST (HTTP)",
-        "sync_async": "Synchronous"
-      },
-      {
-        "from": "service1",
-        "to": "service2",
-        "direction": "Unidirectional (→)",
-        "protocol": "REST (HTTP)",
-        "sync_async": "Synchronous"
-      }
-    ],
     "auth": {
-      "strategy": "JWT (stateless)",
       "provider": "self-managed",
       "service_unit": "auth-api",
       "authz_model": "RBAC",
-      "token_storage": "HttpOnly cookie",
       "permissions": [
         {
           "name": "profile:read",
@@ -489,7 +471,6 @@
         "core_actions": "Display user profile from /me; logout button",
         "loading": "Skeleton while fetching profile",
         "error_handling": "Redirect to /login on 401",
-        "auth_roles": "user",
         "linked_pages": "/login"
       }
     ],
@@ -497,18 +478,68 @@
       "nav_type": "Top bar",
       "auth_aware": true
     },
-    "rendering": "Web (SPA)",
+    "rendering": "SSR",
     "framework": "React",
     "styling": "Tailwind CSS"
   },
+  "infrastructure": {
+    "cicd": {
+      "platform": "GitHub Actions",
+      "container_registry": "GHCR",
+      "deploy_strategy": "Rolling",
+      "iac_tool": "Terraform",
+      "secrets_mgmt": "GitHub Secrets",
+      "container_runtime": "scratch"
+    },
+    "observability": {
+      "logging": "Loki + Grafana",
+      "metrics": "Prometheus + Grafana",
+      "tracing": "OpenTelemetry + Jaeger",
+      "error_tracking": "Sentry",
+      "health_checks": true,
+      "alerting": "Grafana Alerting",
+      "log_retention": "30 days"
+    },
+    "environments": [
+      {
+        "name": "dev",
+        "compute_env": "containerized",
+        "orchestrator": "Docker Compose"
+      }
+    ]
+  },
+  "cross_cutting": {
+    "testing": {
+      "unit": "Go testing",
+      "integration": "In-memory fakes",
+      "e2e": "Playwright",
+      "api": "Bruno",
+      "load": "k6",
+      "frontend_testing": "Vitest"
+    },
+    "docs": {
+      "per_protocol_formats": {
+        "REST": "OpenAPI/Swagger"
+      },
+      "auto_generate": true
+    }
+  },
   "realize": {
-    "app_name": "app",
+    "app_name": "auth-app",
     "output_dir": "generated-code",
-    "concurrency": 4,
+    "concurrency": 1,
     "verify": true,
     "provider": "Claude",
     "tier_fast": "claude-haiku-4-5-20251001",
     "tier_medium": "claude-sonnet-4-6",
     "tier_slow": "claude-opus-4-6"
-  }
+  },
+  "databases": [
+    {
+      "alias": "primary",
+      "type": "PostgreSQL",
+      "ssl_mode": "require",
+      "replication": "single-node"
+    }
+  ]
 }
