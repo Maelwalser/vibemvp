@@ -142,6 +142,7 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 			if len(m.Backend.Services) > 0 {
 				authSvc = m.Backend.Services[0]
 				authSvc.Name = "monolith"
+				inheritBackendStack(&authSvc, m)
 			}
 		}
 		authSvcCopy := authSvc
@@ -187,6 +188,10 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 		if len(m.Backend.Services) > 0 {
 			svc = m.Backend.Services[0]
 			svc.Name = "monolith"
+			// Propagate backend-level language settings when the service
+			// doesn't define its own (common for monoliths where all
+			// services share the same stack via backend-level fields).
+			inheritBackendStack(&svc, m)
 		}
 		b.addServiceTaskChain(m, &svc, d, dataDeps, svcDirs)
 	default:
@@ -288,16 +293,41 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 	slug := svcSlug(svc.Name)
 	modPath := deriveModulePath(svc.Name)
 	svcCopy := *svc
-	links := commLinksFor(svc.Name, m.Backend.CommLinks)
-	jobQueues := jobQueuesForService(svc.Name, m.Backend.JobQueues)
-	cronJobs := cronJobsForService(svc.Name, m.Backend.JobQueues)
-	svcFileStorages := fileStoragesForService(svc.Name, m.Data.FileStorages)
-	svcExternalAPIs := externalAPIsForService(svc.Name, m.Contracts.ExternalAPIs)
-	svcEvents := eventsForService(svc.Name, m.Backend.Events)
 	outputDir := svcDirs[slug]
 
+	// For monolith/modular architectures, all cross-references belong to the
+	// single process — use unfiltered lists. The synthetic "monolith" name
+	// doesn't appear in endpoint/event service_unit references, so filtering
+	// by it would return empty results.
+	isMonolith := m.Backend.ArchPattern == manifest.ArchMonolith ||
+		m.Backend.ArchPattern == manifest.ArchModularMonolith
+
+	var links []manifest.CommLink
+	var jobQueues []manifest.JobQueueDef
+	var cronJobs []manifest.CronJobDef
+	var svcFileStorages []manifest.FileStorageDef
+	var svcExternalAPIs []manifest.ExternalAPIDef
+	var svcEvents []manifest.EventDef
+	var svcEndpoints []manifest.EndpointDef
+	if isMonolith {
+		links = m.Backend.CommLinks
+		jobQueues = m.Backend.JobQueues
+		cronJobs = allCronJobs(m.Backend.JobQueues)
+		svcFileStorages = m.Data.FileStorages
+		svcExternalAPIs = m.Contracts.ExternalAPIs
+		svcEvents = m.Backend.Events
+		svcEndpoints = m.Contracts.Endpoints
+	} else {
+		links = commLinksFor(svc.Name, m.Backend.CommLinks)
+		jobQueues = jobQueuesForService(svc.Name, m.Backend.JobQueues)
+		cronJobs = cronJobsForService(svc.Name, m.Backend.JobQueues)
+		svcFileStorages = fileStoragesForService(svc.Name, m.Data.FileStorages)
+		svcExternalAPIs = externalAPIsForService(svc.Name, m.Contracts.ExternalAPIs)
+		svcEvents = eventsForService(svc.Name, m.Backend.Events)
+		svcEndpoints = endpointsForService(svc.Name, m.Contracts.Endpoints)
+	}
+
 	// Pre-compute resolved cross-references so every layer gets the right context.
-	svcEndpoints := endpointsForService(svc.Name, m.Contracts.Endpoints)
 	svcDTOs := mergeDTOs(
 		dtosForEndpoints(svcEndpoints, m.Contracts.DTOs),
 		dtosForCommLinks(links, m.Contracts.DTOs),
@@ -403,9 +433,11 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 			ArchPattern:  m.Backend.ArchPattern,
 			Service:      &svcCopy,
 			Domains:      m.Data.Domains,
+			Databases:    m.Data.Databases,
 			Cachings:     m.Data.Cachings,
 			FileStorages: svcFileStorages,
 			ExternalAPIs: svcExternalAPIs,
+			Auth:         m.Backend.Auth,
 			CommLinks:    links,
 			JobQueues:    jobQueues,
 			CronJobs:     cronJobs,
@@ -457,14 +489,18 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 	// Small: ~100–200 lines. Wires all layers together.
 	// Depends on ALL three implementation layers (not just handler) so that
 	// DepsOf(bootstrap) includes repository and service constructor signatures.
-	// Without this, the bootstrap agent cannot know the exact constructor argument
-	// list for NewUserRepository or NewUserService, causing "too many arguments"
-	// and "undefined" cross-task compile errors.
+	// Also depends on backend.auth (when present) so the bootstrap agent sees
+	// the auth package constructor and type definitions in DepsOf context —
+	// needed for correct middleware wiring and import path derivation.
+	bootstrapDeps := []string{repoID, svcID, handlerID}
+	if _, hasAuth := d.Tasks["backend.auth"]; hasAuth {
+		bootstrapDeps = append(bootstrapDeps, "backend.auth")
+	}
 	add(d, &Task{
 		ID:           bootID,
 		Kind:         TaskKindServiceBootstrap,
 		Label:        fmt.Sprintf("%s — bootstrap", svc.Name),
-		Dependencies: []string{repoID, svcID, handlerID},
+		Dependencies: bootstrapDeps,
 		Payload: TaskPayload{
 			ModulePath:   modPath,
 			ArchPattern:  m.Backend.ArchPattern,
@@ -500,12 +536,23 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 	}
 
 	svcDirs := serviceOutputDirs(m)
+
+	// For monolith/modular architectures, contracts types live inside the single
+	// Go module and may need to import domain types. Inject ModulePath so the
+	// agent gets proper import path guidance and warnings.
+	contractsModPath := ""
+	switch m.Backend.ArchPattern {
+	case manifest.ArchMonolith, manifest.ArchModularMonolith:
+		contractsModPath = "monolith"
+	}
+
 	add(d, &Task{
 		ID:           "contracts",
 		Kind:         TaskKindContracts,
 		Label:        "Generate DTOs, API types, and OpenAPI spec",
 		Dependencies: deps,
 		Payload: TaskPayload{
+			ModulePath:   contractsModPath,
 			ArchPattern:  m.Backend.ArchPattern,
 			EnvConfig:    m.Backend.Env.OrZero(),
 			Domains:      m.Data.Domains,
@@ -588,6 +635,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 			Domains:     m.Data.Domains,
 			Databases:   m.Data.Databases,
 			Governances: m.Data.Governances,
+			Auth:        m.Backend.Auth,
 			Infra:       &infra,
 			Frontend:    frontendOrNil(m),
 			ServiceDirs: svcDirs,
@@ -621,8 +669,11 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 				ArchPattern: m.Backend.ArchPattern,
 				EnvConfig:   m.Backend.Env.OrZero(),
 				AllServices: m.Backend.Services,
+				Databases:   m.Data.Databases,
+				Auth:        m.Backend.Auth,
 				Infra:       &infra,
 				CrossCut:    crossCutOrNil(m),
+				Frontend:    frontendOrNil(m),
 				ServiceDirs: svcDirs,
 			},
 		})
@@ -653,8 +704,10 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 				ArchPattern: m.Backend.ArchPattern,
 				AllServices: m.Backend.Services,
 				Domains:     m.Data.Domains,
+				Databases:   m.Data.Databases,
 				DTOs:        m.Contracts.DTOs,
 				Endpoints:   m.Contracts.Endpoints,
+				Auth:        m.Backend.Auth,
 				CommLinks:   m.Backend.CommLinks,
 				Events:      m.Backend.Events,
 				JobQueues:   m.Backend.JobQueues,

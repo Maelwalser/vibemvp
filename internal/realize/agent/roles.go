@@ -60,7 +60,11 @@ var taskRoleDescriptions = map[dag.TaskKind]string{
 STRICT SCOPE — output EXACTLY these files:
 1. go.mod — module name MUST be exactly the module_path value from the payload. List ONLY your direct (first-party) dependencies. Do NOT list transitive dependencies — a dedicated dependency resolution step will run "go mod tidy" to resolve them. Use EXACTLY the module paths and versions from the "Dependency & API Reference" section below — do NOT invent versions. Include every library that repository, service, and handler layers will need (e.g. pgx/v5, fiber/v2, jwt, uuid).
 2. internal/repository/interfaces.go — defines every repository interface for each domain entity (e.g. UserRepository, BlogRepository). Each interface must list all CRUD methods with precise Go types derived from the domain structs in Shared Team Context. For each database driver in use, also define a connection pool/client interface (e.g. PgxPool for pgx/v5, DBPool for database/sql) so all downstream layers depend on an interface, not a concrete driver type. Use the exact method signatures from the "Dependency & API Reference" section below.
-3. internal/domain/errors.go — domain-level sentinel errors (ErrNotFound, ErrAlreadyExists, etc.) if not already present in Shared Team Context.
+3. internal/domain/errors.go — domain-level sentinel errors (ErrNotFound, ErrAlreadyExists, etc.)
+   ONLY if NO domain files appear in the Shared Team Context. When the data.schemas task has
+   already run, its per-entity files (e.g. internal/domain/user.go) contain error sentinels.
+   Generating errors.go with the same variables causes "redeclared in this block" errors.
+   If ANY internal/domain/*.go file is visible in Shared Team Context, SKIP this file entirely.
 
 CRITICAL RULES:
 - Do NOT write implementation code — no repository implementations, no service files, no handlers, no main.go
@@ -121,10 +125,12 @@ The payload includes "all_services" with repository definitions. Inspect each se
   Generate a Create<Entity>Input struct containing ONLY user-supplied fields. EXCLUDE
   auto-generated fields (ID, created_at, updated_at) and include fields like email,
   password_hash, role, etc. that a caller provides.
-- For "update" operations (op_type="update"): Generate an Update<OperationName>Input struct
+- For "update" operations (op_type="update"): Generate an <OperationName>Input struct
   containing the fields being updated (infer from the operation's "description" and
   "filter_by"). Example: "UpdateRefreshToken" updating refresh_token and
   refresh_token_expires_at → UpdateRefreshTokenInput { RefreshToken string; RefreshTokenExpiresAt *time.Time }.
+  NOTE: Use the operation name as-is — do NOT add a redundant "Update" prefix
+  (e.g. "UpdateRefreshToken" → "UpdateRefreshTokenInput", NOT "UpdateUpdateRefreshTokenInput").
 - For "query"/"read" operations: NO input struct needed (filter params become method arguments).
 - If a repository has no operations array, generate default Create<Entity>Input and
   Update<Entity>Input structs.
@@ -220,6 +226,17 @@ STRICT SCOPE:
 - Table-driven _test.go with mocked repositories for each service file
 - Use the module path from the payload's module_path field for all imports
 - DO NOT generate: domain structs, repository code, handlers, main.go, or go.mod
+
+AUTH INTEGRATION (when "auth" is present in the payload):
+- The payload's "auth" field contains the authentication strategy, roles, and permissions.
+- The TokenManager type (from internal/auth/) is shown in the Shared Team Context — import and
+  use its EXACT constructor and method signatures from the "Critical Constructor Signatures" section.
+- Accept *auth.TokenManager as a constructor parameter and use it to generate/parse tokens.
+- Use golang.org/x/crypto/bcrypt for password hashing (bcrypt.GenerateFromPassword, bcrypt.CompareHashAndPassword).
+- When registering a new user, assign the default role from the auth.roles array (typically the first role).
+  Use the role constants defined in the auth package (e.g. auth.RoleUser) — do NOT hardcode role strings.
+- Return domain-level sentinel errors (ErrNotFound, ErrAlreadyExists) from repository/errors.go so
+  handlers can translate them to the appropriate HTTP status codes.
 
 UUID HANDLING (CRITICAL):
 - uuid.UUID is an ARRAY type ([16]byte) and is NOT a string. It cannot be used directly
@@ -460,6 +477,13 @@ BUILD CONTEXT RULES — this is critical for Docker to find the source files:
 
   The Dockerfile for the Go service must use COPY paths relative to its build context:
     COPY go.mod go.sum ./   ← correct when context is "./backend" (go.mod is at backend/go.mod)
+
+DATABASE SERVICES — when "databases" appears in the payload:
+  Include a docker-compose service for EACH database in the payload's "databases" array.
+  - PostgreSQL: use postgres:16-alpine with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB env vars
+    and a named volume for data persistence. Expose the standard port (5432).
+  - If the payload includes a scripts/init-db.sql hint, bind-mount it via docker-entrypoint-initdb.d.
+  - Ensure the backend service depends_on the database service and uses matching connection env vars.
 
 VERSION RULES — use ONLY versions from the "Infrastructure & Dependency Reference" section:
   - Go base image: use the exact golang image version from the reference (NOT 1.22 or earlier)

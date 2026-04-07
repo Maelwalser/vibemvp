@@ -40,7 +40,7 @@ var defaultTierForKind = map[dag.TaskKind]ModelTier{
 	dag.TaskKindServiceRepository: TierFast,   // repetitive CRUD boilerplate
 	dag.TaskKindServiceLogic:      TierMedium, // business rules need reasoning
 	dag.TaskKindServiceHandler:    TierMedium, // routing + auth integration
-	dag.TaskKindServiceBootstrap:  TierFast,   // wiring boilerplate
+	dag.TaskKindServiceBootstrap:  TierMedium, // wires all layers with exact constructor signatures
 
 	dag.TaskKindAuth:      TierMedium,
 	dag.TaskKindMessaging: TierMedium,

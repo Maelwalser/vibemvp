@@ -222,8 +222,8 @@ func TestSharedMemory_PriorityWeightedBudget(t *testing.T) {
 	// Each task: 5 files * ~2800 chars = ~14000 chars total per task.
 	// Combined: ~28000 chars, well above the 20000 handler budget.
 	mem.Record(
-		&dag.Task{ID: "data.schemas", Kind: dag.TaskKindDataSchemas},
-		makeFiles("domain", 5),
+		&dag.Task{ID: "data.migrations", Kind: dag.TaskKindDataMigrations},
+		makeFiles("migration", 5),
 		"",
 	)
 	mem.Record(
@@ -232,11 +232,11 @@ func TestSharedMemory_PriorityWeightedBudget(t *testing.T) {
 		"",
 	)
 
-	// Consumer task depends on both, data listed first (would exhaust budget under flat approach).
+	// Consumer task depends on both, migrations listed first (would exhaust budget under flat approach).
 	consumer := &dag.Task{
 		ID:           "svc.monolith.handler",
 		Kind:         dag.TaskKindServiceHandler,
-		Dependencies: []string{"data.schemas", "backend.auth"},
+		Dependencies: []string{"data.migrations", "backend.auth"},
 	}
 
 	deps := mem.DepsOf(consumer)
@@ -244,22 +244,22 @@ func TestSharedMemory_PriorityWeightedBudget(t *testing.T) {
 		t.Fatalf("expected 2 deps, got %d", len(deps))
 	}
 
-	// Find auth dep and data dep.
-	var authChars, dataChars int
+	// Find auth dep and migrations dep.
+	var authChars, migrationChars int
 	for _, d := range deps {
 		for _, f := range d.Files {
 			if d.TaskID == "backend.auth" {
 				authChars += len(f.Content)
 			} else {
-				dataChars += len(f.Content)
+				migrationChars += len(f.Content)
 			}
 		}
 	}
 
-	// Auth (priority 0.9) should get more budget than data schemas (priority 0.3).
-	if authChars <= dataChars {
-		t.Errorf("auth (%d chars) should get more budget than data schemas (%d chars) due to higher priority",
-			authChars, dataChars)
+	// Auth (priority 0.9) should get more budget than migrations (priority 0.15).
+	if authChars <= migrationChars {
+		t.Errorf("auth (%d chars) should get more budget than migrations (%d chars) due to higher priority",
+			authChars, migrationChars)
 	}
 }
 

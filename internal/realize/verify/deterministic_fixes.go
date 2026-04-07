@@ -39,6 +39,9 @@ func ApplyDeterministicFixes(dir string, files []string, language string) string
 		if f := fixDuplicateTypes(dir, files); f != "" {
 			fixes = append(fixes, f)
 		}
+		if f := fixDuplicateVars(dir, files); f != "" {
+			fixes = append(fixes, f)
+		}
 		// Remove invalid pgxpool v5 fields before gofmt so the result is clean.
 		if f := fixInvalidPgxpoolConfig(dir, files); f != "" {
 			fixes = append(fixes, f)

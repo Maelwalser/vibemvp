@@ -146,7 +146,7 @@ func goModDirs(outputDir string, files []string) []string {
 		for _, f := range files {
 			if filepath.Ext(f) == ".go" {
 				// Use the service root (first two path components).
-				parts := filepath.SplitList(filepath.ToSlash(f))
+				parts := strings.Split(filepath.ToSlash(f), "/")
 				if len(parts) >= 2 {
 					dir := filepath.Join(parts[0], parts[1])
 					if !seen[dir] {

@@ -32,6 +32,8 @@ var MaxTotalCharsByKind = map[string]int{
 	"backend.gateway":            20000, // needs full service surface
 	"contracts":                  20000, // aggregates all service + data output
 	"frontend":                   20000, // needs contracts + data types
+	"crosscut.testing":           40000, // depends on ALL prior tasks — needs constructors + types from every layer
+	"crosscut.docs":              25000, // depends on ALL prior tasks — needs endpoint + DTO definitions
 }
 
 // MaxTotalCharsFor returns the shared-memory character budget for the given task kind.

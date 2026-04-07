@@ -227,7 +227,12 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 
 		// Apply deterministic fixes (language-specific formatting, import cleanup,
 		// etc.) before every verification — not just on retries.
-		if fixes := verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(result.Files), r.verifier.Language()); fixes != "" {
+		// Use ALL files in tmpDir (including staged dependency files) so that fixes
+		// like fixDuplicateTypes and fixGofmt cover the entire compilation unit.
+		// Without this, staged files that are unformatted or contain duplicate type
+		// declarations cause verification failures that no retry can resolve.
+		allFiles := allFilesInDir(tmpDir)
+		if fixes := verify.ApplyDeterministicFixes(tmpDir, allFiles, r.verifier.Language()); fixes != "" {
 			r.log("[%s] applied deterministic fixes: %s", r.task.ID, fixes)
 		}
 
@@ -255,8 +260,8 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		if attempt < r.maxRetries {
 			if uuidFix := verify.ApplyUUIDToStringFixes(tmpDir, vResult.Output); uuidFix != "" {
 				r.log("[%s] %s", r.task.ID, uuidFix)
-				// Re-apply language fixes after rewriting.
-				verify.ApplyDeterministicFixes(tmpDir, verify.FilePaths(lastFiles), r.verifier.Language())
+				// Re-apply language fixes after rewriting (use all files to cover staged deps).
+				verify.ApplyDeterministicFixes(tmpDir, allFilesInDir(tmpDir), r.verifier.Language())
 				if fixResult, ferr := r.verifier.Verify(ctx, tmpDir, verify.FilePaths(lastFiles)); ferr == nil && fixResult.Passed {
 					r.log("[%s] uuid fix resolved verification — skipping LLM retry", r.task.ID)
 					return r.commit(ctx, tmpDir, lastFiles)
@@ -424,7 +429,7 @@ func (r *TaskRunner) validateDomainCompleteness(files []dag.GeneratedFile) {
 				case op.OpType == "insert" || strings.HasPrefix(op.Name, "Create"):
 					typeName = "Create" + repo.EntityRef + "Input"
 				case op.OpType == "update":
-					typeName = "Update" + op.Name + "Input"
+					typeName = op.Name + "Input"
 				}
 				if typeName != "" && !strings.Contains(allContent, "type "+typeName+" struct") {
 					r.log("[%s] WARNING: missing input struct %q for %s.%s operation",
@@ -526,6 +531,26 @@ func stripOutputDirPrefix(path string, serviceDirs map[string]string) string {
 		}
 	}
 	return path
+}
+
+// allFilesInDir collects all file paths in dir (relative to dir) so that
+// deterministic fixes can operate on staged dependency files in addition to the
+// current task's own generated files. Without this, fixes like fixDuplicateTypes
+// and fixGofmt miss staged files, causing verification failures.
+func allFilesInDir(dir string) []string {
+	var files []string
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	return files
 }
 
 // isImplementationTask reports whether the task is an implementation layer that

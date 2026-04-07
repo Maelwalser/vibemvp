@@ -113,7 +113,10 @@ func UserMessage(ac *Context) (string, error) {
 						case op.OpType == "insert" || strings.HasPrefix(op.Name, "Create"):
 							hint = fmt.Sprintf(" → generate `Create%sInput` struct", repo.EntityRef)
 						case op.OpType == "update":
-							hint = fmt.Sprintf(" → generate `Update%sInput` struct", op.Name)
+							// Use the operation name directly to avoid doubling
+							// the "Update" prefix (e.g. "UpdateRefreshToken" → "UpdateRefreshTokenInput",
+							// not "UpdateUpdateRefreshTokenInput").
+							hint = fmt.Sprintf(" → generate `%sInput` struct", op.Name)
 						}
 						b.WriteString(fmt.Sprintf("- **%s** (op_type=%s%s%s)%s\n",
 							op.Name, op.OpType, filterBy, desc, hint))
@@ -588,6 +591,7 @@ Monolith (with frontend):
     Dockerfile      ← infra.docker task (path: "backend/Dockerfile")
     .air.toml       ← infra.docker task (path: "backend/.air.toml")
     .dockerignore   ← infra.docker task (path: "backend/.dockerignore")
+    openapi.yaml    ← contracts task (spec, alongside Go module)
     internal/
       domain/       ← data schemas task
       contracts/    ← contracts task (Go types)
@@ -598,7 +602,6 @@ Monolith (with frontend):
   frontend/         ← OutputDir for frontend task
     Dockerfile      ← infra.docker task (path: "frontend/Dockerfile")
   docker-compose.yml  ← infra.docker task (path: "docker-compose.yml")
-  openapi.yaml        ← contracts task (spec, at project root)
 
 Monolith (no frontend):
   .                 ← OutputDir is "." for all backend tasks

@@ -293,6 +293,38 @@ func eventsForService(name string, events []manifest.EventDef) []manifest.EventD
 	return out
 }
 
+// ── monolith stack inheritance ───────────────────────────────────────────────
+
+// inheritBackendStack fills in empty Language/Framework fields on svc from
+// the backend pillar's top-level settings. For monolith architectures, the
+// pillar-level fields (m.Backend.Language, m.Backend.Framework) are the
+// canonical values; individual services may omit them because all services
+// share the same stack. Without this, verifier selection, skill lookup, and
+// deps context all fail because they derive the language from Service.Language.
+func inheritBackendStack(svc *manifest.ServiceDef, m *manifest.Manifest) {
+	if svc.Language == "" {
+		svc.Language = m.Backend.Language
+	}
+	if svc.LanguageVersion == "" {
+		svc.LanguageVersion = m.Backend.LanguageVersion
+	}
+	if svc.Framework == "" {
+		svc.Framework = m.Backend.Framework
+	}
+	if svc.FrameworkVersion == "" {
+		svc.FrameworkVersion = m.Backend.FrameworkVersion
+	}
+}
+
+// allCronJobs collects all cron jobs from all job queues, without filtering by service.
+func allCronJobs(queues []manifest.JobQueueDef) []manifest.CronJobDef {
+	var out []manifest.CronJobDef
+	for _, q := range queues {
+		out = append(out, q.CronJobs...)
+	}
+	return out
+}
+
 // ── output directory helpers ─────────────────────────────────────────────────
 
 // serviceOutputDirs returns a map from service slug → output directory (relative

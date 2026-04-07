@@ -507,6 +507,136 @@ func removeDuplicateDecls(baseDir string, files []string) bool {
 	return true
 }
 
+// ── Duplicate var fix ───────────────────────────────────────────────────────
+//
+// LLMs (and cross-task staging) can produce duplicate top-level var declarations
+// in the same Go package — e.g. both data.schemas' user.go and the plan task's
+// errors.go declare `var ErrTokenExpired = errors.New(...)`. This causes
+// "redeclared in this block" compile errors.
+//
+// Strategy: group files by package directory, collect all top-level var names,
+// and when a var is declared in multiple files, remove it from the file that has
+// fewer total declarations (keeping the "home" file that defines most vars).
+
+// topLevelVarRe matches standalone "var X = ..." declarations.
+var topLevelVarRe = regexp.MustCompile(`(?m)^var\s+(\w+)\s*=`)
+
+func fixDuplicateVars(dir string, files []string) string {
+	byDir := make(map[string][]string)
+	for _, f := range files {
+		if filepath.Ext(f) != ".go" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		byDir[filepath.Dir(f)] = append(byDir[filepath.Dir(f)], f)
+	}
+	fixed := 0
+	for _, goFiles := range byDir {
+		if len(goFiles) < 2 {
+			continue
+		}
+		if removeDuplicateVarDecls(dir, goFiles) {
+			fixed++
+		}
+	}
+	if fixed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("fixed duplicate vars in %d package(s)", fixed)
+}
+
+// varBlockEntryRe matches entries inside a "var ( ... )" block.
+var varBlockEntryRe = regexp.MustCompile(`(?m)^\t(\w+)\s*=`)
+
+// varBlockRe matches the full "var ( ... )" block.
+var varBlockRe = regexp.MustCompile(`(?ms)^var\s*\(\s*\n(.*?)\n\)`)
+
+// extractVarNames returns all package-level var names from Go source.
+func extractVarNames(src string) []string {
+	var names []string
+	// Standalone: var X = ...
+	for _, m := range topLevelVarRe.FindAllStringSubmatch(src, -1) {
+		names = append(names, m[1])
+	}
+	// Grouped: var ( X = ... )
+	for _, block := range varBlockRe.FindAllStringSubmatch(src, -1) {
+		for _, m := range varBlockEntryRe.FindAllStringSubmatch(block[1], -1) {
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
+
+func removeDuplicateVarDecls(baseDir string, files []string) bool {
+	varsByFile := make(map[string][]string)
+	allVars := make(map[string][]string)
+
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(baseDir, f))
+		if err != nil {
+			continue
+		}
+		vars := extractVarNames(string(data))
+		for _, v := range vars {
+			allVars[v] = append(allVars[v], f)
+		}
+		varsByFile[f] = vars
+	}
+
+	// Find duplicated var names.
+	duplicates := make(map[string][]string)
+	for name, declFiles := range allVars {
+		if len(declFiles) > 1 {
+			duplicates[name] = declFiles
+		}
+	}
+	if len(duplicates) == 0 {
+		return false
+	}
+
+	// Keep each var in the file with the most declarations; remove from others.
+	filesToFix := make(map[string]map[string]bool)
+	for varName, declFiles := range duplicates {
+		bestFile, bestCount := declFiles[0], len(varsByFile[declFiles[0]])
+		for _, f := range declFiles[1:] {
+			if len(varsByFile[f]) > bestCount {
+				bestFile, bestCount = f, len(varsByFile[f])
+			}
+		}
+		for _, f := range declFiles {
+			if f != bestFile {
+				if filesToFix[f] == nil {
+					filesToFix[f] = make(map[string]bool)
+				}
+				filesToFix[f][varName] = true
+			}
+		}
+	}
+
+	changed := false
+	for f, varsToRemove := range filesToFix {
+		data, err := os.ReadFile(filepath.Join(baseDir, f))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		for varName := range varsToRemove {
+			// Remove standalone: var X = ...
+			standaloneRe := regexp.MustCompile(
+				fmt.Sprintf(`(?m)^var %s\s*=\s*[^\n]+\n?`, regexp.QuoteMeta(varName)))
+			content = standaloneRe.ReplaceAllString(content, "")
+			// Remove from var ( ... ) blocks: \tX = ...\n
+			blockEntryRe := regexp.MustCompile(
+				fmt.Sprintf(`(?m)^\t%s\s*=\s*[^\n]+\n?`, regexp.QuoteMeta(varName)))
+			content = blockEntryRe.ReplaceAllString(content, "")
+		}
+		// Clean up empty var blocks: var (\n)
+		content = regexp.MustCompile(`(?m)^var\s*\(\s*\n\s*\)\s*\n?`).ReplaceAllString(content, "")
+		_ = os.WriteFile(filepath.Join(baseDir, f), []byte(content), 0644)
+		changed = true
+	}
+	return changed
+}
+
 // ── Misplaced import fix ──────────────────────────────────────────────────────
 //
 // Go does not allow import statements inside function bodies. LLMs sometimes
