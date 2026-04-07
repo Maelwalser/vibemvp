@@ -465,4 +465,3 @@ func (be BackendEditor) resetForArchChange(newArch string) BackendEditor {
 
 	return be
 }
-
