@@ -238,8 +238,8 @@ func TestMarshalJSON_SentinelValuesOmitted(t *testing.T) {
 		Contracts: ContractsPillar{
 			Versioning: &APIVersioning{
 				PerProtocolStrategies: map[string]string{"REST": "URL path (/v1/)"},
-				CurrentVersion:       "v1",
-				DeprecationPolicy:    "None",
+				CurrentVersion:        "v1",
+				DeprecationPolicy:     "None",
 			},
 			DTOs: []DTODef{{Name: "Req", Category: "Request"}},
 		},
