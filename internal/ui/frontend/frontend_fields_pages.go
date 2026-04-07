@@ -1,0 +1,524 @@
+package frontend
+
+import (
+	"strings"
+
+	"github.com/vibe-menu/internal/ui/core"
+)
+
+// themeColorPalette is the curated set of hex colors offered in the Theme → colors picker.
+// Colors are grouped by hue family for easy visual scanning in the dropdown.
+var themeColorPalette = []string{
+	// Custom hex entry (always first)
+	"Custom",
+	// Neutrals
+	"#ffffff", "#f8fafc", "#e2e8f0", "#94a3b8", "#64748b",
+	"#334155", "#1e293b", "#0f172a", "#000000",
+	// Blues
+	"#bfdbfe", "#60a5fa", "#3b82f6", "#1d4ed8",
+	// Greens
+	"#6ee7b7", "#10b981", "#059669", "#047857",
+	// Reds
+	"#f87171", "#ef4444", "#b91c1c",
+	// Ambers
+	"#fbbf24", "#f59e0b", "#d97706",
+	// Purples
+	"#a78bfa", "#7c3aed", "#4c1d95",
+	// Pinks
+	"#f472b6", "#ec4899", "#be185d",
+	// Cyans/Teals
+	"#22d3ee", "#06b6d4", "#0e7490",
+}
+
+// ── compatibility maps ────────────────────────────────────────────────────────
+
+var frontendMetaframeworksByFramework = map[string][]string{
+	"React":                       {"Next.js", "Remix", "Astro", "None"},
+	"Vue":                         {"Nuxt", "Astro", "None"},
+	"Svelte":                      {"SvelteKit", "Astro", "None"},
+	"Angular":                     {"Analog", "None"},
+	"Solid":                       {"SolidStart", "Astro", "None"},
+	"Qwik":                        {"Qwik City", "None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+var feComponentLibByFramework = map[string][]string{
+	"React":                       {"shadcn/ui", "Radix", "Material UI", "Ant Design", "Headless UI", "DaisyUI", "None", "Custom"},
+	"Vue":                         {"Material UI", "None", "Custom"},
+	"Angular":                     {"Material UI", "None", "Custom"},
+	"Svelte":                      {"None", "Custom"},
+	"Solid":                       {"None", "Custom"},
+	"Qwik":                        {"None", "Custom"},
+	"HTMX":                        {"None", "Custom"},
+	"Flutter":                     {"None", "Custom"},
+	"Jetpack Compose":             {"None", "Custom"},
+	"KMP (Compose Multiplatform)": {"None", "Custom"},
+	"SwiftUI":                     {"None", "Custom"},
+	"UIKit":                       {"None", "Custom"},
+}
+
+var feStateMgmtByFramework = map[string][]string{
+	"React":                       {"React Context", "Zustand", "Redux Toolkit", "Jotai", "None"},
+	"Vue":                         {"Pinia", "None"},
+	"Svelte":                      {"Svelte stores", "None"},
+	"Angular":                     {"Signals", "None"},
+	"Solid":                       {"Signals", "None"},
+	"Qwik":                        {"Signals", "None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+// feDataFetchingByFramework defines the maximum set of data-fetching options
+// each framework supports. Protocol-based filtering narrows this further at
+// runtime via dataFetchingForContext.
+var feDataFetchingByFramework = map[string][]string{
+	"React":                       {"TanStack Query", "SWR", "Apollo Client", "tRPC client", "gRPC-web client", "Connect client", "RTK Query", "Native fetch"},
+	"Vue":                         {"TanStack Query", "Apollo Client", "gRPC-web client", "Connect client", "Native fetch"},
+	"Svelte":                      {"TanStack Query", "SWR", "gRPC-web client", "Native fetch"},
+	"Angular":                     {"Apollo Client", "gRPC-web client", "Connect client", "Native fetch"},
+	"Solid":                       {"TanStack Query", "Native fetch"},
+	"Qwik":                        {"Native fetch"},
+	"HTMX":                        {"Native fetch"},
+	"Flutter":                     {"Native fetch"},
+	"Jetpack Compose":             {"Native fetch"},
+	"KMP (Compose Multiplatform)": {"Native fetch"},
+	"SwiftUI":                     {"Native fetch"},
+	"UIKit":                       {"Native fetch"},
+}
+
+// dataFetchingForContext filters the framework's maximum data-fetching options
+// down to those relevant given the backend protocols and service frameworks.
+// When no backend context is configured every framework-supported option is shown.
+func dataFetchingForContext(framework string, backendProtocols, backendSvcFrameworks []string) []string {
+	allOpts, ok := feDataFetchingByFramework[framework]
+	if !ok {
+		return []string{"Native fetch"}
+	}
+	// No backend context yet — return the full framework list.
+	if len(backendProtocols) == 0 && len(backendSvcFrameworks) == 0 {
+		return allOpts
+	}
+
+	hasProtocol := func(needle string) bool {
+		for _, p := range backendProtocols {
+			if strings.EqualFold(p, needle) {
+				return true
+			}
+		}
+		return false
+	}
+	hasFramework := func(needle string) bool {
+		for _, fw := range backendSvcFrameworks {
+			if strings.EqualFold(fw, needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Determine which protocol-specific tools to include.
+	wantTRPC := hasProtocol("trpc") || hasFramework("trpc")
+	wantGraphQL := hasProtocol("graphql")
+	wantREST := hasProtocol("rest (http)") || hasProtocol("rest")
+	wantGRPC := hasProtocol("grpc")
+
+	// If none of the above are detected, treat as REST (safe default).
+	if !wantTRPC && !wantGraphQL && !wantREST && !wantGRPC {
+		wantREST = true
+	}
+
+	// Build the allowed set from the framework's maximum list, preserving order.
+	allowed := make(map[string]bool)
+	if wantREST {
+		allowed["TanStack Query"] = true
+		allowed["SWR"] = true
+		allowed["RTK Query"] = true
+	}
+	if wantGraphQL {
+		allowed["Apollo Client"] = true
+	}
+	if wantTRPC {
+		allowed["tRPC client"] = true
+	}
+	if wantGRPC {
+		allowed["gRPC-web client"] = true
+		allowed["Connect client"] = true
+	}
+	// "Native fetch" is always available.
+	allowed["Native fetch"] = true
+
+	var filtered []string
+	for _, opt := range allOpts {
+		if allowed[opt] {
+			filtered = append(filtered, opt)
+		}
+	}
+	if len(filtered) == 0 {
+		return []string{"Native fetch"}
+	}
+	return filtered
+}
+
+var feFormHandlingByFramework = map[string][]string{
+	"React":                       {"React Hook Form", "Formik", "Zod + native", "None"},
+	"Vue":                         {"Vee-Validate", "Zod + native", "None"},
+	"Svelte":                      {"Zod + native", "None"},
+	"Angular":                     {"Zod + native", "None"},
+	"Solid":                       {"Zod + native", "None"},
+	"Qwik":                        {"Zod + native", "None"},
+	"HTMX":                        {"None"},
+	"Flutter":                     {"None"},
+	"Jetpack Compose":             {"None"},
+	"KMP (Compose Multiplatform)": {"None"},
+	"SwiftUI":                     {"None"},
+	"UIKit":                       {"None"},
+}
+
+var feStylingByLanguage = map[string][]string{
+	"TypeScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
+	"JavaScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
+	"Dart":       {"None", "Custom"},
+	"Kotlin":     {"None", "Custom"},
+	"Swift":      {"None", "Custom"},
+}
+
+var feValidationByLanguage = map[string][]string{
+	"TypeScript": {"Zod", "Yup", "Valibot", "Joi", "Class-validator", "None"},
+	"JavaScript": {"Zod", "Yup", "Valibot", "Joi", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var fePkgManagerByLanguage = map[string][]string{
+	"TypeScript": {"npm", "yarn", "pnpm", "bun"},
+	"JavaScript": {"npm", "yarn", "pnpm", "bun"},
+	"Dart":       {"pub"},
+	"Kotlin":     {"Gradle"},
+	"Swift":      {"SwiftPM"},
+}
+
+var feErrorBoundaryByFramework = map[string][]string{
+	"React":                       {"React Error Boundary", "Global try-catch", "Framework default", "Custom"},
+	"Vue":                         {"Global try-catch", "Framework default", "Custom"},
+	"Angular":                     {"Global try-catch", "Framework default", "Custom"},
+	"Svelte":                      {"Global try-catch", "Framework default", "Custom"},
+	"Solid":                       {"Global try-catch", "Framework default", "Custom"},
+	"Qwik":                        {"Global try-catch", "Framework default", "Custom"},
+	"HTMX":                        {"Global try-catch", "Custom"},
+	"Flutter":                     {"Framework default", "Custom"},
+	"Jetpack Compose":             {"Framework default", "Custom"},
+	"KMP (Compose Multiplatform)": {"Framework default", "Custom"},
+	"SwiftUI":                     {"Framework default", "Custom"},
+	"UIKit":                       {"Framework default", "Custom"},
+}
+
+var feTestingByLanguage = map[string][]string{
+	"TypeScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
+	"JavaScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var feLinterByLanguage = map[string][]string{
+	"TypeScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
+	"JavaScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
+	"Dart":       {"Custom", "None"},
+	"Kotlin":     {"Custom", "None"},
+	"Swift":      {"Custom", "None"},
+}
+
+var fePwaSupportByPlatform = map[string][]string{
+	"Web (SPA)":               {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
+	"Web (SSR/SSG)":           {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
+	"Mobile (cross-platform)": {"None"},
+	"Mobile (native)":         {"None"},
+	"Desktop":                 {"None"},
+}
+
+var feBundleOptByLanguage = map[string][]string{
+	"TypeScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
+	"JavaScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
+	"Dart":       {"None"},
+	"Kotlin":     {"None"},
+	"Swift":      {"None"},
+}
+
+var i18nLibByFramework = map[string][]string{
+	"React":                       {"react-i18next", "next-intl", "LinguiJS", "i18next", "Custom", "None"},
+	"Vue":                         {"vue-i18n", "i18next", "Custom", "None"},
+	"Svelte":                      {"svelte-i18n", "i18next", "Custom", "None"},
+	"Angular":                     {"@angular/localize", "ngx-translate", "Custom", "None"},
+	"Solid":                       {"i18next", "Custom", "None"},
+	"Qwik":                        {"i18next", "Custom", "None"},
+	"HTMX":                        {"i18next", "Custom", "None"},
+	"Flutter":                     {"flutter_localizations", "Custom", "None"},
+	"Jetpack Compose":             {"Android Localization", "Custom", "None"},
+	"KMP (Compose Multiplatform)": {"Lyricist", "Custom", "None"},
+	"SwiftUI":                     {"Swift Localization", "Custom", "None"},
+	"UIKit":                       {"Swift Localization", "Custom", "None"},
+}
+
+var feImageOptByPlatform = map[string][]string{
+	"Web (SPA)":               {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
+	"Web (SSR/SSG)":           {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
+	"Mobile (cross-platform)": {"None"},
+	"Mobile (native)":         {"None"},
+	"Desktop":                 {"None"},
+}
+
+// webOnlyTechFields is the set of tech field keys that are only meaningful for
+// web platforms (SPA / SSR/SSG). They are hidden for mobile and desktop targets.
+var webOnlyTechFields = map[string]bool{
+	"meta_framework": true,
+	"styling":        true,
+	"component_lib":  true,
+	"pwa_support":    true,
+	"image_opt":      true,
+	"bundle_opt":     true,
+}
+
+// visibleTechFields returns the subset of techFields that are relevant to the
+// currently selected language, framework, and platform.
+//
+// Two rules are applied in order:
+//  1. Web-only fields (styling, component_lib, pwa_support, image_opt,
+//     bundle_opt, meta_framework) are hidden for mobile/desktop platforms.
+//  2. Any remaining field whose options list has been narrowed to exactly
+//     ["None"] by updateFEDependentOptions is hidden — it carries no
+//     information and would confuse the realization agent.
+func (fe FrontendEditor) visibleTechFields() []core.Field {
+	platform := core.FieldGet(fe.techFields, "platform")
+	isWeb := platform == "Web (SPA)" || platform == "Web (SSR/SSG)"
+	var visible []core.Field
+	for _, f := range fe.techFields {
+		if webOnlyTechFields[f.Key] && !isWeb {
+			continue
+		}
+		if len(f.Options) == 1 && f.Options[0] == "None" {
+			continue
+		}
+		visible = append(visible, f)
+	}
+	return visible
+}
+
+// techFieldByKey returns a pointer to the tech field with the given key in the
+// authoritative techFields slice (not the visible projection).
+func (fe *FrontendEditor) techFieldByKey(key string) *core.Field {
+	for i := range fe.techFields {
+		if fe.techFields[i].Key == key {
+			return &fe.techFields[i]
+		}
+	}
+	return nil
+}
+
+// ── Runtime field population ──────────────────────────────────────────────────
+
+// setTechFieldOptions updates a tech field's options, preserving the current
+// value when it is still valid, or resetting to the first option otherwise.
+func (fe *FrontendEditor) setTechFieldOptions(key string, opts []string) {
+	for i := range fe.techFields {
+		if fe.techFields[i].Key != key {
+			continue
+		}
+		current := fe.techFields[i].Value
+		fe.techFields[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				fe.techFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			fe.techFields[i].SelIdx = 0
+			fe.techFields[i].Value = opts[0]
+		}
+		return
+	}
+}
+
+// setI18nFieldOptions updates an i18n field's options, preserving the current
+// value when it is still valid, or resetting to the first option otherwise.
+func (fe *FrontendEditor) setI18nFieldOptions(key string, opts []string) {
+	for i := range fe.i18nFields {
+		if fe.i18nFields[i].Key != key {
+			continue
+		}
+		current := fe.i18nFields[i].Value
+		fe.i18nFields[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				fe.i18nFields[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			fe.i18nFields[i].SelIdx = 0
+			fe.i18nFields[i].Value = opts[0]
+		}
+		return
+	}
+}
+
+// updateFEDependentOptions refreshes all tech fields whose valid options depend
+// on the currently selected language, platform, or framework.
+func (fe *FrontendEditor) updateFEDependentOptions() {
+	lang := core.FieldGet(fe.techFields, "language")
+	platform := core.FieldGet(fe.techFields, "platform")
+
+	// language_version ← language
+	if vers, ok := core.LangVersions[lang]; ok {
+		fe.setTechFieldOptions("language_version", vers)
+	} else {
+		fe.setTechFieldOptions("language_version", []string{"latest"})
+	}
+
+	// framework ← language
+	if opts, ok := frontendFrameworksByLang[lang]; ok {
+		fe.setTechFieldOptions("framework", opts)
+	} else {
+		fe.setTechFieldOptions("framework", []string{"React", "Vue", "Svelte"})
+	}
+
+	framework := core.FieldGet(fe.techFields, "framework")
+	langVer := core.FieldGet(fe.techFields, "language_version")
+
+	// framework_version ← language + language_version + framework
+	fe.setTechFieldOptions("framework_version", core.CompatibleFrameworkVersions(lang, langVer, framework))
+
+	// meta_framework ← framework
+	if opts, ok := frontendMetaframeworksByFramework[framework]; ok {
+		fe.setTechFieldOptions("meta_framework", opts)
+	} else {
+		fe.setTechFieldOptions("meta_framework", []string{"None"})
+	}
+
+	// loading ← meta_framework (Instant (SSR/SSG) only valid when meta-framework supports it)
+	metaFramework := core.FieldGet(fe.techFields, "meta_framework")
+	fe.pageForm = refreshLoadingOptions(fe.pageForm, metaFramework)
+
+	// meta_tag_injection ← framework
+	fe.a11yFields = refreshMetaTagOptions(fe.a11yFields, framework)
+
+	// pkg_manager ← language
+	if opts, ok := fePkgManagerByLanguage[lang]; ok {
+		fe.setTechFieldOptions("pkg_manager", opts)
+	}
+
+	// styling ← language
+	if opts, ok := feStylingByLanguage[lang]; ok {
+		fe.setTechFieldOptions("styling", opts)
+	}
+
+	// component_lib ← framework
+	if opts, ok := feComponentLibByFramework[framework]; ok {
+		fe.setTechFieldOptions("component_lib", opts)
+	} else {
+		fe.setTechFieldOptions("component_lib", []string{"None", "Custom"})
+	}
+
+	// state_mgmt ← framework
+	if opts, ok := feStateMgmtByFramework[framework]; ok {
+		fe.setTechFieldOptions("state_mgmt", opts)
+	} else {
+		fe.setTechFieldOptions("state_mgmt", []string{"None"})
+	}
+
+	// data_fetching ← framework + backend protocols/frameworks
+	fe.setTechFieldOptions("data_fetching", dataFetchingForContext(framework, fe.backendProtocols, fe.backendSvcFrameworks))
+
+	// form_handling ← framework
+	if opts, ok := feFormHandlingByFramework[framework]; ok {
+		fe.setTechFieldOptions("form_handling", opts)
+	} else {
+		fe.setTechFieldOptions("form_handling", []string{"None"})
+	}
+
+	// validation ← language
+	if opts, ok := feValidationByLanguage[lang]; ok {
+		fe.setTechFieldOptions("validation", opts)
+	} else {
+		fe.setTechFieldOptions("validation", []string{"None"})
+	}
+
+	// pwa_support ← platform
+	if opts, ok := fePwaSupportByPlatform[platform]; ok {
+		fe.setTechFieldOptions("pwa_support", opts)
+	} else {
+		fe.setTechFieldOptions("pwa_support", []string{"None"})
+	}
+
+	// image_opt ← platform
+	if opts, ok := feImageOptByPlatform[platform]; ok {
+		fe.setTechFieldOptions("image_opt", opts)
+	} else {
+		fe.setTechFieldOptions("image_opt", []string{"None"})
+	}
+
+	// error_boundary ← framework
+	if opts, ok := feErrorBoundaryByFramework[framework]; ok {
+		fe.setTechFieldOptions("error_boundary", opts)
+	} else {
+		fe.setTechFieldOptions("error_boundary", []string{"Framework default", "Custom"})
+	}
+
+	// bundle_opt ← language
+	if opts, ok := feBundleOptByLanguage[lang]; ok {
+		fe.setTechFieldOptions("bundle_opt", opts)
+	} else {
+		fe.setTechFieldOptions("bundle_opt", []string{"None"})
+	}
+
+	// realtime ← backend comm-link protocols / frameworks
+	hasWS, hasSSE := false, false
+	for _, p := range fe.backendProtocols {
+		if strings.Contains(p, "WebSocket") {
+			hasWS = true
+		}
+		if strings.Contains(p, "SSE") {
+			hasSSE = true
+		}
+	}
+	for _, fw := range fe.backendSvcFrameworks {
+		// tRPC supports subscriptions via WebSocket
+		if strings.EqualFold(fw, "tRPC") {
+			hasWS = true
+		}
+	}
+	if hasWS {
+		fe.setTechFieldOptions("realtime", []string{"WebSocket", "SSE", "Polling", "None"})
+	} else if hasSSE {
+		fe.setTechFieldOptions("realtime", []string{"SSE", "WebSocket", "Polling", "None"})
+	}
+	// else: keep static options with "None" default
+
+	// translation_strategy ← framework
+	if opts, ok := i18nLibByFramework[framework]; ok {
+		fe.setI18nFieldOptions("translation_strategy", opts)
+	} else {
+		fe.setI18nFieldOptions("translation_strategy", []string{"i18next", "Custom", "None"})
+	}
+
+	// Clamp techFormIdx to visible field count so a platform switch from web to
+	// mobile/desktop never leaves the cursor on a now-hidden field index.
+	if n := len(fe.visibleTechFields()); fe.techFormIdx >= n && n > 0 {
+		fe.techFormIdx = n - 1
+	}
+
+}

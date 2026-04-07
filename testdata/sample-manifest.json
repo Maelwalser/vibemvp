@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-05T18:53:27.792084789+02:00",
+  "created_at": "2026-04-07T19:50:42.957800332+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
@@ -9,26 +9,7 @@
         "is_cache": false,
         "ssl_mode": "require",
         "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment"
-      },
-      {
-        "alias": "database",
-        "type": "MySQL",
-        "is_cache": false,
-        "ssl_mode": "require",
-        "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment1"
-      },
-      {
-        "alias": "database1",
-        "type": "Redis",
-        "is_cache": false,
-        "ssl_mode": "require",
-        "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment"
+        "replication": "single-node"
       }
     ],
     "domains": [
@@ -89,17 +70,6 @@
           }
         ]
       }
-    ],
-    "file_storages": [
-      {
-        "technology": "S3",
-        "purpose": "storage",
-        "used_by_service": "service",
-        "environment": "environment",
-        "access": "Private (signed URLs)",
-        "max_size": "10 MB",
-        "ttl_minutes": "1440"
-      }
     ]
   },
   "backend": {
@@ -136,29 +106,31 @@
           "REST"
         ],
         "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service1",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service2",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "DNS-based",
-        "environment": "environment"
+        "service_discovery": "None",
+        "repositories": [
+          {
+            "name": "repository",
+            "entity_ref": "User",
+            "target_db": "primary",
+            "selected_fields": [
+              "id",
+              "email",
+              "password_hash",
+              "is_active",
+              "refresh_token",
+              "refresh_token_expires_at",
+              "created_at",
+              "updated_at"
+            ],
+            "operations": [
+              {
+                "name": "op",
+                "op_type": "read-one",
+                "result_shape": "Single item"
+              }
+            ]
+          }
+        ]
       }
     ],
     "comm_links": [
@@ -177,26 +149,6 @@
         "sync_async": "Synchronous"
       }
     ],
-    "messaging": {
-      "broker_tech": "Kafka",
-      "deployment": "AWS MSK (managed)",
-      "serialization": "JSON",
-      "delivery": "At-most-once",
-      "environment": "(none)"
-    },
-    "events": [
-      {
-        "name": "event",
-        "publisher_service": "service",
-        "consumer_service": "service2",
-        "dto": "(none)"
-      }
-    ],
-    "api_gateway": {
-      "technology": "Kong",
-      "routing": "Path-based",
-      "environment": "(none)"
-    },
     "auth": {
       "strategy": "JWT (stateless)",
       "provider": "self-managed",
@@ -224,17 +176,10 @@
         }
       ]
     },
-    "job_queues": [
-      {
-        "name": "queue",
-        "technology": "Asynq",
-        "concurrency": "10",
-        "max_retries": "3",
-        "retry_policy": "Exponential backoff",
-        "dlq": "false",
-        "worker_service": "auth-api"
-      }
-    ]
+    "language": "Go",
+    "language_version": "1.24",
+    "framework": "Fiber",
+    "framework_version": "v3.0"
   },
   "contracts": {
     "dtos": [
@@ -452,21 +397,7 @@
       },
       "current_version": "v1",
       "deprecation_policy": "None"
-    },
-    "external_apis": [
-      {
-        "provider": "api",
-        "called_by_service": "auth-api",
-        "protocol": "REST",
-        "auth_mechanism": "API Key",
-        "failure_strategy": "Circuit Breaker",
-        "tls_mode": "TLS",
-        "message_format": "JSON",
-        "hmac_header": "X-Hub-Signature-256",
-        "retry_policy": "Retry 3x",
-        "soap_version": "1.1"
-      }
-    ]
+    }
   },
   "frontend": {
     "tech": {
@@ -598,28 +529,6 @@
     "framework": "React",
     "styling": "Tailwind CSS"
   },
-  "infrastructure": {
-    "environments": [
-      {
-        "name": "environment",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      },
-      {
-        "name": "environment1",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      },
-      {
-        "name": "environment2",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      }
-    ]
-  },
   "realize": {
     "app_name": "app",
     "output_dir": "generated-code",
@@ -630,34 +539,5 @@
     "tier_fast": "claude-haiku-4-5-20251001",
     "tier_medium": "claude-sonnet-4-6",
     "tier_slow": "claude-opus-4-6"
-  },
-  "databases": [
-    {
-      "alias": "primary",
-      "type": "PostgreSQL",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment"
-    },
-    {
-      "alias": "database",
-      "type": "MySQL",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment1"
-    },
-    {
-      "alias": "database1",
-      "type": "Redis",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment"
-    }
-  ]
+  }
 }

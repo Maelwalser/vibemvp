@@ -3,8 +3,36 @@ package verify
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
+
+// fixPythonImports runs isort on Python files when available.
+// isort re-orders and deduplicates imports; it cannot add missing imports.
+func fixPythonImports(dir string, files []string) string {
+	isortPath, err := exec.LookPath("isort")
+	if err != nil {
+		return ""
+	}
+
+	var pyFiles []string
+	for _, f := range files {
+		if filepath.Ext(f) == ".py" {
+			pyFiles = append(pyFiles, filepath.Join(dir, f))
+		}
+	}
+	if len(pyFiles) == 0 {
+		return ""
+	}
+
+	args := append([]string{"--quiet"}, pyFiles...)
+	cmd := exec.Command(isortPath, args...)
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("isort cleaned imports in %d Python file(s)", len(pyFiles))
+}
 
 // fixPython applies deterministic, zero-LLM fixes to Python files.
 //

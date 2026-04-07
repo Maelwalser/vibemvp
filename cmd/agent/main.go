@@ -5,12 +5,12 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vibe-menu/internal/ui"
+	"github.com/vibe-menu/internal/ui/app"
 )
 
 func main() {
-	app := ui.NewApp()
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	a := app.NewApp()
+	p := tea.NewProgram(a, tea.WithAltScreen())
 
 	finalModel, err := p.Run()
 	if err != nil {
@@ -18,15 +18,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	a, ok := finalModel.(ui.AppModel)
+	appModel, ok := finalModel.(app.AppModel)
 	if !ok {
 		return
 	}
-	m := a.MainModel()
+	m := appModel.MainModel()
 	mf := m.BuildManifest()
 
 	if mf.Backend.ArchPattern != "" {
-		manifestPath := a.MainModel().FilePath()
+		manifestPath := appModel.MainModel().FilePath()
 		fmt.Printf("\nManifest saved to %s\n", manifestPath)
 		fmt.Printf("Backend   : %s  [%s]\n", mf.Backend.ArchPattern, mf.Backend.ComputeEnv)
 		fmt.Printf("Entities  : %d defined\n", len(mf.Entities))
@@ -35,7 +35,7 @@ func main() {
 	}
 	if m.RealizeTriggered() {
 		r := mf.Realize
-		manifestPath := a.MainModel().FilePath()
+		manifestPath := appModel.MainModel().FilePath()
 		fmt.Printf("\n── Realization ──────────────────────────────────────────\n")
 		fmt.Printf("App name    : %s\n", r.AppName)
 		fmt.Printf("Output dir  : %s\n", r.OutputDir)
