@@ -321,6 +321,12 @@ func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.Gene
 	r.registerExportedTypes(files)
 	r.registerConstructors(files)
 	r.registerServiceMethods(files)
+	// For data.schemas tasks, validate that the generated domain files include all
+	// attributes from the manifest and the input/update structs needed by repository
+	// operations. Advisory only — logs warnings but does not block the pipeline.
+	if r.task.Kind == dag.TaskKindDataSchemas {
+		r.validateDomainCompleteness(files)
+	}
 	if err := r.state.MarkCompleted(r.task.ID); err != nil {
 		r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
 	}
@@ -365,6 +371,88 @@ func (r *TaskRunner) registerServiceMethods(files []dag.GeneratedFile) {
 			r.memory.RegisterServiceMethods(f.Path, sigs)
 		}
 	}
+}
+
+// validateDomainCompleteness checks that the data.schemas output includes all domain
+// attributes from the manifest and the input/update structs needed by repository
+// operations. Logs warnings for anything missing — advisory only, does not block.
+func (r *TaskRunner) validateDomainCompleteness(files []dag.GeneratedFile) {
+	// Build a content index by domain name using exact base filename matching.
+	fileContent := make(map[string]string) // lowercase domain name → file content
+	for _, f := range files {
+		base := strings.ToLower(filepath.Base(f.Path))
+		for _, domain := range r.task.Payload.Domains {
+			expected := strings.ToLower(domain.Name) + ".go"
+			if base == expected {
+				fileContent[strings.ToLower(domain.Name)] = f.Content
+			}
+		}
+	}
+
+	for _, domain := range r.task.Payload.Domains {
+		content, ok := fileContent[strings.ToLower(domain.Name)]
+		if !ok {
+			r.log("[%s] WARNING: no file generated for domain %q", r.task.ID, domain.Name)
+			continue
+		}
+		// Check each attribute is present as a Go struct field declaration.
+		// Match "FieldName " (field name followed by a space/tab) to avoid false
+		// positives from substring matches in comments or other identifiers.
+		for _, attr := range domain.Attributes {
+			goField := snakeToPascal(attr.Name)
+			if !strings.Contains(content, goField+"\t") &&
+				!strings.Contains(content, goField+" ") {
+				r.log("[%s] WARNING: domain %q missing attribute %q (expected Go field %q)",
+					r.task.ID, domain.Name, attr.Name, goField)
+			}
+		}
+	}
+
+	// Check that input/update structs for repository operations were generated.
+	// Look for "type <TypeName> struct" declarations to avoid substring false positives.
+	var sb strings.Builder
+	for _, f := range files {
+		sb.WriteString(f.Content)
+		sb.WriteByte('\n')
+	}
+	allContent := sb.String()
+	for _, svc := range r.task.Payload.AllServices {
+		for _, repo := range svc.Repositories {
+			for _, op := range repo.Operations {
+				var typeName string
+				switch {
+				case op.OpType == "insert" || strings.HasPrefix(op.Name, "Create"):
+					typeName = "Create" + repo.EntityRef + "Input"
+				case op.OpType == "update":
+					typeName = "Update" + op.Name + "Input"
+				}
+				if typeName != "" && !strings.Contains(allContent, "type "+typeName+" struct") {
+					r.log("[%s] WARNING: missing input struct %q for %s.%s operation",
+						r.task.ID, typeName, repo.Name, op.Name)
+				}
+			}
+		}
+	}
+}
+
+// snakeToPascal converts a snake_case string to PascalCase.
+func snakeToPascal(s string) string {
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	for _, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		// Handle common acronyms.
+		upper := strings.ToUpper(p)
+		switch upper {
+		case "ID", "URL", "API", "HTTP", "UUID", "IP", "SQL", "DB":
+			b.WriteString(upper)
+		default:
+			b.WriteString(strings.ToUpper(p[:1]) + p[1:])
+		}
+	}
+	return b.String()
 }
 
 // readLockedGoMod reads the go.mod produced by a prior phase (plan or deps resolution)

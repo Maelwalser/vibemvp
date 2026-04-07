@@ -7,7 +7,6 @@
         "alias": "primary",
         "type": "PostgreSQL",
         "ssl_mode": "require",
-        "consistency": "strong",
         "replication": "single-node"
       }
     ],

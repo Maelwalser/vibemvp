@@ -67,6 +67,63 @@ func UserMessage(ac *Context) (string, error) {
 	b.Write(payloadJSON)
 	b.WriteString("\n```\n")
 
+	// For data.schemas tasks, inject a structured attribute checklist and repository
+	// operation summary so the agent cannot accidentally truncate domain fields or
+	// miss deriving input/update structs from repository operations.
+	if ac.Task.Kind == dag.TaskKindDataSchemas {
+		if len(ac.Task.Payload.Domains) > 0 {
+			b.WriteString("\n## Domain Attribute Checklist — ALL must be included\n\n")
+			for _, domain := range ac.Task.Payload.Domains {
+				b.WriteString(fmt.Sprintf("### %s entity — %d attributes\n\n", domain.Name, len(domain.Attributes)))
+				for i, attr := range domain.Attributes {
+					line := fmt.Sprintf("%d. `%s` (%s)", i+1, attr.Name, attr.Type)
+					if attr.Constraints != "" {
+						line += " — " + attr.Constraints
+					}
+					if attr.Default != "" {
+						line += fmt.Sprintf(" [default: %s]", attr.Default)
+					}
+					b.WriteString(line + "\n")
+				}
+				b.WriteString("\n")
+			}
+		}
+		// List repository operations that require input structs.
+		hasOps := false
+		for _, svc := range ac.Task.Payload.AllServices {
+			for _, repo := range svc.Repositories {
+				if len(repo.Operations) > 0 {
+					if !hasOps {
+						b.WriteString("\n## Repository Operations — derive input/update structs\n\n")
+						hasOps = true
+					}
+					b.WriteString(fmt.Sprintf("### %s (entity: %s)\n\n", repo.Name, repo.EntityRef))
+					for _, op := range repo.Operations {
+						// Build operation line with derivation hint.
+						filterBy := ""
+						if len(op.FilterBy) > 0 {
+							filterBy = fmt.Sprintf(", filter_by=[%s]", strings.Join(op.FilterBy, ", "))
+						}
+						desc := ""
+						if op.Description != "" {
+							desc = fmt.Sprintf(", description: %q", op.Description)
+						}
+						hint := ""
+						switch {
+						case op.OpType == "insert" || strings.HasPrefix(op.Name, "Create"):
+							hint = fmt.Sprintf(" → generate `Create%sInput` struct", repo.EntityRef)
+						case op.OpType == "update":
+							hint = fmt.Sprintf(" → generate `Update%sInput` struct", op.Name)
+						}
+						b.WriteString(fmt.Sprintf("- **%s** (op_type=%s%s%s)%s\n",
+							op.Name, op.OpType, filterBy, desc, hint))
+					}
+					b.WriteString("\n")
+				}
+			}
+		}
+	}
+
 	// Cross-task type registry: list all types already defined by upstream tasks.
 	// Injected on attempt 0 only — on retries the registry is stable and the agent
 	// already received it in the earlier attempt.
