@@ -265,7 +265,8 @@ Code generation configuration for the `realize` engine:
 
 Press `P` to open the architecture diagram overview, which visualizes the dependency graph across all configured pillars.
 
-<img width="1900" height="1138" alt="image" src="https://github.com/user-attachments/assets/333e5fac-cf88-4490-918a-ddba848df91d" />
+<img width="1897" height="1140" alt="image" src="https://github.com/user-attachments/assets/634af31d-d425-454a-8be7-4669bb488725" />
+
 
 ---
 
