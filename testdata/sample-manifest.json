@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-08T01:04:11.928481855+02:00",
+  "created_at": "2026-04-08T03:20:31.048187022+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
@@ -486,14 +486,6 @@
     "styling": "Tailwind CSS"
   },
   "infrastructure": {
-    "cicd": {
-      "platform": "GitHub Actions",
-      "container_registry": "GHCR",
-      "deploy_strategy": "Rolling",
-      "iac_tool": "Terraform",
-      "secrets_mgmt": "GitHub Secrets",
-      "container_runtime": "scratch"
-    },
     "observability": {
       "logging": "Loki + Grafana",
       "metrics": "Prometheus + Grafana",
@@ -506,20 +498,13 @@
     "environments": [
       {
         "name": "dev",
-        "compute_env": "containerized",
+        "compute_env": "Containers (Docker)",
+        "cloud_provider": "AWS",
         "orchestrator": "Docker Compose"
       }
     ]
   },
   "cross_cutting": {
-    "testing": {
-      "unit": "Go testing",
-      "integration": "In-memory fakes",
-      "e2e": "Playwright",
-      "api": "Bruno",
-      "load": "k6",
-      "frontend_testing": "Vitest"
-    },
     "docs": {
       "per_protocol_formats": {
         "REST": "OpenAPI/Swagger"

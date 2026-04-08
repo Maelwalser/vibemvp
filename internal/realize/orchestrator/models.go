@@ -149,13 +149,20 @@ func providerFor(taskID string, providers manifest.ProviderAssignments) (manifes
 // describeProvider returns a human-readable model label for dry-run output.
 // For manifest-configured providers it shows the provider name/tier; for
 // default-agent tasks it shows the model ID resolved from defaultPA.
-func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind, defaultPA manifest.ProviderAssignment) string {
+// tierOverrides are checked first so the dry-run plan matches actual execution.
+func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind, defaultPA manifest.ProviderAssignment, tierOverrides map[ModelTier]string) string {
 	if kind == dag.TaskKindDependencyResolution {
 		return "(package manager — no LLM)"
 	}
 	pa, ok := providerFor(taskID, providers)
 	if !ok || pa.Credential == "" {
-		return resolveModelIDForTier(defaultPA.Provider, tierForKind(kind), defaultPA.Version)
+		tier := tierForKind(kind)
+		if tierOverrides != nil {
+			if modelID, ok := tierOverrides[tier]; ok && modelID != "" {
+				return modelID
+			}
+		}
+		return resolveModelIDForTier(defaultPA.Provider, tier, defaultPA.Version)
 	}
 	s := pa.Provider
 	if pa.Model != "" {

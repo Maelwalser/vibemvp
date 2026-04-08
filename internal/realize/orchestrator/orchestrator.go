@@ -156,7 +156,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	// Print plan in dry-run mode.
 	if o.cfg.DryRun {
-		return o.printPlan(d, providers)
+		return o.printPlan(d, providers, tierOverrides)
 	}
 
 	// Load skill registry.
@@ -336,7 +336,17 @@ func (o *Orchestrator) runWave(
 				if override, ok := providerFor(task.ID, providers); ok && override.Credential != "" {
 					pa = override
 				}
-				a = buildAgentForTier(pa, initialTier, defaultMaxTokens, o.cfg.Verbose)
+				// Use explicit tier model override from manifest when present;
+				// otherwise fall back to the default provider model for this tier.
+				if tierOverrides != nil {
+					if modelID, ok := tierOverrides[initialTier]; ok && modelID != "" {
+						a = buildAgentWithModel(pa, modelID, defaultMaxTokens, o.cfg.Verbose)
+					} else {
+						a = buildAgentForTier(pa, initialTier, defaultMaxTokens, o.cfg.Verbose)
+					}
+				} else {
+					a = buildAgentForTier(pa, initialTier, defaultMaxTokens, o.cfg.Verbose)
+				}
 			}
 
 			runner := &TaskRunner{
@@ -363,14 +373,14 @@ func (o *Orchestrator) runWave(
 }
 
 // printPlan prints the task DAG in dry-run mode without invoking any agents.
-func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignments) error {
+func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignments, tierOverrides map[ModelTier]string) error {
 	defaultPA := o.resolveDefaultProvider()
 	fmt.Printf("Execution plan (%d tasks, %d waves):\n\n", len(d.Tasks), len(d.Levels()))
 	for i, wave := range d.Levels() {
 		fmt.Printf("Wave %d:\n", i)
 		for _, id := range wave {
 			task := d.Tasks[id]
-			model := describeProvider(id, providers, task.Kind, defaultPA)
+			model := describeProvider(id, providers, task.Kind, defaultPA, tierOverrides)
 			fmt.Printf("  [%s] %s  →  %s\n", task.Kind, task.Label, model)
 			if len(task.Dependencies) > 0 {
 				fmt.Printf("    deps: %v\n", task.Dependencies)

@@ -160,26 +160,46 @@ func (r Editor) UpdateProviderOptions(configured map[string]provider.ProviderSel
 }
 
 // syncTierFields updates the tier_fast / tier_medium / tier_slow option lists
-// to match the currently selected provider. When no provider is selected (unset),
-// all tier fields are reset to the unset sentinel.
+// to match the currently selected provider. Every tier dropdown shows ALL models
+// from the provider so the user can assign any model to any complexity tier.
+// When no provider is selected (unset), all tier fields are reset to the unset sentinel.
 func (r Editor) syncTierFields() Editor {
 	prov := core.FieldGet(r.fields, "provider")
 	tiers, hasProvider := providerTierModels[prov]
 
+	// Build a flat, deduplicated list of every model the provider offers.
+	var allModels []string
+	if hasProvider {
+		seen := map[string]bool{}
+		for _, tierModels := range tiers {
+			for _, m := range tierModels {
+				if !seen[m] {
+					seen[m] = true
+					allModels = append(allModels, m)
+				}
+			}
+		}
+	}
+
+	// Default selection per tier: first model from that tier's own list.
+	tierDefaults := [3]string{}
+	if hasProvider {
+		for ti := range tiers {
+			if len(tiers[ti]) > 0 {
+				tierDefaults[ti] = tiers[ti][0]
+			}
+		}
+	}
+
 	tierKeys := []string{"tier_fast", "tier_medium", "tier_slow"}
 	for ti, key := range tierKeys {
-		var options []string
-		if hasProvider {
-			options = tiers[ti]
-		}
-
 		for i := range r.fields {
 			if r.fields[i].Key != key {
 				continue
 			}
-			r.fields[i].Options = options
+			r.fields[i].Options = allModels
 			found := false
-			for j, o := range options {
+			for j, o := range allModels {
 				if o == r.fields[i].Value {
 					r.fields[i].SelIdx = j
 					found = true
@@ -187,8 +207,19 @@ func (r Editor) syncTierFields() Editor {
 				}
 			}
 			if !found {
-				r.fields[i].Value = unset
-				r.fields[i].SelIdx = 0
+				// No prior selection — use the tier's natural default.
+				if hasProvider && tierDefaults[ti] != "" {
+					r.fields[i].Value = tierDefaults[ti]
+					for j, o := range allModels {
+						if o == tierDefaults[ti] {
+							r.fields[i].SelIdx = j
+							break
+						}
+					}
+				} else {
+					r.fields[i].Value = unset
+					r.fields[i].SelIdx = 0
+				}
 			}
 			break
 		}
