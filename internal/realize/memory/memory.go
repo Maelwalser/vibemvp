@@ -88,6 +88,8 @@ type SharedMemory struct {
 	crossTaskIssues     string               // build errors from incremental compilation
 	goModByModule       map[string]string    // Go module path → locked go.mod content
 	goSumByModule       map[string]string    // Go module path → locked go.sum content
+	lockedPackageJSON   string               // locked package.json from frontend deps phase
+	lockedPackageLock   string               // locked package-lock.json from frontend deps phase
 }
 
 // New returns an empty SharedMemory.
@@ -167,14 +169,55 @@ func (m *SharedMemory) RegisterTypes(types map[string]TypeEntry) {
 		if !exists {
 			m.typeRegistry[name] = entry
 		} else if existing.Package != entry.Package {
-			// Same type name declared in different packages — potential conflict.
-			m.typeConflicts = append(m.typeConflicts, TypeConflict{
-				TypeName: name,
-				First:    existing,
-				Second:   entry,
-			})
+			// Parent/child package relationship — intentional name reuse in Go
+			// (e.g. repository/interfaces.go vs repository/postgres/user_repository.go).
+			if strings.HasPrefix(entry.Package, existing.Package+"/") ||
+				strings.HasPrefix(existing.Package, entry.Package+"/") {
+				continue
+			}
+
+			// Cross-language types can never conflict (e.g. Go struct vs TS interface).
+			if isCrossLanguage(existing.Package, entry.Package) {
+				continue
+			}
+
+			// Deduplicate: skip if this exact conflict is already recorded.
+			alreadyRecorded := false
+			for _, c := range m.typeConflicts {
+				if c.TypeName == name && c.First.Package == existing.Package && c.Second.Package == entry.Package {
+					alreadyRecorded = true
+					break
+				}
+			}
+			if !alreadyRecorded {
+				m.typeConflicts = append(m.typeConflicts, TypeConflict{
+					TypeName: name,
+					First:    existing,
+					Second:   entry,
+				})
+			}
 		}
 	}
+}
+
+// isCrossLanguage reports whether two packages belong to different programming
+// languages. A Go struct and a TypeScript interface with the same name can never
+// conflict at compile time.
+func isCrossLanguage(pkgA, pkgB string) bool {
+	return isGoPackage(pkgA) != isGoPackage(pkgB)
+}
+
+// isGoPackage heuristically classifies a package path as Go (vs frontend/Python).
+// Frontend paths start with "src/" (npm convention); Python paths contain ".py"
+// or use "app/" at the root. Everything else is assumed to be Go.
+func isGoPackage(pkg string) bool {
+	if strings.HasPrefix(pkg, "src/") {
+		return false
+	}
+	if strings.Contains(pkg, ".py") || strings.HasPrefix(pkg, "app/") {
+		return false
+	}
+	return true
 }
 
 // RegisterConstructors appends constructor signatures extracted from file to the
@@ -391,6 +434,52 @@ func (m *SharedMemory) AnyLockedGoSum() string {
 		return content
 	}
 	return ""
+}
+
+// StoreLockedPackageJSON records the locked package.json content from the frontend
+// deps resolution phase. Safe for concurrent use.
+func (m *SharedMemory) StoreLockedPackageJSON(content string) {
+	if content == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lockedPackageJSON = content
+}
+
+// LockedPackageJSON returns the stored package.json content, or "" if none.
+// Safe for concurrent use.
+func (m *SharedMemory) LockedPackageJSON() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lockedPackageJSON
+}
+
+// StoreLockedPackageLock records the locked package-lock.json content from the
+// frontend deps resolution phase. Safe for concurrent use.
+func (m *SharedMemory) StoreLockedPackageLock(content string) {
+	if content == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lockedPackageLock = content
+}
+
+// LockedPackageLock returns the stored package-lock.json content, or "" if none.
+// Safe for concurrent use.
+func (m *SharedMemory) LockedPackageLock() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lockedPackageLock
+}
+
+// HasOutput reports whether a given task ID has recorded output. Safe for concurrent use.
+func (m *SharedMemory) HasOutput(taskID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.outputs[taskID]
+	return ok
 }
 
 // CommittedPaths returns all file paths committed by the given dependency task IDs.

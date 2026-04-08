@@ -300,6 +300,53 @@ func moduleSource(resolved map[string]ModuleInfo) map[string]ModuleInfo {
 	return WellKnownGoModules
 }
 
+// StubGoMod generates a minimal go.mod sufficient for `go build` verification
+// of pre-module tasks (data.schemas, data.migrations). It includes only the
+// direct imports those tasks are likely to use (uuid, DB driver) — not the full
+// framework/test/auth stack. Keeping it minimal means go mod tidy runs fast and
+// doesn't pull unnecessary transitive deps.
+// modulePath is required; goVersion and resolved are optional (fallback to defaults).
+func StubGoMod(modulePath, goVersion string, technologies []string, resolved map[string]ModuleInfo) string {
+	if goVersion == "" {
+		goVersion = "1.23"
+	}
+	modules_ := moduleSource(resolved)
+
+	seen := make(map[string]bool)
+	var requires []string
+
+	addModule := func(info ModuleInfo) {
+		if info.Version == "" || seen[info.Module] {
+			return
+		}
+		seen[info.Module] = true
+		requires = append(requires, fmt.Sprintf("\t%s %s", info.Module, info.Version))
+	}
+
+	// Always include uuid — domain structs almost always use it.
+	if info, ok := modules_["uuid"]; ok {
+		addModule(info)
+	}
+	// Include DB driver if databases are specified.
+	for _, tech := range technologies {
+		if info, ok := modules_[tech]; ok {
+			addModule(info)
+		}
+	}
+
+	sort.Strings(requires)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("module %s\n\ngo %s\n\n", modulePath, goVersion))
+	if len(requires) > 0 {
+		b.WriteString("require (\n")
+		for _, r := range requires {
+			b.WriteString(r + "\n")
+		}
+		b.WriteString(")\n")
+	}
+	return b.String()
+}
+
 // ValidateGoMod runs go mod tidy in a temp directory to resolve real versions.
 func ValidateGoMod(ctx context.Context, goModContent string, goFiles map[string]string) (*ResolvedDeps, error) {
 	tmpDir, err := os.MkdirTemp("", "deps-resolve-*")

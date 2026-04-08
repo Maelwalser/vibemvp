@@ -245,13 +245,27 @@ func (a *Agent) resolvePython(ctx context.Context) ([]dag.GeneratedFile, error) 
 	return result, nil
 }
 
-// serviceLanguage extracts the primary backend language from the task payload.
+// serviceLanguage extracts the primary language from the task payload.
+// For backend tasks, this is the service language; for frontend tasks,
+// it is derived from the frontend tech stack.
 func serviceLanguage(p dag.TaskPayload) string {
 	if p.Service != nil {
 		return p.Service.Language
 	}
 	if len(p.AllServices) > 0 {
 		return p.AllServices[0].Language
+	}
+	// Frontend tasks carry language in the Frontend pillar.
+	if p.Frontend != nil && p.Frontend.Tech != nil {
+		lang := p.Frontend.Tech.Language
+		if lang != "" {
+			return lang
+		}
+		// Infer TypeScript for common JS frameworks.
+		switch p.Frontend.Tech.Framework {
+		case "Next.js", "React", "Vue", "Svelte", "Angular", "Nuxt":
+			return "TypeScript"
+		}
 	}
 	return ""
 }

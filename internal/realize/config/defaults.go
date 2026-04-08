@@ -68,3 +68,8 @@ const MaxRepairFilesPerCall = 15
 // RateLimitBackoffBase is the per-attempt multiplier in seconds for rate-limit backoff.
 // Wait = (attempt+1) * RateLimitBackoffBase seconds.
 const RateLimitBackoffBase = 60
+
+// TransientBackoffBase is the fixed backoff in seconds before retrying after a
+// transient transport error (connection reset, EOF, 500). Shorter than rate-limit
+// backoff because the issue is usually momentary infrastructure noise.
+const TransientBackoffBase = 8

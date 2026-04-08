@@ -23,8 +23,9 @@ const (
 	TaskKindMessaging TaskKind = "backend.messaging"
 	TaskKindGateway   TaskKind = "backend.gateway"
 
-	TaskKindContracts       TaskKind = "contracts"
-	TaskKindFrontend        TaskKind = "frontend"
+	TaskKindContracts    TaskKind = "contracts"
+	TaskKindFrontendPlan TaskKind = "frontend.plan" // config files only: package.json, tsconfig, etc.
+	TaskKindFrontend     TaskKind = "frontend"
 	TaskKindInfraDocker     TaskKind = "infra.docker"
 	TaskKindInfraTerraform  TaskKind = "infra.terraform"
 	TaskKindInfraCI         TaskKind = "infra.cicd"

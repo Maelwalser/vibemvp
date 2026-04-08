@@ -46,8 +46,9 @@ var defaultTierForKind = map[dag.TaskKind]ModelTier{
 	dag.TaskKindMessaging: TierMedium,
 	dag.TaskKindGateway:   TierMedium,
 
-	dag.TaskKindContracts:       TierFast,
-	dag.TaskKindFrontend:        TierMedium,
+	dag.TaskKindContracts:    TierFast,
+	dag.TaskKindFrontendPlan: TierFast, // config files only, well-understood output
+	dag.TaskKindFrontend:     TierMedium,
 	dag.TaskKindInfraDocker:     TierFast,
 	dag.TaskKindInfraTerraform:  TierMedium,
 	dag.TaskKindInfraCI:         TierFast,

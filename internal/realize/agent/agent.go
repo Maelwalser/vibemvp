@@ -35,7 +35,7 @@ type ClaudeAgent struct {
 
 // NewClaudeAgent returns a ClaudeAgent authenticated via ANTHROPIC_API_KEY.
 func NewClaudeAgent(model string, maxTokens, thinkingBudget int64, verbose bool) *ClaudeAgent {
-	c := anthropic.NewClient(option.WithMaxRetries(0))
+	c := anthropic.NewClient(option.WithMaxRetries(2))
 	return &ClaudeAgent{
 		client:         &c,
 		model:          model,
@@ -48,7 +48,7 @@ func NewClaudeAgent(model string, maxTokens, thinkingBudget int64, verbose bool)
 // NewClaudeAgentWithKey returns a ClaudeAgent authenticated with the given API key.
 // If apiKey is empty, falls back to ANTHROPIC_API_KEY from the environment.
 func NewClaudeAgentWithKey(model string, maxTokens, thinkingBudget int64, verbose bool, apiKey string) *ClaudeAgent {
-	opts := []option.RequestOption{option.WithMaxRetries(0)}
+	opts := []option.RequestOption{option.WithMaxRetries(2)}
 	if apiKey != "" {
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}

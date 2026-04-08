@@ -44,7 +44,8 @@ type logEntry struct {
 func classifyLog(text string) logKind {
 	lower := strings.ToLower(text)
 	switch {
-	case strings.Contains(lower, "done (") || strings.Contains(lower, "complete"):
+	case strings.Contains(lower, "done (") || strings.Contains(lower, "complete") ||
+		strings.Contains(lower, "no cross-task errors"):
 		return logDone
 	case strings.Contains(lower, "starting:"):
 		return logStart

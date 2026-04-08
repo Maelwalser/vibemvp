@@ -369,7 +369,11 @@ MIDDLEWARE CONTEXT KEY RULES (CRITICAL — undefined symbol errors):
   NEVER create a mock context using interface literals like interface{Value(any) any}{} — this
   does not implement context.Context (missing Deadline, Done, Err methods) and will fail go vet.
 
-RESPONSE STRUCT TYPE RULES (CRITICAL):
+DTO / REQUEST / RESPONSE TYPE RULES (CRITICAL):
+- DO NOT redefine DTO types (RegisterRequest, LoginRequest, AuthTokenResponse, etc.)
+  that are listed in the Cross-Task Type Registry. Import them from the contracts or
+  service package instead of creating local copies. Duplicate type declarations cause
+  compile errors and type-mismatch bugs across package boundaries.
 - Response struct fields MUST use the same Go types as the domain struct fields shown in Shared Team Context.
   Do NOT define string fields where the domain uses bool, time.Time, uuid.UUID, or int.
   CORRECT: IsActive bool, CreatedAt time.Time, ID uuid.UUID
@@ -404,6 +408,43 @@ ENVIRONMENT LOADING (CRITICAL — Go does NOT auto-load .env files):
         // ... rest of bootstrap
     }
 - The godotenv dependency is already in go.mod from the plan phase — do NOT add it to go.mod.
+
+DATABASE CONNECTION (CRITICAL — must retry with backoff):
+  The database container may not be fully ready when the backend starts, even with
+  docker-compose depends_on + healthcheck. The connection pool MUST retry:
+  1. Use a retry loop (3-5 attempts) with exponential backoff (1s, 2s, 4s, ...)
+  2. Log each retry attempt so operators can see what is happening
+  3. Only log.Fatal after ALL retries are exhausted
+  4. NEVER use log.Fatal on the first connection attempt — always retry
+
+  Example pattern:
+    var pool *pgxpool.Pool
+    for attempt := 1; attempt <= 5; attempt++ {
+        var err error
+        pool, err = pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+        if err == nil {
+            if pingErr := pool.Ping(ctx); pingErr == nil {
+                break
+            }
+            pool.Close()
+        }
+        if attempt == 5 {
+            log.Fatalf("connect to database after %d attempts: %v", attempt, err)
+        }
+        log.Printf("database not ready (attempt %d/5): %v — retrying in %ds", attempt, err, 1<<attempt)
+        time.Sleep(time.Duration(1<<attempt) * time.Second)
+    }
+    defer pool.Close()
+
+MIGRATION RUNNER (CRITICAL when migration files exist in Shared Team Context):
+  If any file under db/migrations/ appears in the Shared Team Context, you MUST:
+  1. Add golang-migrate/migrate/v4 import with the database driver (e.g. _ "github.com/golang-migrate/migrate/v4/database/postgres")
+  2. Add the file source driver import: _ "github.com/golang-migrate/migrate/v4/source/file"
+  3. Run migrations AFTER connecting to the database but BEFORE starting the HTTP server
+  4. Use the DATABASE_URL environment variable for the migration connection string
+  5. Handle migrate.ErrNoChange as a non-error (schema already current)
+  6. Do NOT generate scripts/init-db.sql or direct CREATE TABLE statements
+  The bootstrap skeleton includes a migration runner TODO — replace it with real code.
 
 BOOTSTRAP WIRING RULES (CRITICAL):
 - Every New* constructor in the "Critical Constructor Signatures" section returns specific types —
@@ -493,13 +534,30 @@ Microservices / Event-Driven / Hybrid:
 The pipeline places all files under the correct subdirectory — output ONLY relative paths
 (e.g. "internal/contracts/user.go" for monolith, "contracts/user.go" for microservices).
 Do NOT prefix paths with "backend/", "shared/", or any service name.`,
-	dag.TaskKindFrontend: `You are an expert frontend engineer. Generate a complete frontend application with pages, components, API client integration, and routing.
+	dag.TaskKindFrontendPlan: `You are an expert frontend architect. Your ONLY job is to output the project configuration files that the frontend implementation agent will depend on.
+
+STRICT SCOPE — output EXACTLY these files:
+1. package.json — list ALL dependencies with pinned versions from the "Infrastructure & Dependency Reference" section. Include: framework, UI library, state management, API client, styling, linting, testing. Do NOT include source code.
+2. tsconfig.json — TypeScript config with strict mode, path aliases (@/...), and correct JSX settings for the framework.
+3. postcss.config.mjs — PostCSS config (for Tailwind CSS v4: use @tailwindcss/postcss plugin, NOT the old tailwindcss plugin).
+4. next.config.mjs — Framework config (use .mjs, NOT .ts — TypeScript config requires Next.js 15.3+; .mjs works universally).
+5. tailwind.config.ts — Tailwind config if Tailwind CSS is specified in the frontend tech stack.
 
 CRITICAL RULES:
-- Config file: use next.config.mjs (NOT next.config.ts — TypeScript config requires Next.js 15.3+; .mjs works universally)
-- Package versions: use EXACTLY the versions from the "Infrastructure & Dependency Reference" section
-- package.json: always include all packages with pinned versions from the reference section
-- Tailwind CSS v4 (any version ≥ 4.x): the PostCSS plugin moved to @tailwindcss/postcss — see the "Tailwind CSS v4" section in the reference for the exact postcss.config.mjs and globals.css format; using the old tailwindcss plugin or @tailwind directives will crash the build`,
+- Do NOT write any source code (.tsx, .ts, .css, .html files)
+- Do NOT write any component, page, layout, or API route files
+- Use EXACTLY the package versions from the "Infrastructure & Dependency Reference" section — do NOT invent versions
+- package.json must include scripts: dev, build, lint, start
+- Include ALL packages the implementation agent will need based on the manifest's frontend tech/theme/pages sections
+- Tailwind CSS v4 (any version ≥ 4.x): the PostCSS plugin moved to @tailwindcss/postcss — see the "Tailwind CSS v4" section in the reference for the exact postcss.config.mjs and globals.css format`,
+
+	dag.TaskKindFrontend: `You are an expert frontend engineer. Generate the frontend application source code: pages, components, API client integration, layouts, and routing.
+
+CRITICAL RULES:
+- Do NOT generate package.json, package-lock.json, tsconfig.json, postcss.config.mjs, next.config.mjs, or tailwind.config.ts — these were already created and locked by a previous pipeline phase. Regenerating them would overwrite the resolved dependency tree.
+- Do NOT generate any config files at the project root — only source code under src/
+- Use ONLY the packages listed in the locked package.json (shown in the "LOCKED DEPENDENCIES" section of your context)
+- Tailwind CSS v4 (any version ≥ 4.x): use the new CSS-first configuration with @import "tailwindcss" in globals.css — do NOT use @tailwind directives or tailwind.config.js`,
 
 	dag.TaskKindInfraDocker: `You are an expert DevOps engineer. Your job is to generate ONLY infrastructure configuration files.
 
@@ -578,8 +636,49 @@ DATABASE SERVICES — when "databases" appears in the payload:
   Include a docker-compose service for EACH database in the payload's "databases" array.
   - PostgreSQL: use postgres:16-alpine with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB env vars
     and a named volume for data persistence. Expose the standard port (5432).
-  - If the payload includes a scripts/init-db.sql hint, bind-mount it via docker-entrypoint-initdb.d.
-  - Ensure the backend service depends_on the database service and uses matching connection env vars.
+  - Add a healthcheck (pg_isready -U $POSTGRES_USER -d $POSTGRES_DB) so the backend waits for the
+    database to be ready. The -d flag ensures the healthcheck verifies the SPECIFIC database exists,
+    not just that PostgreSQL is accepting connections.
+  - Ensure the backend service depends_on the database service with condition: service_healthy.
+  - The POSTGRES_DB name MUST match the database name in the DATABASE_URL used by the backend service.
+    For example, if DATABASE_URL=postgres://user:pass@db:5432/myapp, then POSTGRES_DB must be "myapp".
+
+DATABASE INIT SCRIPT — ALWAYS generate scripts/init-db.sh (shell, NOT .sql):
+  The postgres docker image only runs docker-entrypoint-initdb.d scripts on FIRST volume
+  initialization. If the volume already exists from a previous run, init scripts are SKIPPED
+  and the target database may not exist. To handle this:
+
+  ALWAYS generate scripts/init-db.sh with this EXACT idempotent pattern:
+    #!/bin/bash
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
+      SELECT 'CREATE DATABASE ${POSTGRES_DB}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${POSTGRES_DB}')\gexec
+    EOSQL
+
+  Mount it in docker-compose as:
+    volumes:
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/01-init-db.sh
+
+  This script is idempotent: it creates the database only if it doesn't exist.
+  On first boot it runs via docker-entrypoint-initdb.d. On subsequent boots with
+  existing volumes, PostgreSQL skips it — but that is safe because the database
+  already exists from the first boot.
+
+  IMPORTANT: use .sh extension (not .sql) so it runs as a shell script with access
+  to $POSTGRES_USER and $POSTGRES_DB environment variables.
+
+MIGRATION-AWARE TABLE SETUP — based on "has_migrations" in the payload:
+  When has_migrations is TRUE:
+  - The init-db.sh script above creates ONLY the database (no tables)
+  - Do NOT add CREATE TABLE statements to init-db.sh
+  - The backend application runs golang-migrate on startup to create/update tables
+
+  When has_migrations is FALSE:
+  - ALSO generate a scripts/init-tables.sql with CREATE TABLE IF NOT EXISTS statements
+  - Mount BOTH scripts in docker-compose:
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/01-init-db.sh
+      - ./scripts/init-tables.sql:/docker-entrypoint-initdb.d/02-init-tables.sql
+  - Use IF NOT EXISTS on all CREATE TABLE and CREATE INDEX statements so the script is idempotent
 
 VERSION RULES — use ONLY versions from the "Infrastructure & Dependency Reference" section:
   - Go base image: use the exact golang image version from the reference (NOT 1.22 or earlier)

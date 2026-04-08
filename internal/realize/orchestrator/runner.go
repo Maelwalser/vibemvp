@@ -12,6 +12,7 @@ import (
 	"github.com/vibe-menu/internal/manifest"
 	"github.com/vibe-menu/internal/realize/agent"
 	"github.com/vibe-menu/internal/realize/codegen"
+	"github.com/vibe-menu/internal/realize/deps"
 	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 	"github.com/vibe-menu/internal/realize/memory"
@@ -57,6 +58,7 @@ const (
 var maxRetriesForKind = map[dag.TaskKind]int{
 	dag.TaskKindDataMigrations:   1,
 	dag.TaskKindContracts:        1,
+	dag.TaskKindFrontendPlan:     2, // config-only, quick to retry
 	dag.TaskKindInfraDocker:      1,
 	dag.TaskKindInfraCI:          1,
 	dag.TaskKindCrossCutDocs:     1,
@@ -133,6 +135,12 @@ type TaskRunner struct {
 	// depsContext is pre-computed dependency & API reference text injected into
 	// the system prompt to prevent module version hallucination.
 	depsContext string
+	// goVersion is the resolved minimum Go runtime version (e.g. "1.23"),
+	// used for stub go.mod generation in pre-module tasks.
+	goVersion string
+	// resolvedGoModules is the live-fetched module version map, used for
+	// stub go.mod generation to include correct dependency versions.
+	resolvedGoModules map[string]deps.ModuleInfo
 }
 
 func (r *TaskRunner) log(format string, args ...interface{}) {
@@ -175,9 +183,12 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 
 	// Determine shared temp directory. Service-chain tasks share a single directory
 	// so each layer accumulates files for go build (go.mod, interfaces, impls).
+	// Frontend chain tasks (frontend.plan, frontend.deps, frontend) share .tmp/frontend.
 	var tmpDir string
 	if slug, ok := serviceSlug(r.task.ID); ok {
 		tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", "svc."+slug)
+	} else if strings.HasPrefix(r.task.ID, "frontend") {
+		tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", "frontend")
 	} else {
 		tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", r.task.ID)
 	}
@@ -200,12 +211,30 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		effectiveDepsContext += "```\n" + lockedGoMod + "\n```\n"
 	}
 
+	// For the frontend implementation task, inject locked package.json from the
+	// deps phase so the agent does not regenerate config files or change versions.
+	if r.task.Kind == dag.TaskKindFrontend {
+		lockedPkgJSON := r.readLockedPackageJSON(tmpDir)
+		if lockedPkgJSON != "" {
+			r.log("[%s] package.json locked from deps phase", r.task.ID)
+			effectiveDepsContext += "\n## LOCKED DEPENDENCIES — DO NOT OVERRIDE\n\n"
+			effectiveDepsContext += "The following package.json was resolved by npm. "
+			effectiveDepsContext += "Do NOT generate package.json, package-lock.json, tsconfig.json, "
+			effectiveDepsContext += "postcss.config.mjs, or next.config.mjs. "
+			effectiveDepsContext += "Do NOT change any version. These files already exist on disk.\n\n"
+			effectiveDepsContext += "```json\n" + lockedPkgJSON + "\n```\n"
+		}
+	}
+
 	// Stage files from completed dependency tasks so go build can resolve
 	// cross-task packages (e.g. internal/domain from data.schemas is visible
 	// to svc.monolith.plan's verifier without burning a retry slot).
 	if err := r.stageDependencyFiles(tmpDir); err != nil {
 		r.log("[%s] warning: staging dependency files: %v", r.task.ID, err)
 	}
+
+	transientRetries := 0
+	const maxTransientRetries = 3
 
 	for attempt := 0; attempt <= r.maxRetries; attempt++ {
 		if attempt > 0 {
@@ -243,12 +272,14 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 				framework = r.task.Payload.Service.Framework
 				language = r.task.Payload.Service.Language
 			}
+			hasMigrations := r.memory.HasOutput("data.migrations")
 			bootstrapSkeleton = codegen.WireBootstrap(
 				r.memory.AllConstructors(),
 				r.memory.AllServiceMethods(),
 				modulePath,
 				framework,
 				language,
+				hasMigrations,
 			)
 		}
 
@@ -283,6 +314,22 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 				case <-ctx.Done():
 					return ctx.Err()
 				}
+			} else if isTransientError(err) && transientRetries < maxTransientRetries {
+				// Transient transport error — retry at the same tier without
+				// escalating. A short backoff avoids hitting the same infra issue.
+				transientRetries++
+				wait := time.Duration(config.TransientBackoffBase) * time.Second
+				r.log("[%s] transient error (%d/%d) — waiting %s, retrying same tier", r.task.ID, transientRetries, maxTransientRetries, wait)
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				lastVerifyOutput = fmt.Sprintf("Agent error: %v", err)
+				// Decrement attempt so the next iteration re-uses the same tier
+				// (agentForAttempt will receive the same attempt number).
+				attempt--
+				continue
 			}
 			lastVerifyOutput = fmt.Sprintf("Agent error: %v", err)
 			continue
@@ -337,6 +384,14 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 				_ = os.WriteFile(modPath, []byte(lockedGoMod), 0644)
 				runGoModTidy(ctx, filepath.Dir(modPath))
 			}
+		}
+
+		// Provision a stub go.mod for pre-module tasks (data.schemas, data.migrations)
+		// that produce Go files but run before the plan/deps phase creates the real
+		// go.mod. Only when the verifier is Go, no go.mod exists, and no locked
+		// go.mod was available from a prior deps phase.
+		if r.verifier.Language() == "go" && findGoMod(tmpDir) == "" && lockedGoMod == "" {
+			r.provisionStubGoMod(ctx, tmpDir)
 		}
 
 		// Apply deterministic fixes (language-specific formatting, import cleanup,
@@ -464,6 +519,11 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 // commit writes files to the output directory, publishes to shared memory,
 // and marks the task as completed.
 func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.GeneratedFile) error {
+	// For pre-module tasks, filter out go.mod/go.sum from agent output to prevent
+	// the stub (or an LLM-hallucinated version) from leaking into the output dir.
+	if r.task.Kind == dag.TaskKindDataSchemas || r.task.Kind == dag.TaskKindDataMigrations {
+		files = filterOutGoMod(files)
+	}
 	outputDir := r.task.Payload.OutputDir
 	if err := r.writer.CommitWithPrefix(tmpDir, outputDir, files); err != nil {
 		return fmt.Errorf("task %s: commit files: %w", r.task.ID, err)
@@ -475,10 +535,15 @@ func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.Gene
 	// constructing wrong import paths like "backend/internal/domain" when the correct
 	// Go import is "monolith/internal/domain".
 	prefixedFiles := applyOutputDirPrefix(files, outputDir)
-	// Keep the shared service temp dir alive until the bootstrap task completes
-	// so each layer's files accumulate for go build verification.
+	// Keep the shared service temp dir alive until the final task completes
+	// so each layer's files accumulate for build verification.
+	// For service chains: keep alive until bootstrap. For frontend chain: keep
+	// alive until the frontend (implementation) task.
 	_, isSvcTask := serviceSlug(r.task.ID)
-	if !isSvcTask || isBootstrapTask(r.task.ID) {
+	isFrontendChain := strings.HasPrefix(r.task.ID, "frontend")
+	isFinalFrontendTask := r.task.ID == "frontend"
+	shouldCleanup := (!isSvcTask && !isFrontendChain) || isBootstrapTask(r.task.ID) || isFinalFrontendTask
+	if shouldCleanup {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			r.log("[%s] warning: failed to remove temp dir %s: %v", r.task.ID, tmpDir, err)
 		}
@@ -486,15 +551,20 @@ func (r *TaskRunner) commit(ctx context.Context, tmpDir string, files []dag.Gene
 	// Record: passes prefixedFiles for rawPaths (disk staging) but Record internally
 	// strips outputDir when building excerpts for agent context.
 	r.memory.Record(r.task, prefixedFiles, outputDir)
-	// For dependency resolution tasks, store the locked go.mod and go.sum in
+	// For dependency resolution tasks, store the locked dependency files in
 	// shared memory so downstream tasks can find them even when temp dirs
 	// don't match or when parallel microservice tasks need consistent checksums.
 	if r.task.Kind == dag.TaskKindDependencyResolution {
 		var modulePath string
 		for _, f := range files {
-			if filepath.Base(f.Path) == "go.mod" {
+			switch filepath.Base(f.Path) {
+			case "go.mod":
 				modulePath = extractModulePath(f.Content)
 				r.memory.StoreLockedGoMod(modulePath, f.Content)
+			case "package.json":
+				r.memory.StoreLockedPackageJSON(f.Content)
+			case "package-lock.json":
+				r.memory.StoreLockedPackageLock(f.Content)
 			}
 		}
 		if modulePath != "" {
@@ -748,6 +818,50 @@ func (r *TaskRunner) readLockedGoMod(tmpDir string) string {
 	return ""
 }
 
+// readLockedPackageJSON reads the package.json produced by the frontend deps phase
+// from the shared frontend temp directory. Returns "" when no prior package.json exists.
+func (r *TaskRunner) readLockedPackageJSON(tmpDir string) string {
+	// Try the task's own temp dir first (frontend chain tasks share .tmp/frontend).
+	data, err := os.ReadFile(filepath.Join(tmpDir, "package.json"))
+	if err == nil {
+		return string(data)
+	}
+	// Fallback: check shared memory.
+	if content := r.memory.LockedPackageJSON(); content != "" {
+		return content
+	}
+	return ""
+}
+
+// provisionStubGoMod generates a minimal go.mod for pre-module tasks (data.schemas,
+// data.migrations) that produce Go files but run before the plan/deps phase creates
+// the real go.mod. The stub includes only uuid and DB-driver dependencies — enough
+// for `go build` verification to pass without pulling the full framework stack.
+func (r *TaskRunner) provisionStubGoMod(ctx context.Context, tmpDir string) {
+	modulePath := r.task.Payload.ModulePath
+	if modulePath == "" {
+		modulePath = "stub"
+	}
+
+	var technologies []string
+	for _, db := range r.task.Payload.Databases {
+		technologies = append(technologies, string(db.Type))
+	}
+	if r.task.Payload.Auth != nil {
+		technologies = append(technologies, r.task.Payload.Auth.Strategy)
+	}
+
+	stub := deps.StubGoMod(modulePath, r.goVersion, technologies, r.resolvedGoModules)
+
+	modPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(modPath, []byte(stub), 0644); err != nil {
+		r.log("[%s] warning: could not write stub go.mod: %v", r.task.ID, err)
+		return
+	}
+	runGoModTidy(ctx, tmpDir)
+	r.log("[%s] provisioned stub go.mod for pre-module verification", r.task.ID)
+}
+
 // contextWindowForAttempt computes the context window size for the model that
 // will be used at the given attempt (accounting for tier escalation).
 func contextWindowForAttempt(pa manifest.ProviderAssignment, initialTier ModelTier, tierOverrides map[ModelTier]string, attempt int) int {
@@ -970,6 +1084,21 @@ func isBootstrapTask(taskID string) bool {
 	return strings.HasSuffix(taskID, ".bootstrap")
 }
 
+// filterOutGoMod removes go.mod and go.sum from a file list. Used to prevent
+// stub or LLM-hallucinated module files from leaking into committed output for
+// pre-module tasks (data.schemas, data.migrations).
+func filterOutGoMod(files []dag.GeneratedFile) []dag.GeneratedFile {
+	filtered := make([]dag.GeneratedFile, 0, len(files))
+	for _, f := range files {
+		base := filepath.Base(f.Path)
+		if base == "go.mod" || base == "go.sum" {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	return filtered
+}
+
 // isTestOnlyFailure checks whether the verification output indicates that
 // go build and go vet passed but go test failed. In this case, the implementation
 // code is correct — only the test files have issues (typically hallucinated APIs).
@@ -1063,4 +1192,35 @@ func isRateLimitError(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "429") || strings.Contains(msg, "rate_limit_error")
+}
+
+// isTransientError reports whether err is a transient transport/infrastructure
+// error that does not indicate model insufficiency. Retrying at the same tier
+// is appropriate for these — no need to escalate.
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	patterns := []string{
+		"internal_error",
+		"internal server error",
+		"500",
+		"502",
+		"503",
+		"connection reset",
+		"connection refused",
+		"eof",
+		"context deadline exceeded",
+		"tls handshake",
+		"broken pipe",
+		"overloaded_error",
+		"server_error",
+	}
+	for _, p := range patterns {
+		if strings.Contains(msg, p) {
+			return true
+		}
+	}
+	return false
 }

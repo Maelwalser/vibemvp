@@ -25,7 +25,7 @@ func (b *Builder) Build(m *manifest.Manifest) (*DAG, error) {
 	b.addDataTasks(m, d)
 	b.addBackendTasks(m, d)
 	b.addContractsTask(m, d)
-	b.addFrontendTask(m, d)
+	b.addFrontendTaskChain(m, d)
 	b.addInfraTasks(m, d)
 	b.addCrossCutTasks(m, d)
 
@@ -60,6 +60,8 @@ func serviceIDs(m *manifest.Manifest) []string {
 func svcBootstrapID(name string) string { return "svc." + svcSlug(name) + ".bootstrap" }
 func svcPlanID(name string) string      { return "svc." + svcSlug(name) + ".plan" }
 func svcDepsID(name string) string      { return "svc." + svcSlug(name) + ".deps" }
+func frontendPlanID() string            { return "frontend.plan" }
+func frontendDepsID() string            { return "frontend.deps" }
 func svcSlug(name string) string {
 	return strings.ToLower(strings.ReplaceAll(name, " ", "-"))
 }
@@ -619,24 +621,72 @@ func (b *Builder) addContractsTask(m *manifest.Manifest, d *DAG) {
 
 // ── Wave 3: frontend ──────────────────────────────────────────────────────────
 
-func (b *Builder) addFrontendTask(m *manifest.Manifest, d *DAG) {
+// addFrontendTaskChain emits three tasks for the frontend, mirroring the
+// backend plan → deps → implementation pattern:
+//
+//   - frontend.plan: LLM generates config files only (package.json, tsconfig, etc.)
+//   - frontend.deps: non-LLM, runs npm install --package-lock-only to lock versions
+//   - frontend:      LLM generates all source code with locked deps context
+func (b *Builder) addFrontendTaskChain(m *manifest.Manifest, d *DAG) {
 	if m.Frontend.Tech == nil || m.Frontend.Tech.Framework == "" {
 		return
 	}
 
-	deps := []string{"contracts"}
+	baseDeps := []string{"contracts"}
 	// contracts may not exist if no DTOs/endpoints are defined.
 	if _, ok := d.Tasks["contracts"]; !ok {
-		deps = append(serviceIDs(m), "data.schemas")
+		baseDeps = append(serviceIDs(m), "data.schemas")
 	}
 
 	svcDirs := serviceOutputDirs(m)
 	fp := m.Frontend
+
+	planID := frontendPlanID()
+	depsID := frontendDepsID()
+
+	// Layer 0a — plan: config files only (package.json, tsconfig.json, etc.).
+	// The LLM decides which npm packages are needed based on the manifest's
+	// frontend tech stack and produces a package.json with pinned versions.
+	add(d, &Task{
+		ID:           planID,
+		Kind:         TaskKindFrontendPlan,
+		Label:        fmt.Sprintf("Frontend config (%s — package.json + tsconfig)", m.Frontend.Tech.Framework),
+		Dependencies: baseDeps,
+		Payload: TaskPayload{
+			Description: m.Description,
+			ArchPattern: m.Backend.ArchPattern,
+			DTOs:        m.Contracts.DTOs,
+			Endpoints:   m.Contracts.Endpoints,
+			Versioning:  m.Contracts.Versioning.OrZero(),
+			AllServices: m.Backend.Services,
+			Auth:        m.Backend.Auth,
+			Frontend:    &fp,
+			OutputDir:   svcDirs["frontend"],
+		},
+	})
+
+	// Layer 0b — deps: dependency resolution (no LLM).
+	// Runs npm install --package-lock-only on the plan task's package.json
+	// to lock all transitive versions using the live npm registry.
+	add(d, &Task{
+		ID:           depsID,
+		Kind:         TaskKindDependencyResolution,
+		Label:        fmt.Sprintf("Frontend — resolve & lock npm dependencies"),
+		Dependencies: []string{planID},
+		Payload: TaskPayload{
+			Frontend:  &fp,
+			OutputDir: svcDirs["frontend"],
+		},
+	})
+
+	// Layer 1 — implementation: LLM generates all source code (pages, components,
+	// API client, routing). The locked package.json is injected as context so the
+	// agent does NOT regenerate config files or change any version.
 	add(d, &Task{
 		ID:           "frontend",
 		Kind:         TaskKindFrontend,
 		Label:        fmt.Sprintf("Generate frontend (%s)", m.Frontend.Tech.Framework),
-		Dependencies: deps,
+		Dependencies: append([]string{depsID}, baseDeps...),
 		Payload: TaskPayload{
 			Description: m.Description,
 			ArchPattern: m.Backend.ArchPattern,
@@ -671,22 +721,25 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 	infra := m.Infra
 	svcDirs := serviceOutputDirs(m)
 
+	_, hasMigrations := d.Tasks["data.migrations"]
+
 	add(d, &Task{
 		ID:           "infra.docker",
 		Kind:         TaskKindInfraDocker,
 		Label:        "Generate Dockerfiles and docker-compose",
 		Dependencies: baseDeps,
 		Payload: TaskPayload{
-			ArchPattern: m.Backend.ArchPattern,
-			EnvConfig:   m.Backend.Env.OrZero(),
-			AllServices: m.Backend.Services,
-			Domains:     m.Data.Domains,
-			Databases:   m.Data.Databases,
-			Governances: m.Data.Governances,
-			Auth:        m.Backend.Auth,
-			Infra:       &infra,
-			Frontend:    frontendOrNil(m),
-			ServiceDirs: svcDirs,
+			ArchPattern:   m.Backend.ArchPattern,
+			EnvConfig:     m.Backend.Env.OrZero(),
+			AllServices:   m.Backend.Services,
+			Domains:       m.Data.Domains,
+			Databases:     m.Data.Databases,
+			Governances:   m.Data.Governances,
+			Auth:          m.Backend.Auth,
+			HasMigrations: hasMigrations,
+			Infra:         &infra,
+			Frontend:      frontendOrNil(m),
+			ServiceDirs:   svcDirs,
 		},
 	})
 

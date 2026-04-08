@@ -266,6 +266,19 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		o.log("realize: import path pre-flight: %s", fixes)
 	}
 
+	// Cross-task semantic validation: catch docker-compose vs backend code mismatches
+	// (DB names, env vars, migration paths) that the compiler cannot detect.
+	if issues := verify.ValidateCrossTaskConsistency(o.cfg.OutputDir); len(issues) > 0 {
+		o.log("realize: cross-task consistency: %d issue(s) found", len(issues))
+		var issueLines []string
+		for _, issue := range issues {
+			o.log("realize:   [%s] %s", issue.Category, issue.Message)
+			issueLines = append(issueLines, fmt.Sprintf("[%s] %s (files: %s, %s)", issue.Category, issue.Message, issue.File1, issue.File2))
+		}
+		existing := mem.CrossTaskIssues()
+		mem.SetCrossTaskIssues(existing + "\n" + strings.Join(issueLines, "\n"))
+	}
+
 	// Run a project-wide integration build after all tasks complete.
 	// This catches cross-task compilation errors (import path mismatches, type
 	// field access on wrong struct, missing multi-return handling) that per-task
@@ -372,6 +385,8 @@ func (o *Orchestrator) runWave(
 				var svcTmpDir string
 				if slug, ok := serviceSlug(task.ID); ok {
 					svcTmpDir = filepath.Join(writer.BaseDir(), ".tmp", "svc."+slug)
+				} else if strings.HasPrefix(task.ID, "frontend") {
+					svcTmpDir = filepath.Join(writer.BaseDir(), ".tmp", "frontend")
 				}
 				a = deps.New(svcTmpDir, o.cfg.Verbose)
 			} else {
@@ -397,6 +412,8 @@ func (o *Orchestrator) runWave(
 				initialTier:        initialTier,
 				tierOverrides:      tierOverrides,
 				depsContext:        buildDepsContext(gctx, task, resolvedGoVersion, resolvedGoModules),
+				goVersion:         resolvedGoVersion,
+				resolvedGoModules: resolvedGoModules,
 			}
 			return runner.Run(gctx)
 		})
@@ -548,7 +565,7 @@ func buildDepsContext(ctx context.Context, task *dag.Task, resolvedGoVersion str
 		hasFrontend := task.Payload.Frontend != nil
 		return deps.InfraPromptContext(ctx, hasGoServices, hasFrontend)
 
-	case dag.TaskKindFrontend:
+	case dag.TaskKindFrontend, dag.TaskKindFrontendPlan:
 		return deps.InfraPromptContext(ctx, false, true)
 
 	default:

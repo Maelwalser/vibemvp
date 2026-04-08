@@ -69,6 +69,11 @@ type TaskPayload struct {
 	// prefix at commit time. Temp-dir verification always stays prefix-free.
 	OutputDir string `json:"output_dir,omitempty"`
 
+	// HasMigrations is true when the data.migrations task produced migration files.
+	// Used by the infra.docker task to decide whether to generate init-db.sql or
+	// reference the migrations directory in docker-compose.
+	HasMigrations bool `json:"has_migrations,omitempty"`
+
 	// Infrastructure pillar
 	Infra *manifest.InfraPillar `json:"infra,omitempty"`
 

@@ -30,6 +30,7 @@ func WireBootstrap(
 	modulePath string,
 	framework string,
 	language string,
+	hasMigrations bool,
 ) string {
 	if len(ctors) == 0 || modulePath == "" {
 		return ""
@@ -73,6 +74,8 @@ func WireBootstrap(
 	if strings.ToLower(framework) == "fiber" {
 		importPaths[`"errors"`] = true
 	}
+	// Go does not auto-load .env files; godotenv bridges the gap.
+	importPaths[`"github.com/joho/godotenv"`] = true
 
 	// Sort imports for determinism.
 	var imports []string
@@ -87,14 +90,37 @@ func WireBootstrap(
 		b.WriteString("\t" + imp + "\n")
 	}
 	b.WriteString(")\n\nfunc main() {\n")
+	b.WriteString("\t_ = godotenv.Load() // load .env if present (optional in production)\n\n")
 	b.WriteString("\tctx := context.Background()\n\n")
 
-	// Step 1: Database connection (placeholder for LLM to fill).
-	b.WriteString("\t// TODO: Initialize database connection pool\n")
-	b.WriteString("\t// db, err := pgxpool.New(ctx, os.Getenv(\"DATABASE_URL\"))\n")
-	b.WriteString("\t// if err != nil { log.Fatalf(\"connect to database: %v\", err) }\n")
-	b.WriteString("\t// defer db.Close()\n")
+	// Step 1: Database connection with retry (placeholder for LLM to fill).
+	b.WriteString("\t// ── Database Connection (MUST retry with backoff) ──\n")
+	b.WriteString("\t// var pool *pgxpool.Pool\n")
+	b.WriteString("\t// for attempt := 1; attempt <= 5; attempt++ {\n")
+	b.WriteString("\t//     var err error\n")
+	b.WriteString("\t//     pool, err = pgxpool.New(ctx, os.Getenv(\"DATABASE_URL\"))\n")
+	b.WriteString("\t//     if err == nil {\n")
+	b.WriteString("\t//         if pingErr := pool.Ping(ctx); pingErr == nil { break }\n")
+	b.WriteString("\t//         pool.Close()\n")
+	b.WriteString("\t//     }\n")
+	b.WriteString("\t//     if attempt == 5 { log.Fatalf(\"connect to database after %d attempts: %v\", attempt, err) }\n")
+	b.WriteString("\t//     log.Printf(\"database not ready (attempt %d/5) — retrying...\", attempt)\n")
+	b.WriteString("\t//     time.Sleep(time.Duration(1<<attempt) * time.Second)\n")
+	b.WriteString("\t// }\n")
+	b.WriteString("\t// defer pool.Close()\n")
 	b.WriteString("\t_ = ctx // placeholder — replace with actual db pool initialization\n\n")
+
+	// Step 1b: Migration runner (when migration files exist).
+	if hasMigrations {
+		b.WriteString("\t// ── Database Migrations (REQUIRED — migration files exist in db/migrations/) ──\n")
+		b.WriteString("\t// Run migrations BEFORE starting the HTTP server to ensure schema is current.\n")
+		b.WriteString("\t// Use golang-migrate/migrate/v4 (already in go.mod from plan phase).\n")
+		b.WriteString("\t// m, err := migrate.New(\"file://db/migrations\", os.Getenv(\"DATABASE_URL\"))\n")
+		b.WriteString("\t// if err != nil { log.Fatalf(\"migration init: %v\", err) }\n")
+		b.WriteString("\t// if err := m.Up(); err != nil && err != migrate.ErrNoChange {\n")
+		b.WriteString("\t//     log.Fatalf(\"migration run: %v\", err)\n")
+		b.WriteString("\t// }\n\n")
+	}
 
 	// Step 2: Instantiate repositories.
 	if len(repos) > 0 {
